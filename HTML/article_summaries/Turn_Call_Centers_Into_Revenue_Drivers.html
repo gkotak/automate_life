@@ -121,6 +121,61 @@
             border-radius: 8px;
             margin: 20px 0;
         }
+
+        .video-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+
+        .video-embed {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .video-embed iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .timestamp-link {
+            color: #2c5aa0;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: bold;
+        }
+
+        .timestamp-link:hover {
+            color: #1a365d;
+            background-color: #e6f3ff;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .play-button {
+            background: #2c5aa0;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+
+        .play-button:hover {
+            background: #1a365d;
+        }
     </style>
 </head>
 <body>
@@ -139,6 +194,18 @@
             <li><strong>Format:</strong> Podcast Interview</li>
             <li><strong>Focus:</strong> AI Transformation in Customer Service</li>
         </ul>
+    </div>
+
+    <div class="video-container">
+        <h2>🎥 Watch the Full Interview</h2>
+        <p>Watch the complete conversation with Swapnil Jain about transforming call centers with AI:</p>
+        <div class="video-embed">
+            <iframe
+                src="https://www.youtube.com/embed/6KbL8X2AYvY?enablejsapi=1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen>
+            </iframe>
+        </div>
     </div>
 
     <div class="summary-section">
@@ -209,34 +276,39 @@
 
     <div class="summary-section">
         <h2>Podcast Highlights & Key Timestamps</h2>
-        <p><em>Essential listening segments for maximum value:</em></p>
+        <p><em>Essential listening segments for maximum value - click timestamps to jump to that part of the video:</em></p>
 
         <div class="timestamp">
-            <strong>2:40 - Starting an AI Company Pre-LLM Era</strong>
+            <strong><span class="timestamp-link" onclick="jumpToTime(160)">2:40</span> - Starting an AI Company Pre-LLM Era</strong>
+            <button class="play-button" onclick="jumpToTime(160)">▶ Play</button>
             <p>📝 Insights on founding AI companies before Large Language Models became mainstream</p>
             <p><em>Why it matters: Understanding early AI adoption challenges and opportunities</em></p>
         </div>
 
         <div class="timestamp">
-            <strong>9:12 - AI's Impact on Human-Heavy Services</strong>
+            <strong><span class="timestamp-link" onclick="jumpToTime(552)">9:12</span> - AI's Impact on Human-Heavy Services</strong>
+            <button class="play-button" onclick="jumpToTime(552)">▶ Play</button>
             <p>🔍 Deep dive into how AI transforms labor-intensive service industries</p>
             <p><em>Why it matters: Strategic implications for workforce planning and operations</em></p>
         </div>
 
         <div class="timestamp">
-            <strong>17:38 - Agentic AI Breakdown</strong>
+            <strong><span class="timestamp-link" onclick="jumpToTime(1058)">17:38</span> - Agentic AI Breakdown</strong>
+            <button class="play-button" onclick="jumpToTime(1058)">▶ Play</button>
             <p>🤖 Technical explanation of autonomous AI agents in customer service</p>
             <p><em>Why it matters: Understanding the core technology driving transformation</em></p>
         </div>
 
         <div class="timestamp">
-            <strong>31:52 - Measuring AI Agent Accuracy</strong>
+            <strong><span class="timestamp-link" onclick="jumpToTime(1912)">31:52</span> - Measuring AI Agent Accuracy</strong>
+            <button class="play-button" onclick="jumpToTime(1912)">▶ Play</button>
             <p>📊 Metrics and KPIs for evaluating AI performance in customer service</p>
             <p><em>Why it matters: Practical implementation and quality assurance strategies</em></p>
         </div>
 
         <div class="timestamp">
-            <strong>37:40 - Leadership for International Workforce</strong>
+            <strong><span class="timestamp-link" onclick="jumpToTime(2260)">37:40</span> - Leadership for International Workforce</strong>
+            <button class="play-button" onclick="jumpToTime(2260)">▶ Play</button>
             <p>🌍 Managing global teams and implementing AI across different markets</p>
             <p><em>Why it matters: Scaling AI solutions internationally with cultural considerations</em></p>
         </div>
@@ -286,7 +358,49 @@
 
     <div class="source-link">
         <p><a href="https://www.n47.com/insights/turn-call-centers-into-revenue-drivers" target="_blank">🔗 Read Original Article</a></p>
+        <p><a href="https://youtu.be/6KbL8X2AYvY" target="_blank">🎥 Watch on YouTube</a></p>
         <p><em>Summary generated on September 26, 2025</em></p>
     </div>
+
+    <script>
+        // Function to jump to specific time in the embedded YouTube video
+        function jumpToTime(seconds) {
+            const iframe = document.querySelector('.video-embed iframe');
+            const videoId = '6KbL8X2AYvY';
+
+            // Update iframe src to jump to specific time
+            iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&start=${seconds}&autoplay=1`;
+
+            // Scroll to video for better user experience
+            document.querySelector('.video-container').scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        }
+
+        // Optional: Add keyboard shortcuts for common timestamps
+        document.addEventListener('keydown', function(event) {
+            // Only trigger if user isn't typing in an input field
+            if (event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+                switch(event.key) {
+                    case '1':
+                        jumpToTime(160); // 2:40
+                        break;
+                    case '2':
+                        jumpToTime(552); // 9:12
+                        break;
+                    case '3':
+                        jumpToTime(1058); // 17:38
+                        break;
+                    case '4':
+                        jumpToTime(1912); // 31:52
+                        break;
+                    case '5':
+                        jumpToTime(2260); // 37:40
+                        break;
+                }
+            }
+        });
+    </script>
 </body>
 </html>
