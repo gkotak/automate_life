@@ -94,6 +94,80 @@
             border-radius: 8px;
             margin: 15px 0;
         }
+
+        .video-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+
+        .video-embed {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .video-embed iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .timestamp-item {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            transition: background-color 0.2s ease;
+        }
+
+        .timestamp-item:hover {
+            background: #f0f8ff;
+        }
+
+        .timestamp-link {
+            color: #2c5aa0;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: bold;
+            font-family: 'Monaco', monospace;
+        }
+
+        .timestamp-link:hover {
+            color: #1a365d;
+        }
+
+        .play-button {
+            background: #2c5aa0;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: 8px;
+        }
+
+        .play-button:hover {
+            background: #1a365d;
+        }
+
+        .timestamp-description {
+            color: #555;
+            font-size: 0.9em;
+            line-height: 1.4;
+            margin-top: 5px;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -112,6 +186,8 @@
         </ul>
     </div>
 
+    {{VIDEO_EMBED_SECTION}}
+
     <div class="summary-section">
         <h2>Summary</h2>
         <div>{{SUMMARY_CONTENT}}</div>
@@ -127,5 +203,55 @@
         <p><a href="{{URL}}" target="_blank">🔗 Read Original Article</a></p>
         <p><em>Summary generated on {{GENERATION_DATE}}</em></p>
     </div>
+
+    <script>
+        // Function to jump to specific time in embedded YouTube video
+        function jumpToTime(seconds) {
+            const iframe = document.querySelector('.video-embed iframe');
+            if (iframe) {
+                const currentSrc = iframe.src;
+                const baseUrl = currentSrc.split('?')[0];
+
+                // Update iframe src to jump to specific time
+                iframe.src = `${baseUrl}?enablejsapi=1&start=${seconds}&autoplay=1`;
+
+                // Scroll to video for better user experience
+                const videoContainer = document.querySelector('.video-container');
+                if (videoContainer) {
+                    videoContainer.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }
+        }
+
+        // Optional: Add keyboard shortcuts for common timestamps
+        document.addEventListener('keydown', function(event) {
+            // Only trigger if user isn't typing in an input field
+            if (event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+                const timestampItems = document.querySelectorAll('.timestamp-item');
+                const key = parseInt(event.key);
+
+                if (key >= 1 && key <= timestampItems.length) {
+                    const timestampLink = timestampItems[key - 1].querySelector('.timestamp-link');
+                    if (timestampLink) {
+                        timestampLink.click();
+                    }
+                }
+            }
+        });
+
+        // Add visual feedback for timestamp clicks
+        document.addEventListener('click', function(event) {
+            if (event.target.classList.contains('timestamp-link') || event.target.classList.contains('play-button')) {
+                // Add brief visual feedback
+                event.target.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    event.target.style.transform = 'scale(1)';
+                }, 150);
+            }
+        });
+    </script>
 </body>
 </html>
