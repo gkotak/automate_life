@@ -114,35 +114,91 @@ class VideoArticleSummarizer:
         except Exception as e:
             return f"Error in Claude API call: {str(e)}"
 
+    def _extract_json_from_response(self, response):
+        """Extract and parse JSON from Claude's response, handling various formats"""
+        # Try to find JSON block in response
+        import re
+
+        # Look for JSON between ```json and ``` or just plain JSON
+        json_patterns = [
+            r'```json\s*(\{.*?\})\s*```',
+            r'```\s*(\{.*?\})\s*```',
+            r'(\{.*?\})'
+        ]
+
+        for pattern in json_patterns:
+            match = re.search(pattern, response, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    continue
+
+        # If no JSON found, return None
+        return None
+
+    def _format_summary_as_html(self, summary_text):
+        """Convert plain text summary to formatted HTML"""
+        # Handle markdown-like formatting
+        html = summary_text.replace('\n\n', '</p><p>')
+        html = html.replace('\n• ', '<br>• ')
+        html = html.replace('\n## ', '</p><h3>')
+        html = html.replace('\n### ', '</p><h4>')
+
+        # Wrap in paragraph tags
+        if not html.startswith('<'):
+            html = f'<p>{html}</p>'
+
+        # Close any opened headers
+        html = html.replace('<h3>', '<h3>').replace('\n', '</h3><p>')
+        html = html.replace('<h4>', '<h4>').replace('\n', '</h4><p>')
+
+        return html
+
     def _generate_summary_with_ai(self, url, metadata):
         """Use AI to generate content summary (non-deterministic part)"""
         prompt = f"""
         Analyze this article: {url}
 
-        Requirements:
-        1. Create a structured summary (max 1000 words)
-        2. Use bullet points and clear sections
-        3. If video content exists, identify 20 minutes of key highlights with timestamps
-        4. Extract main insights and actionable takeaways
-        5. Return the response as JSON with these fields:
-           - summary: the main content summary
-           - key_insights: array of main points
-           - video_timestamps: array of objects with time and description (if applicable)
-           - recommended_sections: array of must-watch/read sections
+        Create a comprehensive summary with the following structure:
+        1. Write a clear, structured summary (max 1000 words) in HTML format
+        2. Extract 5-8 key insights as bullet points
+        3. If video content exists, identify timestamps with descriptions
+        4. List recommended sections for readers
+
+        Please provide a clean, well-formatted response focusing on the content value rather than technical processing details.
 
         Article metadata: {json.dumps(metadata, indent=2)}
+
+        Return your response in this JSON format:
+        {{
+            "summary": "HTML formatted summary content",
+            "key_insights": ["insight 1", "insight 2", ...],
+            "video_timestamps": [{{"time": "MM:SS", "description": "what happens"}}, ...],
+            "recommended_sections": ["section 1", "section 2", ...]
+        }}
         """
 
         response = self._call_claude_api(prompt)
 
-        try:
-            # Try to parse as JSON
-            return json.loads(response)
-        except json.JSONDecodeError:
-            # Fallback: return as plain text summary
+        # Try to extract JSON from response
+        parsed_json = self._extract_json_from_response(response)
+
+        if parsed_json:
+            # Ensure summary is properly formatted as HTML
+            if 'summary' in parsed_json:
+                summary = parsed_json['summary']
+                if not any(tag in summary for tag in ['<p>', '<div>', '<h1>', '<h2>', '<h3>']):
+                    # Convert plain text to HTML
+                    parsed_json['summary'] = self._format_summary_as_html(summary)
+
+            return parsed_json
+        else:
+            # Fallback: format the entire response as HTML summary
+            formatted_summary = self._format_summary_as_html(response)
             return {
-                "summary": response,
-                "key_insights": ["Analysis completed but formatting needs review"],
+                "summary": formatted_summary,
+                "key_insights": ["Content analyzed - see summary for details"],
                 "video_timestamps": [],
                 "recommended_sections": []
             }
@@ -161,9 +217,10 @@ class VideoArticleSummarizer:
         sections = {}
 
         # Generate insights section
-        if ai_summary.get('key_insights'):
+        insights = ai_summary.get('key_insights', [])
+        if insights and insights != ["Analysis completed but formatting needs review"] and insights != ["Content analyzed - see summary for details"]:
             insights_html = '<div class="summary-section"><h3>💡 Key Insights</h3><ul>'
-            for insight in ai_summary['key_insights']:
+            for insight in insights:
                 insights_html += f'<li>{insight}</li>'
             insights_html += '</ul></div>'
             sections['INSIGHTS_SECTION'] = insights_html
