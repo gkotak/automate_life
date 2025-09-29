@@ -1,11 +1,10 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Article Summaries Index</title>
-<style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Article Summaries Index</title>
+    <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             max-width: 800px;
@@ -64,17 +63,117 @@
             font-style: italic;
             margin-bottom: 20px;
         }
+
+        .video-indicator {
+            background: #e74c3c;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .updated-indicator {
+            background: #f39c12;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+        }
     </style>
 </head>
 <body>
-<h1>Article Summaries</h1>
-<p class="total-count">Total articles: 4</p>
-<ul class="article-list"><li class="article-item"><a class="article-title" href="AI_agents_are_taking_over_call_centers_N47.html">AI agents are taking over call centers — N47</a><p class="article-description">Updated on September 29, 2025</p></li><li class="article-item"><a class="article-title" href="Why_AI_evals_are_the_hottest_new_skill_for_product_builders_Hamel_Husain_Shreya_Shankar_creators_of_.html">Why AI evals are the hottest new skill for product builders | Hamel Husain &amp; Shreya Shankar (creators of the #1 eval course)</a><p class="article-description">Generated on September 29, 2025</p></li><li class="article-item">
-<a class="article-title" href="Turn_Call_Centers_Into_Revenue_Drivers.html">Turn Call Centers Into Revenue Drivers</a>
-<p class="article-description">AI transformation strategies for converting call centers from cost centers to revenue generators</p>
-</li><li class="article-item">
-<a class="article-title" href="ai-evals-highlights.html">AI Evals Video Highlights - Most Valuable 25 Minutes</a>
-<p class="article-description">Highlights and key insights from AI evaluation discussions</p>
-</li></ul>
+    <h1>Article Summaries</h1>
+
+    <div class="stats">
+        <h3>📊 Collection Statistics</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number">5</div>
+                <div class="stat-label">Total Articles</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">5</div>
+                <div class="stat-label">With Video</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">1</div>
+                <div class="stat-label">Unique Domains</div>
+            </div>
+        </div>
+    </div>
+
+    <p class="total-count">Total articles: 5</p>
+
+    <ul class="article-list">
+        
+        <li class="article-item">
+            <a href="Turn_call_centers_into_revenue_drivers_N47.html" class="article-title">Turn call centers into revenue drivers — N47<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">Generated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="AI_agents_are_taking_over_call_centers_N47.html" class="article-title">AI agents are taking over call centers — N47<span class="video-indicator">📹 VIDEO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Why_AI_evals_are_the_hottest_new_skill_for_product_builders_Hamel_Husain_Shreya_Shankar_creators_of_.html" class="article-title">Why AI evals are the hottest new skill for product builders | Hamel Husain & Shreya Shankar (creators of the #1 eval course)<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">Generated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Turn_Call_Centers_Into_Revenue_Drivers.html" class="article-title">Turn Call Centers Into Revenue Drivers<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">AI transformation strategies for converting call centers from cost centers to revenue generators</p>
+        </li>
+        <li class="article-item">
+            <a href="ai-evals-highlights.html" class="article-title">AI Evals Video Highlights - Most Valuable 25 Minutes<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">Highlights and key insights from AI evaluation discussions</p>
+        </li>
+    </ul>
+
+    <div class="footer">
+        <p>🤖 Generated with hybrid Python + Claude Code approach</p>
+        <p>Last updated: September 29, 2025 at 11:41 AM</p>
+    </div>
 </body>
 </html>
