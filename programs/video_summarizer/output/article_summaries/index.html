@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Article Summaries Index</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+
+        .article-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .article-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .article-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .article-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #2c3e50;
+            text-decoration: none;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .article-title:hover {
+            color: #3498db;
+        }
+
+        .article-description {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .total-count {
+            color: #666;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+
+        .video-indicator {
+            background: #e74c3c;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .audio-indicator {
+            background: #4a90e2;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .updated-indicator {
+            background: #f39c12;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Article Summaries</h1>
+
+    <div class="stats">
+        <h3>📊 Collection Statistics</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number">7</div>
+                <div class="stat-label">Total Articles</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">7</div>
+                <div class="stat-label">With Video</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">2</div>
+                <div class="stat-label">With Audio</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">1</div>
+                <div class="stat-label">Unique Domains</div>
+            </div>
+        </div>
+    </div>
+
+    <p class="total-count">Total articles: 7</p>
+
+    <ul class="article-list">
+        
+        <li class="article-item">
+            <a href="Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html" class="article-title">Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Article_from.html" class="article-title">Article from 🎧 AUDIO<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span></a>
+            <p class="article-description">Generated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Turn_call_centers_into_revenue_drivers_N47.html" class="article-title">Turn call centers into revenue drivers — N47<span class="video-indicator">📹 VIDEO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="AI_agents_are_taking_over_call_centers_N47.html" class="article-title">AI agents are taking over call centers — N47<span class="video-indicator">📹 VIDEO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Why_AI_evals_are_the_hottest_new_skill_for_product_builders_Hamel_Husain_Shreya_Shankar_creators_of_.html" class="article-title">Why AI evals are the hottest new skill for product builders | Hamel Husain & Shreya Shankar (creators of the #1 eval course)<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">Generated on September 29, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Turn_Call_Centers_Into_Revenue_Drivers.html" class="article-title">Turn Call Centers Into Revenue Drivers<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">AI transformation strategies for converting call centers from cost centers to revenue generators</p>
+        </li>
+        <li class="article-item">
+            <a href="ai-evals-highlights.html" class="article-title">AI Evals Video Highlights - Most Valuable 25 Minutes<span class="video-indicator">📹 VIDEO</span></a>
+            <p class="article-description">Highlights and key insights from AI evaluation discussions</p>
+        </li>
+    </ul>
+
+    <div class="footer">
+        <p>🤖 Generated with hybrid Python + Claude Code approach</p>
+        <p>Last updated: September 29, 2025 at 07:04 PM</p>
+    </div>
+</body>
+</html>
