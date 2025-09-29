@@ -1,0 +1,50 @@
+2025-09-29 12:27:04,705 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/logs/video_article_summarizer_20250929.log
+2025-09-29 12:27:04,705 - VideoArticleSummarizer - INFO - Processing article: --help
+2025-09-29 12:27:04,705 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 12:27:04,708 - VideoArticleSummarizer - INFO -    Title: Article from 
+2025-09-29 12:27:04,708 - VideoArticleSummarizer - INFO -    Filename: Article_from.html
+2025-09-29 12:27:04,708 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 12:39:20,363 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/logs/video_article_summarizer_20250929.log
+2025-09-29 12:39:20,364 - VideoArticleSummarizer - INFO - Processing article: https://kotakmoment.com/p/turn-call-centers-into-revenue-drivers-54e
+2025-09-29 12:39:20,364 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 12:39:20,535 - VideoArticleSummarizer - INFO -    Found 10 audio file(s)
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: e46ff85e-62c8-4a81-9ff6-7764ecb1e834
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: cad82974-40cf-4595-904b-be81c9b71df0
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 97d19cc7-d0bd-413d-885d-de178b35e104
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: a6fb15ab-4a77-47cf-9d36-e7954a0e66ae
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 95207895-587b-47ff-8263-fca11918efb9
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 9058134c-d429-44a2-8a90-25b575f5ca6a
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 6bbd916e-28c7-4aef-a433-9d74531d7ff2
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,537 - VideoArticleSummarizer - INFO -    Title: Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI
+2025-09-29 12:39:20,537 - VideoArticleSummarizer - INFO -    Filename: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 12:39:20,537 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 12:39:22,540 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 12:39:22,541 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/HTML/article_summaries/Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 12:39:22,541 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 12:39:22,546 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 12:39:23,504 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 12:39:23,505 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 12:39:23,506 - VideoArticleSummarizer - INFO - Success! Generated: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html

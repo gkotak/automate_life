@@ -121,6 +121,40 @@
             border-radius: 8px;
         }
 
+        .audio-container {
+            background: #f0f8ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .audio-embed {
+            margin: 15px 0;
+        }
+
+        .audio-info {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .audio-timestamps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .media-timestamps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #666;
+        }
+
         .timestamp-item {
             background: #fff;
             border: 1px solid #ddd;
@@ -183,10 +217,11 @@
             <li><strong>Domain:</strong> {{DOMAIN}}</li>
             <li><strong>Analyzed:</strong> {{EXTRACTED_AT}}</li>
             <li><strong>Video Content:</strong> {{HAS_VIDEO}}</li>
+            <li><strong>Audio Content:</strong> {{HAS_AUDIO}}</li>
         </ul>
     </div>
 
-    {{VIDEO_EMBED_SECTION}}
+    {{MEDIA_EMBED_SECTION}}
 
     <div class="summary-section">
         <h2>Summary</h2>

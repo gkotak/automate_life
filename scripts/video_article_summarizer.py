@@ -10,6 +10,7 @@ import json
 import subprocess
 import requests
 import re
+import logging
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,10 +21,48 @@ class VideoArticleSummarizer:
     def __init__(self, base_dir="/Users/gauravkotak/cursor-projects-1/automate_life"):
         self.base_dir = Path(base_dir)
         self.html_dir = self.base_dir / "HTML" / "article_summaries"
+        self.logs_dir = self.base_dir / "logs"
         self.claude_cmd = self._find_claude_cli()
 
         # Ensure directories exist
         self.html_dir.mkdir(parents=True, exist_ok=True)
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Setup logging
+        self._setup_logging()
+
+    def _setup_logging(self):
+        """Setup logging to both console and file"""
+        timestamp = datetime.now().strftime('%Y%m%d')
+        log_file = self.logs_dir / f"video_article_summarizer_{timestamp}.log"
+
+        # Create logger
+        self.logger = logging.getLogger('VideoArticleSummarizer')
+        self.logger.setLevel(logging.INFO)
+
+        # Clear existing handlers to avoid duplicates
+        self.logger.handlers.clear()
+
+        # Create formatters
+        detailed_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        simple_formatter = logging.Formatter('%(message)s')
+
+        # File handler
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(detailed_formatter)
+        self.logger.addHandler(file_handler)
+
+        # Console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(simple_formatter)
+        self.logger.addHandler(console_handler)
+
+        # Log startup
+        self.logger.info(f"VideoArticleSummarizer initialized. Log file: {log_file}")
 
     def _find_claude_cli(self):
         """Find Claude CLI executable"""
@@ -56,12 +95,14 @@ class VideoArticleSummarizer:
         # Limit length
         return filename[:100] if filename else "untitled_article"
 
-    def _extract_video_urls(self, soup, page_content):
-        """Extract video URLs from page content"""
-        video_info = {
+    def _extract_media_urls(self, soup, page_content):
+        """Extract video and audio URLs from page content"""
+        media_info = {
             'youtube_urls': [],
             'video_embeds': [],
-            'iframe_sources': []
+            'iframe_sources': [],
+            'audio_urls': [],
+            'podcast_info': {}
         }
 
         # Extract YouTube URLs from various sources
@@ -78,7 +119,7 @@ class VideoArticleSummarizer:
                 video_id = match
                 if video_id not in found_video_ids:
                     found_video_ids.add(video_id)
-                    video_info['youtube_urls'].append({
+                    media_info['youtube_urls'].append({
                         'url': f"https://www.youtube.com/watch?v={video_id}",
                         'video_id': video_id,
                         'embed_url': f"https://www.youtube.com/embed/{video_id}"
@@ -93,18 +134,59 @@ class VideoArticleSummarizer:
                     video_id_match = re.search(r'/embed/([a-zA-Z0-9_-]{11})', src)
                     if video_id_match:
                         video_id = video_id_match.group(1)
-                        video_info['iframe_sources'].append({
+                        media_info['iframe_sources'].append({
                             'src': src,
                             'video_id': video_id,
                             'platform': 'youtube'
                         })
                 else:
-                    video_info['iframe_sources'].append({
+                    media_info['iframe_sources'].append({
                         'src': src,
                         'platform': 'other'
                     })
 
-        return video_info
+        # Extract audio URLs and podcast information
+        # Look for Substack audio uploads
+        substack_audio_pattern = r'api\.substack\.com/api/v1/audio/upload/([a-f0-9-]+)/src'
+        substack_matches = re.findall(substack_audio_pattern, page_content)
+        for audio_id in substack_matches:
+            audio_url = f"https://api.substack.com/api/v1/audio/upload/{audio_id}/src"
+            media_info['audio_urls'].append({
+                'url': audio_url,
+                'platform': 'substack',
+                'type': 'podcast',
+                'audio_id': audio_id
+            })
+
+        # Look for other audio file patterns
+        audio_patterns = [
+            r'(https?://[^\s<>"]+\.mp3[^\s<>"]*)',
+            r'(https?://[^\s<>"]+\.wav[^\s<>"]*)',
+            r'(https?://[^\s<>"]+\.m4a[^\s<>"]*)',
+            r'(https?://[^\s<>"]+\.ogg[^\s<>"]*)'
+        ]
+
+        for pattern in audio_patterns:
+            matches = re.findall(pattern, page_content)
+            for audio_url in matches:
+                media_info['audio_urls'].append({
+                    'url': audio_url,
+                    'platform': 'direct',
+                    'type': 'audio_file'
+                })
+
+        # Extract podcast metadata from page
+        podcast_title = soup.find('meta', property='og:title')
+        podcast_description = soup.find('meta', property='og:description')
+
+        if podcast_title or podcast_description:
+            media_info['podcast_info'] = {
+                'title': podcast_title.get('content') if podcast_title else '',
+                'description': podcast_description.get('content') if podcast_description else '',
+                'has_audio': len(media_info['audio_urls']) > 0
+            }
+
+        return media_info
 
     def _extract_youtube_transcript(self, video_id):
         """Extract transcript from YouTube video if available"""
@@ -203,38 +285,56 @@ class VideoArticleSummarizer:
             title = soup.find('title')
             title = title.get_text().strip() if title else "Untitled Article"
 
-            # Extract video information
-            video_info = self._extract_video_urls(soup, response.text)
+            # Extract video and audio information
+            media_info = self._extract_media_urls(soup, response.text)
 
-            # Determine if video content exists
+            # Determine if media content exists
             has_video_indicators = (
-                len(video_info['youtube_urls']) > 0 or
-                len(video_info['iframe_sources']) > 0 or
+                len(media_info['youtube_urls']) > 0 or
+                len(media_info['iframe_sources']) > 0 or
                 'youtube.com' in response.text or
                 'youtu.be' in response.text or
                 soup.find('video') is not None
             )
 
+            has_audio_indicators = (
+                len(media_info['audio_urls']) > 0 or
+                'substack.com/api/v1/audio' in response.text or
+                soup.find('audio') is not None or
+                'podcast' in response.text.lower()
+            )
+
             # Extract YouTube transcripts if videos found
             transcripts = {}
-            if video_info['youtube_urls']:
-                print("   Found YouTube videos, extracting transcripts...")
-                for video in video_info['youtube_urls']:
+            if media_info['youtube_urls']:
+                self.logger.info("   Found YouTube videos, extracting transcripts...")
+                for video in media_info['youtube_urls']:
                     video_id = video['video_id']
-                    print(f"     Extracting transcript for: {video_id}")
+                    self.logger.info(f"     Extracting transcript for: {video_id}")
                     transcript_data = self._extract_youtube_transcript(video_id)
                     transcripts[video_id] = transcript_data
                     if transcript_data['success']:
-                        print(f"     ✓ Transcript extracted ({transcript_data['type']})")
+                        self.logger.info(f"     ✓ Transcript extracted ({transcript_data['type']})")
                     else:
-                        print(f"     ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
+                        self.logger.info(f"     ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
+
+            # Log audio content found
+            if media_info['audio_urls']:
+                self.logger.info(f"   Found {len(media_info['audio_urls'])} audio file(s)")
+                for audio in media_info['audio_urls']:
+                    self.logger.info(f"     Audio: {audio['platform']} - {audio['type']}")
+                    if audio['platform'] == 'substack':
+                        self.logger.info(f"     Audio ID: {audio['audio_id']}")
+                        # Note: Substack audio transcription would require additional API access
+                        self.logger.info("     Note: Substack audio transcription requires manual processing or external service")
 
             return {
                 'title': title,
                 'url': url,
                 'domain': urlparse(url).netloc,
                 'has_video_indicators': has_video_indicators,
-                'video_info': video_info,
+                'has_audio_indicators': has_audio_indicators,
+                'media_info': media_info,
                 'transcripts': transcripts,
                 'extracted_at': datetime.now().isoformat()
             }
@@ -245,7 +345,14 @@ class VideoArticleSummarizer:
                 'url': url,
                 'domain': urlparse(url).netloc,
                 'has_video_indicators': False,
-                'video_info': {'youtube_urls': [], 'video_embeds': [], 'iframe_sources': []},
+                'has_audio_indicators': False,
+                'media_info': {
+                    'youtube_urls': [],
+                    'video_embeds': [],
+                    'iframe_sources': [],
+                    'audio_urls': [],
+                    'podcast_info': {}
+                },
                 'transcripts': {},
                 'extraction_error': str(e),
                 'extracted_at': datetime.now().isoformat()
@@ -315,18 +422,34 @@ class VideoArticleSummarizer:
 
     def _generate_summary_with_ai(self, url, metadata):
         """Use AI to generate content summary (non-deterministic part)"""
-        video_context = ""
+        media_context = ""
         transcript_context = ""
 
-        if metadata.get('video_info') and metadata['video_info']['youtube_urls']:
-            video_context = f"""
-        IMPORTANT: This article contains video content. Video URLs found: {metadata['video_info']['youtube_urls']}
+        # Handle video content
+        if metadata.get('media_info') and metadata['media_info']['youtube_urls']:
+            media_context += f"""
+        IMPORTANT: This article contains video content. Video URLs found: {metadata['media_info']['youtube_urls']}
 
         Please focus on extracting video timestamps with the following format:
         - Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
         - Provide detailed descriptions of what happens at each timestamp
         - Aim for 5-8 key timestamps that represent the most valuable content
         - Include timestamps for: key insights, important discussions, actionable advice, demonstrations
+        """
+
+        # Handle audio/podcast content
+        if metadata.get('media_info') and metadata['media_info']['audio_urls']:
+            media_context += f"""
+        IMPORTANT: This article contains audio/podcast content. Audio URLs found: {metadata['media_info']['audio_urls']}
+
+        This appears to be a podcast episode. Please:
+        - Identify key discussion points and insights from the conversation
+        - Extract actionable advice or key takeaways
+        - Note the participants/speakers if mentioned in the content
+        - Provide time-based highlights if duration information is available
+        - Focus on the most valuable segments for listeners
+
+        Audio Platform: {metadata['media_info']['audio_urls'][0]['platform'] if metadata['media_info']['audio_urls'] else 'unknown'}
         """
 
         # Include transcript data if available
@@ -358,10 +481,10 @@ class VideoArticleSummarizer:
         Create a comprehensive summary with the following structure:
         1. Write a clear, structured summary (max 1000 words) in HTML format
         2. Extract 5-8 key insights as bullet points
-        3. If video content exists, identify specific timestamps with detailed descriptions
+        3. If video/audio content exists, identify specific timestamps with detailed descriptions
         4. List recommended sections for readers
 
-        {video_context}
+        {media_context}
         {transcript_context}
 
         Please provide a clean, well-formatted response focusing on the content value rather than technical processing details.
@@ -372,9 +495,11 @@ class VideoArticleSummarizer:
         {{
             "summary": "HTML formatted summary content",
             "key_insights": ["insight 1", "insight 2", ...],
-            "video_timestamps": [{{"time": "MM:SS", "description": "detailed description of what happens at this time"}}, ...],
+            "media_timestamps": [{{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio"}}, ...],
             "recommended_sections": ["section 1", "section 2", ...]
         }}
+
+        Note: For audio content, if no specific timestamps are available, focus on key discussion topics and insights instead.
         """
 
         response = self._call_claude_api(prompt)
@@ -397,7 +522,7 @@ class VideoArticleSummarizer:
             return {
                 "summary": formatted_summary,
                 "key_insights": ["Content analyzed - see summary for details"],
-                "video_timestamps": [],
+                "media_timestamps": [],
                 "recommended_sections": []
             }
 
@@ -419,13 +544,13 @@ class VideoArticleSummarizer:
             return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
         return 0
 
-    def _generate_video_embed_html(self, metadata):
-        """Generate video embed HTML if video URLs are found"""
-        video_info = metadata.get('video_info', {})
+    def _generate_media_embed_html(self, metadata):
+        """Generate video and audio embed HTML if media URLs are found"""
+        media_info = metadata.get('media_info', {})
 
-        # Prioritize YouTube embeds
-        if video_info.get('youtube_urls'):
-            video_data = video_info['youtube_urls'][0]  # Use first video found
+        # Prioritize YouTube embeds for video content
+        if media_info.get('youtube_urls'):
+            video_data = media_info['youtube_urls'][0]  # Use first video found
             video_id = video_data['video_id']
 
             embed_html = f'''
@@ -441,9 +566,9 @@ class VideoArticleSummarizer:
     </div>'''
             return embed_html
 
-        elif video_info.get('iframe_sources'):
+        elif media_info.get('iframe_sources'):
             # Use first iframe source
-            iframe_data = video_info['iframe_sources'][0]
+            iframe_data = media_info['iframe_sources'][0]
             if iframe_data.get('platform') == 'youtube':
                 video_id = iframe_data.get('video_id')
                 embed_html = f'''
@@ -459,15 +584,56 @@ class VideoArticleSummarizer:
     </div>'''
                 return embed_html
 
+        # Handle audio content (podcasts, etc.)
+        elif media_info.get('audio_urls'):
+            audio_data = media_info['audio_urls'][0]  # Use first audio found
+
+            if audio_data['platform'] == 'substack':
+                audio_id = audio_data['audio_id']
+                embed_html = f'''
+    <div class="audio-container">
+        <h2>🎧 Listen to the Podcast</h2>
+        <div class="audio-embed">
+            <audio controls style="width: 100%; max-width: 600px;">
+                <source src="{audio_data['url']}" type="audio/mpeg">
+                <p>Your browser doesn't support HTML5 audio.
+                <a href="{audio_data['url']}">Download the audio file</a>.</p>
+            </audio>
+        </div>
+        <p class="audio-info">
+            <strong>Platform:</strong> Substack Podcast<br>
+            <strong>Audio ID:</strong> {audio_id}
+        </p>
+    </div>'''
+                return embed_html
+            else:
+                # Generic audio player for other audio files
+                embed_html = f'''
+    <div class="audio-container">
+        <h2>🎧 Listen to the Audio</h2>
+        <div class="audio-embed">
+            <audio controls style="width: 100%; max-width: 600px;">
+                <source src="{audio_data['url']}" type="audio/mpeg">
+                <p>Your browser doesn't support HTML5 audio.
+                <a href="{audio_data['url']}">Download the audio file</a>.</p>
+            </audio>
+        </div>
+        <p class="audio-info">
+            <strong>Platform:</strong> {audio_data['platform'].title()}<br>
+            <strong>Type:</strong> {audio_data['type'].replace('_', ' ').title()}
+        </p>
+    </div>'''
+                return embed_html
+
         return ''
 
     def _generate_section_html(self, ai_summary, metadata):
         """Generate dynamic HTML sections based on AI summary content"""
         sections = {}
 
-        # Generate video embed section
-        video_embed = self._generate_video_embed_html(metadata)
-        sections['VIDEO_EMBED_SECTION'] = video_embed
+        # Generate media embed section (video/audio)
+        media_embed = self._generate_media_embed_html(metadata)
+        sections['MEDIA_EMBED_SECTION'] = media_embed
 
         # Generate insights section
         insights = ai_summary.get('key_insights', [])
@@ -480,35 +646,76 @@ class VideoArticleSummarizer:
         else:
             sections['INSIGHTS_SECTION'] = ''
 
-        # Generate interactive video timestamps section
-        timestamps = ai_summary.get('video_timestamps', [])
-        video_info = metadata.get('video_info', {})
+        # Generate interactive media timestamps section (video/audio)
+        timestamps = ai_summary.get('media_timestamps', [])  # Updated to use media_timestamps
+        media_info = metadata.get('media_info', {})
 
-        if timestamps and video_info.get('youtube_urls'):
-            video_id = video_info['youtube_urls'][0]['video_id']
-            timestamps_html = '<div class="video-timestamps"><h3>🎬 Interactive Video Highlights</h3>'
-            timestamps_html += '<p><em>Click timestamps to jump to that part of the video:</em></p><ul>'
+        if timestamps:
+            # Check if we have video content with interactivity
+            if media_info.get('youtube_urls'):
+                video_id = media_info['youtube_urls'][0]['video_id']
+                timestamps_html = '<div class="video-timestamps"><h3>🎬 Interactive Video Highlights</h3>'
+                timestamps_html += '<p><em>Click timestamps to jump to that part of the video:</em></p><ul>'
 
-            for ts in timestamps:
-                time_str = ts.get("time", "0:00")
-                description = ts.get("description", "No description")
-                seconds = self._convert_timestamp_to_seconds(time_str)
+                for ts in timestamps:
+                    time_str = ts.get("time", "0:00")
+                    description = ts.get("description", "No description")
+                    media_type = ts.get("type", "video")
+                    seconds = self._convert_timestamp_to_seconds(time_str)
 
-                timestamps_html += f'''
-                <li class="timestamp-item">
-                    <span class="timestamp-link" onclick="jumpToTime({seconds})">
-                        <strong>{time_str}</strong>
-                    </span>
-                    <button class="play-button" onclick="jumpToTime({seconds})">▶ Play</button>
-                    <br>
-                    <span class="timestamp-description">{description}</span>
-                </li>'''
+                    timestamps_html += f'''
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime({seconds})">
+                            <strong>{time_str}</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime({seconds})">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">{description}</span>
+                    </li>'''
 
-            timestamps_html += '</ul></div>'
-            sections['TIMESTAMPS_SECTION'] = timestamps_html
+                timestamps_html += '</ul></div>'
+                sections['TIMESTAMPS_SECTION'] = timestamps_html
+                sections['VIDEO_ID'] = video_id
 
-            # Add video ID for JavaScript
-            sections['VIDEO_ID'] = video_id
+            # Handle audio content (non-interactive timestamps)
+            elif media_info.get('audio_urls'):
+                timestamps_html = '<div class="audio-timestamps"><h3>🎧 Audio Highlights</h3>'
+                timestamps_html += '<p><em>Key moments from the audio content:</em></p><ul>'
+
+                for ts in timestamps:
+                    time_str = ts.get("time", "")
+                    description = ts.get("description", "No description")
+                    media_type = ts.get("type", "audio")
+
+                    if time_str:
+                        timestamps_html += f'''
+                        <li class="timestamp-item">
+                            <strong>{time_str}</strong> - {description}
+                        </li>'''
+                    else:
+                        # If no time available, just show as discussion point
+                        timestamps_html += f'''
+                        <li class="timestamp-item">
+                            • {description}
+                        </li>'''
+
+                timestamps_html += '</ul></div>'
+                sections['TIMESTAMPS_SECTION'] = timestamps_html
+                sections['VIDEO_ID'] = ''  # No video ID for audio
+
+            else:
+                # Generic timestamps (neither video nor audio detected)
+                timestamps_html = '<div class="media-timestamps"><h3>📋 Key Points</h3><ul>'
+                for ts in timestamps:
+                    time_str = ts.get("time", "")
+                    description = ts.get("description", "No description")
+                    if time_str:
+                        timestamps_html += f'<li><strong>{time_str}</strong> - {description}</li>'
+                    else:
+                        timestamps_html += f'<li>• {description}</li>'
+                timestamps_html += '</ul></div>'
+                sections['TIMESTAMPS_SECTION'] = timestamps_html
+                sections['VIDEO_ID'] = ''
         else:
             sections['TIMESTAMPS_SECTION'] = ''
             sections['VIDEO_ID'] = ''
@@ -540,6 +747,7 @@ class VideoArticleSummarizer:
             'URL': metadata['url'],
             'EXTRACTED_AT': metadata['extracted_at'],
             'HAS_VIDEO': 'Yes' if metadata.get('has_video_indicators') else 'No',
+            'HAS_AUDIO': 'Yes' if metadata.get('has_audio_indicators') else 'No',
             'SUMMARY_CONTENT': ai_summary.get('summary', 'Summary not available'),
             'GENERATION_DATE': datetime.now().strftime('%B %d, %Y'),
             **sections
@@ -557,12 +765,13 @@ class VideoArticleSummarizer:
         stats = {
             'total_articles': len(articles_data),
             'video_articles': 0,
+            'audio_articles': 0,
             'domains': set(),
             'last_updated': datetime.now().strftime('%B %d, %Y at %I:%M %p')
         }
 
         for article in articles_data:
-            # Check if article has video indicators
+            # Check if article has video or audio indicators
             article_path = self.html_dir / article['filename']
             if article_path.exists():
                 try:
@@ -570,6 +779,8 @@ class VideoArticleSummarizer:
                         content = f.read()
                         if 'video-container' in content or 'Video Content:</strong> Yes' in content:
                             stats['video_articles'] += 1
+                        if 'audio-container' in content or 'Audio Content:</strong> Yes' in content:
+                            stats['audio_articles'] += 1
                 except:
                     pass
 
@@ -592,14 +803,16 @@ class VideoArticleSummarizer:
             description = article['description']
             is_updated = 'Updated on' in description
 
-            # Check if article has video
+            # Check if article has video or audio
             has_video = False
+            has_audio = False
             article_path = self.html_dir / filename
             if article_path.exists():
                 try:
                     with open(article_path, 'r') as f:
                         content = f.read()
                         has_video = 'video-container' in content or 'Video Content:</strong> Yes' in content
+                        has_audio = 'audio-container' in content or 'Audio Content:</strong> Yes' in content
                 except:
                     pass
 
@@ -607,6 +820,8 @@ class VideoArticleSummarizer:
             indicators = ""
             if has_video:
                 indicators += '<span class="video-indicator">📹 VIDEO</span>'
+            if has_audio:
+                indicators += '<span class="audio-indicator">🎧 AUDIO</span>'
             if is_updated:
                 indicators += '<span class="updated-indicator">🔄 UPDATED</span>'
 
@@ -683,6 +898,7 @@ class VideoArticleSummarizer:
         template_vars = {
             'TOTAL_ARTICLES': str(stats['total_articles']),
             'VIDEO_ARTICLES': str(stats['video_articles']),
+            'AUDIO_ARTICLES': str(stats['audio_articles']),
             'DOMAINS_COUNT': str(stats['domains_count']),
             'ARTICLES_LIST': articles_list_html,
             'LAST_UPDATED': stats['last_updated']
@@ -723,48 +939,48 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             return True
 
         except subprocess.CalledProcessError as e:
-            print(f"Git operation failed: {e}")
+            self.logger.error(f"Git operation failed: {e}")
             return False
 
     def process_article(self, url):
         """Main processing pipeline"""
-        print(f"Processing article: {url}")
+        self.logger.info(f"Processing article: {url}")
 
         # Step 1: Extract basic metadata (deterministic)
-        print("1. Extracting metadata...")
+        self.logger.info("1. Extracting metadata...")
         metadata = self._extract_basic_metadata(url)
-        print(f"   Title: {metadata['title']}")
+        self.logger.info(f"   Title: {metadata['title']}")
 
         # Step 2: Generate filename (deterministic)
         filename = self._sanitize_filename(metadata['title']) + '.html'
-        print(f"   Filename: {filename}")
+        self.logger.info(f"   Filename: {filename}")
 
         # Step 3: AI-powered content analysis (non-deterministic)
-        print("2. Analyzing content with AI...")
+        self.logger.info("2. Analyzing content with AI...")
         ai_summary = self._generate_summary_with_ai(url, metadata)
 
         # Step 4: Generate HTML (deterministic template)
-        print("3. Generating HTML...")
+        self.logger.info("3. Generating HTML...")
         html_content = self._generate_html_content(metadata, ai_summary)
 
         # Step 5: Write file (deterministic)
         html_path = self.html_dir / filename
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
-        print(f"   Created: {html_path}")
+        self.logger.info(f"   Created: {html_path}")
 
         # Step 6: Update index (deterministic)
-        print("4. Updating index...")
+        self.logger.info("4. Updating index...")
         self._update_index_html(filename, metadata['title'], metadata)
 
         # Step 7: Git operations (deterministic)
-        print("5. Committing to git...")
+        self.logger.info("5. Committing to git...")
         if self._git_commit_and_push(filename):
-            print("✅ Successfully committed and pushed to GitHub")
+            self.logger.info("✅ Successfully committed and pushed to GitHub")
         else:
-            print("❌ Git operations failed")
+            self.logger.error("❌ Git operations failed")
 
-        print(f"✅ Processing complete: {filename}")
+        self.logger.info(f"✅ Processing complete: {filename}")
         return filename
 
 def main():
@@ -777,9 +993,13 @@ def main():
 
     try:
         result = summarizer.process_article(url)
-        print(f"Success! Generated: {result}")
+        summarizer.logger.info(f"Success! Generated: {result}")
+        print(f"Success! Generated: {result}")  # Also print to stdout for slash command
     except Exception as e:
-        print(f"Error: {e}")
+        error_msg = f"Error: {e}"
+        if hasattr(summarizer, 'logger'):
+            summarizer.logger.error(error_msg)
+        print(error_msg)
         sys.exit(1)
 
 if __name__ == "__main__":
