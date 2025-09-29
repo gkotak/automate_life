@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+from youtube_transcript_api import YouTubeTranscriptApi
 
 class VideoArticleSummarizer:
     def __init__(self, base_dir="/Users/gauravkotak/cursor-projects-1/automate_life"):
@@ -55,6 +56,138 @@ class VideoArticleSummarizer:
         # Limit length
         return filename[:100] if filename else "untitled_article"
 
+    def _extract_video_urls(self, soup, page_content):
+        """Extract video URLs from page content"""
+        video_info = {
+            'youtube_urls': [],
+            'video_embeds': [],
+            'iframe_sources': []
+        }
+
+        # Extract YouTube URLs from various sources
+        youtube_patterns = [
+            r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+            r'youtu\.be/([a-zA-Z0-9_-]{11})'
+        ]
+
+        found_video_ids = set()
+        for pattern in youtube_patterns:
+            matches = re.findall(pattern, page_content)
+            for match in matches:
+                video_id = match
+                if video_id not in found_video_ids:
+                    found_video_ids.add(video_id)
+                    video_info['youtube_urls'].append({
+                        'url': f"https://www.youtube.com/watch?v={video_id}",
+                        'video_id': video_id,
+                        'embed_url': f"https://www.youtube.com/embed/{video_id}"
+                    })
+
+        # Extract iframe sources
+        iframes = soup.find_all('iframe')
+        for iframe in iframes:
+            src = iframe.get('src')
+            if src:
+                if 'youtube.com/embed' in src:
+                    video_id_match = re.search(r'/embed/([a-zA-Z0-9_-]{11})', src)
+                    if video_id_match:
+                        video_id = video_id_match.group(1)
+                        video_info['iframe_sources'].append({
+                            'src': src,
+                            'video_id': video_id,
+                            'platform': 'youtube'
+                        })
+                else:
+                    video_info['iframe_sources'].append({
+                        'src': src,
+                        'platform': 'other'
+                    })
+
+        return video_info
+
+    def _extract_youtube_transcript(self, video_id):
+        """Extract transcript from YouTube video if available"""
+        try:
+            # Initialize the API instance
+            ytt_api = YouTubeTranscriptApi()
+
+            # Try to get transcript (both manual and auto-generated)
+            transcript_list = ytt_api.list(video_id)
+
+            # Try to get a manually created transcript first
+            try:
+                transcript = transcript_list.find_manually_created_transcript(['en'])
+                transcript_data = transcript.fetch()
+                # Convert FetchedTranscript to list of dicts for JSON serialization
+                transcript_list_data = []
+                for entry in transcript_data:
+                    transcript_list_data.append({
+                        'start': entry.start,
+                        'text': entry.text,
+                        'duration': getattr(entry, 'duration', 0)
+                    })
+                return {
+                    'success': True,
+                    'type': 'manual',
+                    'transcript': transcript_list_data,
+                    'language': 'en'
+                }
+            except:
+                # Fall back to auto-generated transcript
+                try:
+                    transcript = transcript_list.find_generated_transcript(['en'])
+                    transcript_data = transcript.fetch()
+                    # Convert FetchedTranscript to list of dicts for JSON serialization
+                    transcript_list_data = []
+                    for entry in transcript_data:
+                        transcript_list_data.append({
+                            'start': entry.start,
+                            'text': entry.text,
+                            'duration': getattr(entry, 'duration', 0)
+                        })
+                    return {
+                        'success': True,
+                        'type': 'auto_generated',
+                        'transcript': transcript_list_data,
+                        'language': 'en'
+                    }
+                except:
+                    return {
+                        'success': False,
+                        'error': 'No English transcript available',
+                        'transcript': []
+                    }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Failed to fetch transcript: {str(e)}',
+                'transcript': []
+            }
+
+    def _format_transcript_for_analysis(self, transcript_data):
+        """Format transcript data into readable text for AI analysis"""
+        if not transcript_data or not transcript_data.get('success'):
+            return ""
+
+        transcript = transcript_data.get('transcript', [])
+        formatted_text = []
+
+        for entry in transcript:
+            # Handle dict objects (converted from FetchedTranscript)
+            start_time = entry.get('start', 0)
+            text = entry.get('text', '').strip()
+
+            # Convert seconds to MM:SS format
+            minutes = int(start_time // 60)
+            seconds = int(start_time % 60)
+            timestamp = f"{minutes}:{seconds:02d}"
+
+            if text:
+                formatted_text.append(f"[{timestamp}] {text}")
+
+        return "\n".join(formatted_text)
+
     def _extract_basic_metadata(self, url):
         """Extract basic metadata from URL (deterministic part)"""
         try:
@@ -70,16 +203,39 @@ class VideoArticleSummarizer:
             title = soup.find('title')
             title = title.get_text().strip() if title else "Untitled Article"
 
-            # Look for video indicators
-            has_youtube = 'youtube.com' in response.text or 'youtu.be' in response.text
-            has_video_tag = soup.find('video') is not None
-            has_iframe = soup.find('iframe') is not None
+            # Extract video information
+            video_info = self._extract_video_urls(soup, response.text)
+
+            # Determine if video content exists
+            has_video_indicators = (
+                len(video_info['youtube_urls']) > 0 or
+                len(video_info['iframe_sources']) > 0 or
+                'youtube.com' in response.text or
+                'youtu.be' in response.text or
+                soup.find('video') is not None
+            )
+
+            # Extract YouTube transcripts if videos found
+            transcripts = {}
+            if video_info['youtube_urls']:
+                print("   Found YouTube videos, extracting transcripts...")
+                for video in video_info['youtube_urls']:
+                    video_id = video['video_id']
+                    print(f"     Extracting transcript for: {video_id}")
+                    transcript_data = self._extract_youtube_transcript(video_id)
+                    transcripts[video_id] = transcript_data
+                    if transcript_data['success']:
+                        print(f"     ✓ Transcript extracted ({transcript_data['type']})")
+                    else:
+                        print(f"     ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
 
             return {
                 'title': title,
                 'url': url,
                 'domain': urlparse(url).netloc,
-                'has_video_indicators': has_youtube or has_video_tag or has_iframe,
+                'has_video_indicators': has_video_indicators,
+                'video_info': video_info,
+                'transcripts': transcripts,
                 'extracted_at': datetime.now().isoformat()
             }
 
@@ -89,6 +245,8 @@ class VideoArticleSummarizer:
                 'url': url,
                 'domain': urlparse(url).netloc,
                 'has_video_indicators': False,
+                'video_info': {'youtube_urls': [], 'video_embeds': [], 'iframe_sources': []},
+                'transcripts': {},
                 'extraction_error': str(e),
                 'extracted_at': datetime.now().isoformat()
             }
@@ -157,14 +315,54 @@ class VideoArticleSummarizer:
 
     def _generate_summary_with_ai(self, url, metadata):
         """Use AI to generate content summary (non-deterministic part)"""
+        video_context = ""
+        transcript_context = ""
+
+        if metadata.get('video_info') and metadata['video_info']['youtube_urls']:
+            video_context = f"""
+        IMPORTANT: This article contains video content. Video URLs found: {metadata['video_info']['youtube_urls']}
+
+        Please focus on extracting video timestamps with the following format:
+        - Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
+        - Provide detailed descriptions of what happens at each timestamp
+        - Aim for 5-8 key timestamps that represent the most valuable content
+        - Include timestamps for: key insights, important discussions, actionable advice, demonstrations
+        """
+
+        # Include transcript data if available
+        if metadata.get('transcripts'):
+            available_transcripts = []
+            for video_id, transcript_data in metadata['transcripts'].items():
+                if transcript_data.get('success'):
+                    formatted_transcript = self._format_transcript_for_analysis(transcript_data)
+                    if formatted_transcript:
+                        available_transcripts.append(f"""
+        VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
+        {formatted_transcript[:5000]}...  # Truncated for prompt size
+        """)
+
+            if available_transcripts:
+                transcript_context = f"""
+        TRANSCRIPT DATA AVAILABLE: The following are actual transcripts from the YouTube videos.
+        Use these to create ACCURATE timestamps and content descriptions:
+
+        {''.join(available_transcripts)}
+
+        Since you have the actual transcript, please provide precise timestamps that match the actual content,
+        not estimates. Focus on the most valuable parts of the video content.
+        """
+
         prompt = f"""
         Analyze this article: {url}
 
         Create a comprehensive summary with the following structure:
         1. Write a clear, structured summary (max 1000 words) in HTML format
         2. Extract 5-8 key insights as bullet points
-        3. If video content exists, identify timestamps with descriptions
+        3. If video content exists, identify specific timestamps with detailed descriptions
         4. List recommended sections for readers
+
+        {video_context}
+        {transcript_context}
 
         Please provide a clean, well-formatted response focusing on the content value rather than technical processing details.
 
@@ -174,7 +372,7 @@ class VideoArticleSummarizer:
         {{
             "summary": "HTML formatted summary content",
             "key_insights": ["insight 1", "insight 2", ...],
-            "video_timestamps": [{{"time": "MM:SS", "description": "what happens"}}, ...],
+            "video_timestamps": [{{"time": "MM:SS", "description": "detailed description of what happens at this time"}}, ...],
             "recommended_sections": ["section 1", "section 2", ...]
         }}
         """
@@ -212,9 +410,64 @@ class VideoArticleSummarizer:
         except FileNotFoundError:
             raise FileNotFoundError(f"Template not found: {template_path}")
 
-    def _generate_section_html(self, ai_summary):
+    def _convert_timestamp_to_seconds(self, timestamp):
+        """Convert MM:SS or H:MM:SS timestamp to seconds"""
+        parts = timestamp.split(':')
+        if len(parts) == 2:  # MM:SS
+            return int(parts[0]) * 60 + int(parts[1])
+        elif len(parts) == 3:  # H:MM:SS
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        return 0
+
+    def _generate_video_embed_html(self, metadata):
+        """Generate video embed HTML if video URLs are found"""
+        video_info = metadata.get('video_info', {})
+
+        # Prioritize YouTube embeds
+        if video_info.get('youtube_urls'):
+            video_data = video_info['youtube_urls'][0]  # Use first video found
+            video_id = video_data['video_id']
+
+            embed_html = f'''
+    <div class="video-container">
+        <h2>🎥 Watch the Video</h2>
+        <div class="video-embed">
+            <iframe
+                src="https://www.youtube.com/embed/{video_id}?enablejsapi=1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>'''
+            return embed_html
+
+        elif video_info.get('iframe_sources'):
+            # Use first iframe source
+            iframe_data = video_info['iframe_sources'][0]
+            if iframe_data.get('platform') == 'youtube':
+                video_id = iframe_data.get('video_id')
+                embed_html = f'''
+    <div class="video-container">
+        <h2>🎥 Watch the Video</h2>
+        <div class="video-embed">
+            <iframe
+                src="https://www.youtube.com/embed/{video_id}?enablejsapi=1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>'''
+                return embed_html
+
+        return ''
+
+    def _generate_section_html(self, ai_summary, metadata):
         """Generate dynamic HTML sections based on AI summary content"""
         sections = {}
+
+        # Generate video embed section
+        video_embed = self._generate_video_embed_html(metadata)
+        sections['VIDEO_EMBED_SECTION'] = video_embed
 
         # Generate insights section
         insights = ai_summary.get('key_insights', [])
@@ -227,15 +480,38 @@ class VideoArticleSummarizer:
         else:
             sections['INSIGHTS_SECTION'] = ''
 
-        # Generate video timestamps section
-        if ai_summary.get('video_timestamps'):
-            timestamps_html = '<div class="video-timestamps"><h3>🎥 Key Video Timestamps</h3><ul>'
-            for ts in ai_summary['video_timestamps']:
-                timestamps_html += f'<li><strong>{ts.get("time", "N/A")}</strong> - {ts.get("description", "No description")}</li>'
+        # Generate interactive video timestamps section
+        timestamps = ai_summary.get('video_timestamps', [])
+        video_info = metadata.get('video_info', {})
+
+        if timestamps and video_info.get('youtube_urls'):
+            video_id = video_info['youtube_urls'][0]['video_id']
+            timestamps_html = '<div class="video-timestamps"><h3>🎬 Interactive Video Highlights</h3>'
+            timestamps_html += '<p><em>Click timestamps to jump to that part of the video:</em></p><ul>'
+
+            for ts in timestamps:
+                time_str = ts.get("time", "0:00")
+                description = ts.get("description", "No description")
+                seconds = self._convert_timestamp_to_seconds(time_str)
+
+                timestamps_html += f'''
+                <li class="timestamp-item">
+                    <span class="timestamp-link" onclick="jumpToTime({seconds})">
+                        <strong>{time_str}</strong>
+                    </span>
+                    <button class="play-button" onclick="jumpToTime({seconds})">▶ Play</button>
+                    <br>
+                    <span class="timestamp-description">{description}</span>
+                </li>'''
+
             timestamps_html += '</ul></div>'
             sections['TIMESTAMPS_SECTION'] = timestamps_html
+
+            # Add video ID for JavaScript
+            sections['VIDEO_ID'] = video_id
         else:
             sections['TIMESTAMPS_SECTION'] = ''
+            sections['VIDEO_ID'] = ''
 
         # Generate recommended sections
         if ai_summary.get('recommended_sections'):
@@ -255,7 +531,7 @@ class VideoArticleSummarizer:
         template = self._load_template()
 
         # Generate dynamic sections
-        sections = self._generate_section_html(ai_summary)
+        sections = self._generate_section_html(ai_summary, metadata)
 
         # Prepare template variables
         template_vars = {
@@ -276,115 +552,150 @@ class VideoArticleSummarizer:
 
         return html_content
 
-    def _update_index_html(self, new_filename, title):
-        """Update index.html with new article (deterministic operation)"""
+    def _collect_index_statistics(self, articles_data):
+        """Collect statistics about the article collection"""
+        stats = {
+            'total_articles': len(articles_data),
+            'video_articles': 0,
+            'domains': set(),
+            'last_updated': datetime.now().strftime('%B %d, %Y at %I:%M %p')
+        }
+
+        for article in articles_data:
+            # Check if article has video indicators
+            article_path = self.html_dir / article['filename']
+            if article_path.exists():
+                try:
+                    with open(article_path, 'r') as f:
+                        content = f.read()
+                        if 'video-container' in content or 'Video Content:</strong> Yes' in content:
+                            stats['video_articles'] += 1
+                except:
+                    pass
+
+            # Extract domain from URL if available
+            if 'url' in article:
+                domain = urlparse(article['url']).netloc
+                if domain:
+                    stats['domains'].add(domain)
+
+        stats['domains_count'] = len(stats['domains'])
+        return stats
+
+    def _generate_articles_list_html(self, articles_data):
+        """Generate HTML for articles list"""
+        articles_html = ""
+
+        for article in articles_data:
+            filename = article['filename']
+            title = article['title']
+            description = article['description']
+            is_updated = 'Updated on' in description
+
+            # Check if article has video
+            has_video = False
+            article_path = self.html_dir / filename
+            if article_path.exists():
+                try:
+                    with open(article_path, 'r') as f:
+                        content = f.read()
+                        has_video = 'video-container' in content or 'Video Content:</strong> Yes' in content
+                except:
+                    pass
+
+            # Generate indicators
+            indicators = ""
+            if has_video:
+                indicators += '<span class="video-indicator">📹 VIDEO</span>'
+            if is_updated:
+                indicators += '<span class="updated-indicator">🔄 UPDATED</span>'
+
+            articles_html += f'''
+        <li class="article-item">
+            <a href="{filename}" class="article-title">{title}{indicators}</a>
+            <p class="article-description">{description}</p>
+        </li>'''
+
+        return articles_html
+
+    def _update_index_html(self, new_filename, title, metadata=None):
+        """Update index.html with new article using external template"""
         index_path = self.html_dir / "index.html"
 
-        if not index_path.exists():
-            # Create initial index.html
-            index_content = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Article Summaries Index</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            line-height: 1.6;
-            color: #333;
-        }
-        h1 {
-            color: #2c3e50;
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 10px;
-            margin-bottom: 30px;
-        }
-        .article-list {
-            list-style: none;
-            padding: 0;
-        }
-        .article-item {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        .article-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        .article-title {
-            font-size: 1.2em;
-            font-weight: 600;
-            color: #2c3e50;
-            text-decoration: none;
-            display: block;
-            margin-bottom: 8px;
-        }
-        .article-title:hover {
-            color: #3498db;
-        }
-        .article-description {
-            color: #666;
-            font-size: 0.9em;
-        }
-        .total-count {
-            color: #666;
-            font-style: italic;
-            margin-bottom: 20px;
-        }
-    </style>
-</head>
-<body>
-    <h1>Article Summaries</h1>
-    <p class="total-count">Total articles: 0</p>
-    <ul class="article-list">
-    </ul>
-</body>
-</html>"""
-            with open(index_path, 'w') as f:
-                f.write(index_content)
+        # Collect existing articles data
+        articles_data = []
 
-        # Read current index
-        with open(index_path, 'r') as f:
-            content = f.read()
+        if index_path.exists():
+            # Parse existing index to extract articles
+            with open(index_path, 'r') as f:
+                content = f.read()
+            soup = BeautifulSoup(content, 'html.parser')
+            article_list = soup.find('ul', class_='article-list')
 
-        # Parse and update
-        soup = BeautifulSoup(content, 'html.parser')
-        article_list = soup.find('ul', class_='article-list')
+            if article_list:
+                for item in article_list.find_all('li', class_='article-item'):
+                    link = item.find('a', class_='article-title')
+                    desc = item.find('p', class_='article-description')
+                    if link and desc:
+                        articles_data.append({
+                            'filename': link.get('href'),
+                            'title': link.get_text().replace('📹 VIDEO', '').replace('🔄 UPDATED', '').strip(),
+                            'description': desc.get_text(),
+                            'url': metadata.get('url', '') if metadata else ''
+                        })
 
-        # Create new article item
-        new_item = soup.new_tag('li', **{'class': 'article-item'})
+        # Check if article already exists and update or add
+        existing_article = None
+        for i, article in enumerate(articles_data):
+            if article['filename'] == new_filename:
+                existing_article = i
+                break
 
-        title_link = soup.new_tag('a', href=new_filename, **{'class': 'article-title'})
-        title_link.string = title
-
-        description = soup.new_tag('p', **{'class': 'article-description'})
-        description.string = f"Generated on {datetime.now().strftime('%B %d, %Y')}"
-
-        new_item.append(title_link)
-        new_item.append(description)
-
-        # Insert at the beginning (reverse chronological order)
-        if article_list.find('li'):
-            article_list.insert(0, new_item)
+        if existing_article is not None:
+            # Update existing article
+            articles_data[existing_article].update({
+                'title': title,
+                'description': f"Updated on {datetime.now().strftime('%B %d, %Y')}",
+                'url': metadata.get('url', '') if metadata else articles_data[existing_article].get('url', '')
+            })
+            # Move to front (most recent)
+            article = articles_data.pop(existing_article)
+            articles_data.insert(0, article)
         else:
-            article_list.append(new_item)
+            # Add new article at the beginning
+            articles_data.insert(0, {
+                'filename': new_filename,
+                'title': title,
+                'description': f"Generated on {datetime.now().strftime('%B %d, %Y')}",
+                'url': metadata.get('url', '') if metadata else ''
+            })
 
-        # Update count
-        count_p = soup.find('p', class_='total-count')
-        current_count = len(article_list.find_all('li'))
-        count_p.string = f"Total articles: {current_count}"
+        # Generate statistics
+        stats = self._collect_index_statistics(articles_data)
 
-        # Write back
+        # Generate articles list HTML
+        articles_list_html = self._generate_articles_list_html(articles_data)
+
+        # Load index template
+        index_template = self._load_template("index.html")
+
+        # Prepare template variables
+        template_vars = {
+            'TOTAL_ARTICLES': str(stats['total_articles']),
+            'VIDEO_ARTICLES': str(stats['video_articles']),
+            'DOMAINS_COUNT': str(stats['domains_count']),
+            'ARTICLES_LIST': articles_list_html,
+            'LAST_UPDATED': stats['last_updated']
+        }
+
+        # Replace template variables
+        index_content = index_template
+        for var, value in template_vars.items():
+            index_content = index_content.replace(f'{{{{{var}}}}}', value)
+
+        # Write updated index
         with open(index_path, 'w') as f:
-            f.write(str(soup))
+            f.write(index_content)
 
     def _git_commit_and_push(self, filename):
         """Handle git operations (deterministic)"""
@@ -444,7 +755,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         # Step 6: Update index (deterministic)
         print("4. Updating index...")
-        self._update_index_html(filename, metadata['title'])
+        self._update_index_html(filename, metadata['title'], metadata)
 
         # Step 7: Git operations (deterministic)
         print("5. Committing to git...")
