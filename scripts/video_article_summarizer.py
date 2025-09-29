@@ -147,114 +147,76 @@ class VideoArticleSummarizer:
                 "recommended_sections": []
             }
 
-    def _generate_html_content(self, metadata, ai_summary):
-        """Generate HTML content (deterministic template)"""
-        timestamp_html = ""
-        if ai_summary.get('video_timestamps'):
-            timestamp_html = "<h3>🎥 Key Video Timestamps</h3><ul>"
-            for ts in ai_summary['video_timestamps']:
-                timestamp_html += f"<li><strong>{ts.get('time', 'N/A')}</strong> - {ts.get('description', 'No description')}</li>"
-            timestamp_html += "</ul>"
+    def _load_template(self, template_name="article_summary.html"):
+        """Load HTML template from templates directory"""
+        template_path = self.base_dir / "scripts" / "templates" / template_name
+        try:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Template not found: {template_path}")
 
-        insights_html = ""
+    def _generate_section_html(self, ai_summary):
+        """Generate dynamic HTML sections based on AI summary content"""
+        sections = {}
+
+        # Generate insights section
         if ai_summary.get('key_insights'):
-            insights_html = "<h3>💡 Key Insights</h3><ul>"
+            insights_html = '<div class="summary-section"><h3>💡 Key Insights</h3><ul>'
             for insight in ai_summary['key_insights']:
-                insights_html += f"<li>{insight}</li>"
-            insights_html += "</ul>"
+                insights_html += f'<li>{insight}</li>'
+            insights_html += '</ul></div>'
+            sections['INSIGHTS_SECTION'] = insights_html
+        else:
+            sections['INSIGHTS_SECTION'] = ''
 
-        html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{metadata['title']} - Summary</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            line-height: 1.6;
-            color: #333;
-        }}
-        .header {{
-            border-bottom: 3px solid #2c5aa0;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }}
-        h1 {{
-            color: #2c5aa0;
-            margin: 0 0 10px 0;
-        }}
-        .metadata {{
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #2c5aa0;
-        }}
-        .summary-section {{
-            margin: 30px 0;
-        }}
-        .summary-section h3 {{
-            color: #1a365d;
-            border-left: 4px solid #2c5aa0;
-            padding-left: 15px;
-        }}
-        ul {{
-            padding-left: 25px;
-        }}
-        li {{
-            margin: 12px 0;
-        }}
-        .source-link {{
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #eee;
-        }}
-        .source-link a {{
-            color: #2c5aa0;
-            text-decoration: none;
-            font-weight: bold;
-        }}
-        .source-link a:hover {{
-            text-decoration: underline;
-        }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>{metadata['title']}</h1>
-        <p><strong>Source:</strong> {metadata['domain']}</p>
-    </div>
+        # Generate video timestamps section
+        if ai_summary.get('video_timestamps'):
+            timestamps_html = '<div class="video-timestamps"><h3>🎥 Key Video Timestamps</h3><ul>'
+            for ts in ai_summary['video_timestamps']:
+                timestamps_html += f'<li><strong>{ts.get("time", "N/A")}</strong> - {ts.get("description", "No description")}</li>'
+            timestamps_html += '</ul></div>'
+            sections['TIMESTAMPS_SECTION'] = timestamps_html
+        else:
+            sections['TIMESTAMPS_SECTION'] = ''
 
-    <div class="metadata">
-        <h2>Article Details</h2>
-        <ul>
-            <li><strong>URL:</strong> <a href="{metadata['url']}" target="_blank">{metadata['url']}</a></li>
-            <li><strong>Domain:</strong> {metadata['domain']}</li>
-            <li><strong>Analyzed:</strong> {metadata['extracted_at']}</li>
-            <li><strong>Video Content:</strong> {'Yes' if metadata.get('has_video_indicators') else 'No'}</li>
-        </ul>
-    </div>
+        # Generate recommended sections
+        if ai_summary.get('recommended_sections'):
+            recommended_html = '<div class="recommended-section"><h3>⭐ Recommended Sections</h3><ul>'
+            for section in ai_summary['recommended_sections']:
+                recommended_html += f'<li>{section}</li>'
+            recommended_html += '</ul></div>'
+            sections['RECOMMENDED_SECTION'] = recommended_html
+        else:
+            sections['RECOMMENDED_SECTION'] = ''
 
-    <div class="summary-section">
-        <h2>Summary</h2>
-        <div>{ai_summary.get('summary', 'Summary not available')}</div>
-    </div>
+        return sections
 
-    {insights_html}
+    def _generate_html_content(self, metadata, ai_summary):
+        """Generate HTML content using external template (deterministic template loading)"""
+        # Load the HTML template
+        template = self._load_template()
 
-    {timestamp_html}
+        # Generate dynamic sections
+        sections = self._generate_section_html(ai_summary)
 
-    <div class="source-link">
-        <p><a href="{metadata['url']}" target="_blank">🔗 Read Original Article</a></p>
-        <p><em>Summary generated on {datetime.now().strftime('%B %d, %Y')}</em></p>
-    </div>
-</body>
-</html>"""
+        # Prepare template variables
+        template_vars = {
+            'TITLE': metadata['title'],
+            'DOMAIN': metadata['domain'],
+            'URL': metadata['url'],
+            'EXTRACTED_AT': metadata['extracted_at'],
+            'HAS_VIDEO': 'Yes' if metadata.get('has_video_indicators') else 'No',
+            'SUMMARY_CONTENT': ai_summary.get('summary', 'Summary not available'),
+            'GENERATION_DATE': datetime.now().strftime('%B %d, %Y'),
+            **sections
+        }
+
+        # Replace template variables
+        html_content = template
+        for var, value in template_vars.items():
+            html_content = html_content.replace(f'{{{{{var}}}}}', value)
+
         return html_content
 
     def _update_index_html(self, new_filename, title):
