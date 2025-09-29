@@ -70,4 +70,4 @@ python3 "$PYTHON_SCRIPT" "$URL"
 
 echo ""
 echo "🎉 Article summarization complete!"
-echo "📁 Check HTML/article_summaries/ for the generated summary"
+echo "📁 Check programs/video_summarizer/output/article_summaries/ for the generated summary"

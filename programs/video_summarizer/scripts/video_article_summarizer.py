@@ -20,8 +20,8 @@ from youtube_transcript_api import YouTubeTranscriptApi
 class VideoArticleSummarizer:
     def __init__(self, base_dir="/Users/gauravkotak/cursor-projects-1/automate_life"):
         self.base_dir = Path(base_dir)
-        self.html_dir = self.base_dir / "HTML" / "article_summaries"
-        self.logs_dir = self.base_dir / "logs"
+        self.html_dir = self.base_dir / "programs" / "video_summarizer" / "output" / "article_summaries"
+        self.logs_dir = self.base_dir / "programs" / "video_summarizer" / "logs"
         self.claude_cmd = self._find_claude_cli()
 
         # Ensure directories exist
@@ -63,6 +63,34 @@ class VideoArticleSummarizer:
 
         # Log startup
         self.logger.info(f"VideoArticleSummarizer initialized. Log file: {log_file}")
+
+    def _log_transcript_excerpts(self, formatted_text, video_id):
+        """Log first and last 1000 words of transcript if available"""
+        if not formatted_text:
+            return
+
+        # Split into words to get first and last 1000 words
+        words = formatted_text.split()
+        total_words = len(words)
+
+        if total_words == 0:
+            return
+
+        self.logger.info(f"     📝 [HIGH PRIORITY] Transcript for {video_id}: {total_words} total words")
+
+        # Log first 1000 words
+        if total_words > 0:
+            first_1000 = ' '.join(words[:1000])
+            self.logger.info(f"     📝 [HIGH PRIORITY] TRANSCRIPT START (first 1000 words):")
+            self.logger.info(f"     {first_1000}")
+
+        # Log last 1000 words if transcript is longer than 1000 words
+        if total_words > 1000:
+            last_1000 = ' '.join(words[-1000:])
+            self.logger.info(f"     📝 [HIGH PRIORITY] TRANSCRIPT END (last 1000 words):")
+            self.logger.info(f"     {last_1000}")
+        elif total_words <= 1000:
+            self.logger.info(f"     📝 [HIGH PRIORITY] Complete transcript logged above ({total_words} words)")
 
     def _find_claude_cli(self):
         """Find Claude CLI executable"""
@@ -310,11 +338,18 @@ class VideoArticleSummarizer:
                 self.logger.info("   Found YouTube videos, extracting transcripts...")
                 for video in media_info['youtube_urls']:
                     video_id = video['video_id']
+                    # HIGH PRIORITY: Log video URLs and embed codes
+                    self.logger.info(f"     🎥 [HIGH PRIORITY] Video URL: {video['url']}")
+                    self.logger.info(f"     🎥 [HIGH PRIORITY] Embed URL: {video['embed_url']}")
                     self.logger.info(f"     Extracting transcript for: {video_id}")
                     transcript_data = self._extract_youtube_transcript(video_id)
                     transcripts[video_id] = transcript_data
                     if transcript_data['success']:
                         self.logger.info(f"     ✓ Transcript extracted ({transcript_data['type']})")
+                        # Log transcript excerpts if available
+                        if transcript_data.get('transcript'):
+                            formatted_text = self._format_transcript_for_analysis(transcript_data)
+                            self._log_transcript_excerpts(formatted_text, video_id)
                     else:
                         self.logger.info(f"     ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
 
@@ -322,6 +357,8 @@ class VideoArticleSummarizer:
             if media_info['audio_urls']:
                 self.logger.info(f"   Found {len(media_info['audio_urls'])} audio file(s)")
                 for audio in media_info['audio_urls']:
+                    # HIGH PRIORITY: Log audio URLs and embed codes
+                    self.logger.info(f"     🎧 [HIGH PRIORITY] Audio URL: {audio['url']}")
                     self.logger.info(f"     Audio: {audio['platform']} - {audio['type']}")
                     if audio['platform'] == 'substack':
                         self.logger.info(f"     Audio ID: {audio['audio_id']}")
@@ -482,7 +519,6 @@ class VideoArticleSummarizer:
         1. Write a clear, structured summary (max 1000 words) in HTML format
         2. Extract 5-8 key insights as bullet points
         3. If video/audio content exists, identify specific timestamps with detailed descriptions
-        4. List recommended sections for readers
 
         {media_context}
         {transcript_context}
@@ -495,8 +531,7 @@ class VideoArticleSummarizer:
         {{
             "summary": "HTML formatted summary content",
             "key_insights": ["insight 1", "insight 2", ...],
-            "media_timestamps": [{{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio"}}, ...],
-            "recommended_sections": ["section 1", "section 2", ...]
+            "media_timestamps": [{{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio"}}, ...]
         }}
 
         Note: For audio content, if no specific timestamps are available, focus on key discussion topics and insights instead.
@@ -522,13 +557,12 @@ class VideoArticleSummarizer:
             return {
                 "summary": formatted_summary,
                 "key_insights": ["Content analyzed - see summary for details"],
-                "media_timestamps": [],
-                "recommended_sections": []
+                "media_timestamps": []
             }
 
     def _load_template(self, template_name="article_summary.html"):
         """Load HTML template from templates directory"""
-        template_path = self.base_dir / "scripts" / "templates" / template_name
+        template_path = self.base_dir / "programs" / "video_summarizer" / "scripts" / "templates" / template_name
         try:
             with open(template_path, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -720,15 +754,6 @@ class VideoArticleSummarizer:
             sections['TIMESTAMPS_SECTION'] = ''
             sections['VIDEO_ID'] = ''
 
-        # Generate recommended sections
-        if ai_summary.get('recommended_sections'):
-            recommended_html = '<div class="recommended-section"><h3>⭐ Recommended Sections</h3><ul>'
-            for section in ai_summary['recommended_sections']:
-                recommended_html += f'<li>{section}</li>'
-            recommended_html += '</ul></div>'
-            sections['RECOMMENDED_SECTION'] = recommended_html
-        else:
-            sections['RECOMMENDED_SECTION'] = ''
 
         return sections
 
@@ -745,7 +770,7 @@ class VideoArticleSummarizer:
             'TITLE': metadata['title'],
             'DOMAIN': metadata['domain'],
             'URL': metadata['url'],
-            'EXTRACTED_AT': metadata['extracted_at'],
+            'EXTRACTED_AT': datetime.fromisoformat(metadata['extracted_at'].replace('Z', '+00:00')).strftime('%B %d, %Y at %I:%M %p'),
             'HAS_VIDEO': 'Yes' if metadata.get('has_video_indicators') else 'No',
             'HAS_AUDIO': 'Yes' if metadata.get('has_audio_indicators') else 'No',
             'SUMMARY_CONTENT': ai_summary.get('summary', 'Summary not available'),
@@ -919,8 +944,8 @@ class VideoArticleSummarizer:
             os.chdir(self.base_dir)
 
             # Add files
-            subprocess.run(['git', 'add', f'HTML/article_summaries/{filename}'], check=True)
-            subprocess.run(['git', 'add', 'HTML/article_summaries/index.html'], check=True)
+            subprocess.run(['git', 'add', f'programs/video_summarizer/output/article_summaries/{filename}'], check=True)
+            subprocess.run(['git', 'add', 'programs/video_summarizer/output/article_summaries/index.html'], check=True)
 
             # Commit
             commit_msg = f"""Add article summary: {filename}

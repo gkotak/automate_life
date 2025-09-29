@@ -10,7 +10,7 @@ cd "/Users/gauravkotak/cursor-projects-1/automate_life"
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 # Log file for tracking runs
-LOG_FILE="/Users/gauravkotak/cursor-projects-1/automate_life/logs/newsletter-research.log"
+LOG_FILE="/Users/gauravkotak/cursor-projects-1/automate_life/programs/newsletter_research/logs/newsletter-research.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
 # Function to log with timestamp

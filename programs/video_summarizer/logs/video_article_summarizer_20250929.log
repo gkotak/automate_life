@@ -1,0 +1,542 @@
+2025-09-29 12:27:04,705 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/logs/video_article_summarizer_20250929.log
+2025-09-29 12:27:04,705 - VideoArticleSummarizer - INFO - Processing article: --help
+2025-09-29 12:27:04,705 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 12:27:04,708 - VideoArticleSummarizer - INFO -    Title: Article from 
+2025-09-29 12:27:04,708 - VideoArticleSummarizer - INFO -    Filename: Article_from.html
+2025-09-29 12:27:04,708 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 12:39:20,363 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/logs/video_article_summarizer_20250929.log
+2025-09-29 12:39:20,364 - VideoArticleSummarizer - INFO - Processing article: https://kotakmoment.com/p/turn-call-centers-into-revenue-drivers-54e
+2025-09-29 12:39:20,364 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 12:39:20,535 - VideoArticleSummarizer - INFO -    Found 10 audio file(s)
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: e46ff85e-62c8-4a81-9ff6-7764ecb1e834
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: cad82974-40cf-4595-904b-be81c9b71df0
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 97d19cc7-d0bd-413d-885d-de178b35e104
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: a6fb15ab-4a77-47cf-9d36-e7954a0e66ae
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 95207895-587b-47ff-8263-fca11918efb9
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 9058134c-d429-44a2-8a90-25b575f5ca6a
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Audio ID: 6bbd916e-28c7-4aef-a433-9d74531d7ff2
+2025-09-29 12:39:20,536 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 12:39:20,537 - VideoArticleSummarizer - INFO -    Title: Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI
+2025-09-29 12:39:20,537 - VideoArticleSummarizer - INFO -    Filename: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 12:39:20,537 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 12:39:22,540 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 12:39:22,541 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/HTML/article_summaries/Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 12:39:22,541 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 12:39:22,546 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 12:39:23,504 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 12:39:23,505 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 12:39:23,506 - VideoArticleSummarizer - INFO - Success! Generated: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 18:56:50,218 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 18:56:50,219 - VideoArticleSummarizer - INFO - Processing article: --help
+2025-09-29 18:56:50,219 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 18:56:50,221 - VideoArticleSummarizer - INFO -    Title: Article from 
+2025-09-29 18:56:50,221 - VideoArticleSummarizer - INFO -    Filename: Article_from.html
+2025-09-29 18:56:50,221 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 18:56:57,709 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 18:56:57,711 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from.html
+2025-09-29 18:56:57,711 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 18:56:57,719 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 18:56:57,733 - VideoArticleSummarizer - ERROR - Git operation failed: Command '['git', 'add', 'HTML/article_summaries/Article_from.html']' returned non-zero exit status 128.
+2025-09-29 18:56:57,733 - VideoArticleSummarizer - ERROR - ❌ Git operations failed
+2025-09-29 18:56:57,733 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from.html
+2025-09-29 18:56:57,733 - VideoArticleSummarizer - INFO - Success! Generated: Article_from.html
+2025-09-29 19:03:44,921 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:03:44,921 - VideoArticleSummarizer - INFO - Processing article: https://kotakmoment.com/p/turn-call-centers-into-revenue-drivers-54e
+2025-09-29 19:03:44,921 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -    Found 10 audio file(s)
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: e46ff85e-62c8-4a81-9ff6-7764ecb1e834
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: cad82974-40cf-4595-904b-be81c9b71df0
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: 97d19cc7-d0bd-413d-885d-de178b35e104
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,503 - VideoArticleSummarizer - INFO -      Audio ID: a6fb15ab-4a77-47cf-9d36-e7954a0e66ae
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Audio ID: 95207895-587b-47ff-8263-fca11918efb9
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Audio ID: 9058134c-d429-44a2-8a90-25b575f5ca6a
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Audio ID: 6bbd916e-28c7-4aef-a433-9d74531d7ff2
+2025-09-29 19:03:45,504 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:03:45,505 - VideoArticleSummarizer - INFO -    Title: Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI
+2025-09-29 19:03:45,505 - VideoArticleSummarizer - INFO -    Filename: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:03:45,505 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:04:27,902 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:04:27,903 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:04:27,903 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:04:27,911 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:04:28,850 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:04:28,850 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:04:28,850 - VideoArticleSummarizer - INFO - Success! Generated: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:07:55,364 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:07:55,364 - VideoArticleSummarizer - INFO - Processing article: https://kotakmoment.com/p/turn-call-centers-into-revenue-drivers-54e
+2025-09-29 19:07:55,364 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -    Found 10 audio file(s)
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,524 - VideoArticleSummarizer - INFO -      Audio ID: e46ff85e-62c8-4a81-9ff6-7764ecb1e834
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio ID: cad82974-40cf-4595-904b-be81c9b71df0
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio ID: 97d19cc7-d0bd-413d-885d-de178b35e104
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio ID: a6fb15ab-4a77-47cf-9d36-e7954a0e66ae
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio ID: 95207895-587b-47ff-8263-fca11918efb9
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio ID: 9058134c-d429-44a2-8a90-25b575f5ca6a
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Audio ID: 6bbd916e-28c7-4aef-a433-9d74531d7ff2
+2025-09-29 19:07:55,525 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:07:55,526 - VideoArticleSummarizer - INFO -    Title: Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI
+2025-09-29 19:07:55,526 - VideoArticleSummarizer - INFO -    Filename: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:07:55,526 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:08:55,792 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:08:55,794 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:08:55,794 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:08:55,801 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:08:56,757 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:08:56,758 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:08:56,758 - VideoArticleSummarizer - INFO - Success! Generated: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:09:08,542 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:09:08,542 - VideoArticleSummarizer - INFO - Processing article: https://kotakmoment.com/p/turn-call-centers-into-revenue-drivers-54e
+2025-09-29 19:09:08,543 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -    Found 10 audio file(s)
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio ID: e46ff85e-62c8-4a81-9ff6-7764ecb1e834
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio ID: cad82974-40cf-4595-904b-be81c9b71df0
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio ID: 97d19cc7-d0bd-413d-885d-de178b35e104
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,128 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio ID: a6fb15ab-4a77-47cf-9d36-e7954a0e66ae
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio ID: 95207895-587b-47ff-8263-fca11918efb9
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio ID: 9058134c-d429-44a2-8a90-25b575f5ca6a
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Audio ID: 6bbd916e-28c7-4aef-a433-9d74531d7ff2
+2025-09-29 19:09:09,129 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:09:09,130 - VideoArticleSummarizer - INFO -    Title: Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI
+2025-09-29 19:09:09,130 - VideoArticleSummarizer - INFO -    Filename: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:09:09,130 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:09:57,846 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:09:57,852 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:09:57,852 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:09:57,862 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:09:58,839 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:09:58,839 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:09:58,839 - VideoArticleSummarizer - INFO - Success! Generated: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:10:22,114 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:10:22,114 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:10:22,115 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:10:22,452 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:10:22,452 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:10:23,464 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:10:23,465 - VideoArticleSummarizer - INFO -    Title: Turn call centers into revenue drivers — N47
+2025-09-29 19:10:23,465 - VideoArticleSummarizer - INFO -    Filename: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:10:23,465 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:11:45,151 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:11:45,154 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:11:45,154 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:11:45,163 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:11:46,106 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:11:46,106 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:11:46,107 - VideoArticleSummarizer - INFO - Success! Generated: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:15:53,343 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:15:53,344 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:15:53,344 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:15:53,515 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:15:53,516 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:15:53,516 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:15:53,516 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:15:54,384 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:15:54,385 - VideoArticleSummarizer - INFO -    Title: Turn call centers into revenue drivers — N47
+2025-09-29 19:15:54,385 - VideoArticleSummarizer - INFO -    Filename: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:15:54,385 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:16:51,015 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:16:51,017 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:16:51,017 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:16:51,025 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:16:52,063 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:16:52,063 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:16:52,063 - VideoArticleSummarizer - INFO - Success! Generated: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:17:33,834 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:17:33,834 - VideoArticleSummarizer - INFO - Processing article: https://kotakmoment.com/p/turn-call-centers-into-revenue-drivers-54e
+2025-09-29 19:17:33,835 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -    Found 10 audio file(s)
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e/src
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e/src
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e/src
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio ID: 4a74d22d-5ef5-4db4-8719-cf25cd4e3a1e
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/e46ff85e-62c8-4a81-9ff6-7764ecb1e834/src
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,028 - VideoArticleSummarizer - INFO -      Audio ID: e46ff85e-62c8-4a81-9ff6-7764ecb1e834
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/cad82974-40cf-4595-904b-be81c9b71df0/src
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio ID: cad82974-40cf-4595-904b-be81c9b71df0
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/97d19cc7-d0bd-413d-885d-de178b35e104/src
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio ID: 97d19cc7-d0bd-413d-885d-de178b35e104
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/a6fb15ab-4a77-47cf-9d36-e7954a0e66ae/src
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio ID: a6fb15ab-4a77-47cf-9d36-e7954a0e66ae
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/95207895-587b-47ff-8263-fca11918efb9/src
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio ID: 95207895-587b-47ff-8263-fca11918efb9
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/9058134c-d429-44a2-8a90-25b575f5ca6a/src
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio ID: 9058134c-d429-44a2-8a90-25b575f5ca6a
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      🎧 [HIGH PRIORITY] Audio URL: https://api.substack.com/api/v1/audio/upload/6bbd916e-28c7-4aef-a433-9d74531d7ff2/src
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio: substack - podcast
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Audio ID: 6bbd916e-28c7-4aef-a433-9d74531d7ff2
+2025-09-29 19:17:34,029 - VideoArticleSummarizer - INFO -      Note: Substack audio transcription requires manual processing or external service
+2025-09-29 19:17:34,030 - VideoArticleSummarizer - INFO -    Title: Turn Call Centers Into Revenue Drivers with Swapnil Jain, Founder & CEO of Observe.AI
+2025-09-29 19:17:34,030 - VideoArticleSummarizer - INFO -    Filename: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:17:34,030 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:18:11,022 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:18:11,024 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:18:11,024 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:18:11,032 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:18:11,928 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:18:11,929 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:18:11,929 - VideoArticleSummarizer - INFO - Success! Generated: Turn_Call_Centers_Into_Revenue_Drivers_with_Swapnil_Jain_Founder_CEO_of_ObserveAI.html
+2025-09-29 19:18:21,093 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:18:21,093 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:18:21,093 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:18:21,281 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:18:21,281 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:18:21,281 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:18:21,281 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:18:22,058 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:18:22,059 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:18:22,059 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:18:22,059 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:18:52,702 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:18:52,703 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:18:52,703 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:18:52,711 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:18:53,623 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:18:53,623 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:18:53,623 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:19:27,424 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:19:27,425 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:19:27,425 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:19:27,571 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:19:27,571 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:19:27,571 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:19:27,571 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:19:28,584 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:19:28,584 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:19:28,585 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:19:28,585 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:19:28,585 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:19:58,941 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:19:58,943 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:19:58,943 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:19:58,950 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:19:59,969 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:19:59,970 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:19:59,970 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:20:25,071 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:20:25,071 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:20:25,071 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:20:25,216 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:20:25,216 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:20:25,216 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:20:25,216 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:20:26,207 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:20:26,207 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:20:26,210 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:20:26,210 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:20:26,210 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:20:58,056 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:20:58,058 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:20:58,058 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:20:58,065 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:20:58,927 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:20:58,927 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:20:58,927 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:21:22,576 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:21:22,576 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:21:22,576 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:21:22,725 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:21:22,725 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:21:22,725 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:21:22,725 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:21:23,888 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:21:23,888 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:21:23,888 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] About to call _format_transcript_for_analysis
+2025-09-29 19:21:23,889 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:21:23,889 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:21:23,889 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:21:50,084 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:21:50,086 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:21:50,086 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:21:50,096 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:21:51,064 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:21:51,065 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:21:51,065 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:22:52,594 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:22:52,594 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:22:52,594 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:22:52,747 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:22:52,747 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:22:52,747 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:22:52,747 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:22:53,554 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:22:53,554 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:22:53,554 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] About to call _format_transcript_for_analysis
+2025-09-29 19:22:53,555 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:22:53,555 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:22:53,555 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:23:20,574 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:23:20,577 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:23:20,577 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:23:20,584 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:23:21,906 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:23:21,907 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:23:21,907 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:28:39,080 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:28:39,081 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:28:39,081 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:28:39,230 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:28:39,230 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:28:39,230 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:28:39,230 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:28:40,114 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:28:40,114 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:28:40,114 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] About to call _format_transcript_for_analysis
+2025-09-29 19:28:40,116 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:28:40,117 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:28:40,117 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:29:08,614 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:29:08,615 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html called
+2025-09-29 19:29:08,615 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] media_info keys: ['youtube_urls', 'video_embeds', 'iframe_sources', 'audio_urls', 'podcast_info']
+2025-09-29 19:29:08,615 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] youtube_urls length: 0
+2025-09-29 19:29:08,615 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html returning empty string
+2025-09-29 19:29:08,615 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media embed HTML length: 0
+2025-09-29 19:29:08,616 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:29:08,616 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:29:08,622 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:29:09,575 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:29:09,576 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:29:09,576 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:29:54,233 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:29:54,233 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:29:54,233 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:29:54,366 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media info after extraction: youtube_urls=1 items
+2025-09-29 19:29:54,366 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:29:54,366 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:29:54,366 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:29:54,367 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:29:55,118 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:29:55,118 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:29:55,118 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] About to call _format_transcript_for_analysis
+2025-09-29 19:29:55,119 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:29:55,120 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:29:55,120 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:30:23,802 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:30:23,803 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html called
+2025-09-29 19:30:23,803 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] media_info keys: ['youtube_urls', 'video_embeds', 'iframe_sources', 'audio_urls', 'podcast_info']
+2025-09-29 19:30:23,803 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] youtube_urls length: 0
+2025-09-29 19:30:23,803 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html returning empty string
+2025-09-29 19:30:23,803 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media embed HTML length: 0
+2025-09-29 19:30:23,804 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:30:23,804 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:30:23,810 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:30:24,735 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:30:24,736 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:30:24,736 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:30:48,569 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:30:48,569 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:30:48,569 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:30:48,736 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media info after extraction: youtube_urls=1 items
+2025-09-29 19:30:48,737 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:30:48,737 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:30:48,737 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:30:48,737 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:30:49,441 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:30:49,441 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:30:49,441 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] About to call _format_transcript_for_analysis
+2025-09-29 19:30:49,441 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Exception in _extract_basic_metadata: 'list' object has no attribute 'get'
+2025-09-29 19:30:49,441 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Exception type: <class 'AttributeError'>
+2025-09-29 19:30:49,442 - VideoArticleSummarizer - INFO -    Title: Article from www.n47.com
+2025-09-29 19:30:49,443 - VideoArticleSummarizer - INFO -    Filename: Article_from_wwwn47com.html
+2025-09-29 19:30:49,443 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:31:28,225 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:31:28,227 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html called
+2025-09-29 19:31:28,227 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] media_info keys: ['youtube_urls', 'video_embeds', 'iframe_sources', 'audio_urls', 'podcast_info']
+2025-09-29 19:31:28,227 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] youtube_urls length: 0
+2025-09-29 19:31:28,227 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html returning empty string
+2025-09-29 19:31:28,227 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media embed HTML length: 0
+2025-09-29 19:31:28,228 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Article_from_wwwn47com.html
+2025-09-29 19:31:28,228 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:31:28,237 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:31:29,244 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:31:29,244 - VideoArticleSummarizer - INFO - ✅ Processing complete: Article_from_wwwn47com.html
+2025-09-29 19:31:29,244 - VideoArticleSummarizer - INFO - Success! Generated: Article_from_wwwn47com.html
+2025-09-29 19:31:50,244 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:31:50,244 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:31:50,244 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:31:50,396 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media info after extraction: youtube_urls=1 items
+2025-09-29 19:31:50,396 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:31:50,396 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:31:50,396 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:31:50,396 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:31:51,055 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:31:51,055 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Found transcript data with 1323 entries
+2025-09-29 19:31:51,055 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] About to call _format_transcript_for_analysis
+2025-09-29 19:31:51,057 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Formatted text length: 60695 characters
+2025-09-29 19:31:51,057 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _log_transcript_excerpts called with formatted_text length: 60695
+2025-09-29 19:31:51,057 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] Transcript for 6KbL8X2AYvY: 11016 total words
+2025-09-29 19:31:51,058 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] TRANSCRIPT START (first 1000 words):
+2025-09-29 19:31:51,058 - VideoArticleSummarizer - INFO -      [0:07] welcome to the AI unveil podcast today [0:10] I'm speaking with swapel Jan founder and [0:12] CEO of observe AI an AI platform for [0:15] contact centers welcome swap now thank [0:18] you g thank you for having me thank you [0:20] for coming on well to kick things off [0:22] can you give us a brief summary of what [0:23] observe AI does yeah observe AI is uh is [0:28] a contact center AI company we help [0:30] large Enterprises who have large [0:31] customer service and contact centers so [0:33] think you know your large Banks and [0:35] large telecom companies we have large [0:37] call centers and we have human agents [0:38] there who are doing customer service uh [0:40] we help those those Enterprises use AI [0:43] to get more out of their contact center [0:45] right so what we do for them is uh we [0:47] have yci agents which can help them [0:49] automate certain calls um right so you [0:51] don't need you you don't need humans for [0:53] simple calls AI agents can take those we [0:55] provide AI co-pilots uh to human agents [0:58] so they they can do their job better and [0:59] faster and then we help these call [1:01] centers analyze massive amounts of data [1:03] that is being generated in the call [1:04] center we all remember that uh when we [1:07] call a bank we hear your call is being [1:09] recorded for quality and training uh [1:11] those calls are recorded and then [1:12] analyzed by us right so we help we help [1:14] all these Contra centers with different [1:15] use cases across the Spectrum with [1:17] eventual goal to get more out of it [1:19] either more revenue or reduce the cost [1:21] from your from your contact center when [1:23] was the company [1:24] founded yeah you know it's funny um we [1:27] are we are a pre llm company in a way so [1:30] we started in 2017 and I'll tell you a [1:32] funny story um so this is like a year [1:34] ago when chat GPT was out and everyone [1:36] was talking about we are an AI company [1:38] we are an AI company um so I was telling [1:40] somebody hey we observe.ai and we do [1:42] this they're like so did you become an [1:44] AI company this year or you were always [1:45] an AI company I'm like I don't know what [1:48] that means uh but so we were always an [1:50] AI company started in 2017 it's been or [1:52] roughly 70 7 and a half years in [1:54] operations uh we work with 300 plus [1:57] customers uh we work with people like do [1:59] das Pearson [2:00] Public Storage Cox and and the likes um [2:04] you know roughly 350 people in the [2:05] company CDC Venture bag investors like [2:07] South Bank Melo and obviously uh you [2:10] guys as [2:11] well yeah uh amazing and you know AI [2:14] contact center and AI support more [2:16] broadly is a very hot topic right now [2:18] with lots of new companies and hence the [2:19] question and before you started observe [2:21] AI can you tell us a bit about your [2:23] background and what was the aha moment [2:25] if that was pre- llm of course but what [2:27] was the aha moment that inspired you to [2:29] start the company [2:31] yeah absolutely so I don't come from [2:33] from a context Center a customer sport [2:34] background so my background is I'm a I'm [2:36] a software engineer my background did my [2:38] bachelor's in computer science I worked [2:40] at Twitter uh in San Francisco here for [2:43] three years then 2012 to 2015 I was at [2:45] Twitter and in 2015 I had a lot of foro [2:50] uh because all my friends were starting [2:52] companies in India so I decided to move [2:54] back to India uh to go back and and [2:57] start a company in India and I spent 18 [2:59] months in India trying to figure out an [3:01] idea to start a company at one point I [3:03] wanted to start an insurance company so [3:05] I became an insurance agent and started [3:07] selling insurance policies to just learn [3:09] more about insurance and realized it's [3:11] not for me and then I thought I'll [3:13] create the new American Express um so [3:15] then I applied for every single credit [3:16] card in India at one point I had 20 [3:18] credit cards and all of them were [3:20] calling me for payments so you know then [3:23] eventually decided no credit card is [3:24] also not a thing for me and I eventually [3:26] realized like you know it's it's B2B SAS [3:27] for me that's that's where my passion is [3:30] and I was really excited about speech so [3:31] in 2017 uh even though you know llm was [3:34] not really a thing a speech was taking [3:36] off right deep learning was coming up [3:38] and it was clear that the the machines [3:41] understanding of uh Speech human speech [3:43] is getting better um so we very clear [3:46] that we want to start a company in the [3:47] speed space and you know our our our [3:50] friends um told us that you know in [3:53] Manila you have these large call centers [3:55] and massive amounts of Agents so we [3:57] decided to just go there all right so I [3:59] spent six months in Philippines in [4:00] Manila uh and I would go and visit these [4:03] call centers and I would sit in them [4:06] kind of watch what people are doing [4:07] right so I would just look at an agent [4:09] look at what they're doing Day in the [4:10] Life look at a manager
+2025-09-29 19:31:51,058 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] TRANSCRIPT END (last 1000 words):
+2025-09-29 19:31:51,058 - VideoArticleSummarizer - INFO -      big [41:03] believer in just put it out there right [41:05] and then the customer will force us to [41:07] build the best product in the best [41:09] timeline if we internally think of the [41:11] best product in the best timeline it [41:12] will take years right so I'm a big [41:14] believer in using our customers and them [41:16] as a forcing function to build the best [41:18] products second thing I think more [41:20] personally for [41:21] me I think and again and not that I'm [41:24] I'm doing a great job of that [41:25] necessarily but it's a evolving myself [41:29] it's just continuously evolving what is [41:30] my role as a CEO uh right I ask myself [41:33] this question almost every week when I [41:35] sit down on Friday I'm looking at my [41:37] laptop and calendar I'm like what am I [41:39] doing what's my role I'm not a function [41:41] I'm not doing anything functionally [41:42] right I'm not running Marketing sales [41:43] engineering so what exactly do I do [41:45] right and that changes almost every six [41:47] months um right and and I have to evolve [41:51] I have to evolve I have to continue to [41:53] push myself if this company has to keep [41:55] growing it's just impossible so I think [41:57] that's the other thing that I feel is I [41:58] think that introspection is such a key [42:00] quality in leaders so I'm glad you're [42:01] thinking through that but I'm going to [42:02] push you on what do you think has [42:03] evolved in the last 6 months or in the [42:05] last 12 months what has been one or two [42:06] things that you've really had to evolve [42:08] on I have become more uh way more [42:11] intense so none of my meetings are easy [42:13] now and there been big transformation [42:15] I've been working on myself that now I [42:18] just push my team to the limits that we [42:21] have to be the best right I think I was [42:23] reading this post yesterday right which [42:25] which which was really interesting which [42:26] said that [42:27] in Venture right there's actually two [42:30] outcomes actually just two outcomes one [42:31] is the company's massive success or [42:34] there's nothing else so when you think [42:37] about that World um right and the [42:39] massive success is like 5% of the [42:41] companies you start thinking that a good [42:44] company doesn't mean anything what's the [42:46] point of a good company if it is not a [42:48] great company there's only great [42:49] companies and there's everyone else you [42:51] might as well shut down then continue to [42:53] grow at 20% 30% what's the point of that [42:56] right and that realization and struck a [42:58] bit C with me in the last 6 to 12 months [43:00] that either we are great or we are not [43:03] right and if we are not then you know [43:05] does doesn't really matter actually [43:08] right so I've become way more intense [43:09] I've become way more aggressive I've [43:11] become way more ambitious um right in [43:13] pushing this company to be that great [43:15] company yeah well from the sidelines we [43:17] can see some of that greatness shine [43:19] through and is the company Embraces the [43:22] new opportunity the expanded time but [43:24] also disruption uh you know good luck [43:26] but also excited to see all the [43:28] opportunities I typically ask this to [43:30] everyone but this is even more relevant [43:32] for you given your the post I saw on [43:34] LinkedIn you had a couple of days ago I [43:35] particular where can people find you but [43:37] I'm going to change this question a [43:38] little bit and saying your post how many [43:40] observe aiish name companies are there [43:44] that you're aware of that have recently [43:45] raised and then where can I actually [43:48] find you and not find those other two or [43:50] three [43:51] companies yeah so it's it's actually [43:53] very funny gar um so there's three of [43:55] them so just you know some time so we [43:58] great we are observe.ai all right [44:02] there's a company called observe Inc [44:05] right they don't have ai but they have [44:07] observe there's third company that we [44:09] discovered yesterday it's observo AI so [44:12] the only difference between usend them [44:13] as E versus o and I don't know why they [44:15] chose that so now there's three [44:16] companies which all are like observe [44:18] observe it's just like all the same [44:21] right and we keep getting you know [44:23] emails for people who think we are one [44:24] of them and I'm sure they get some of [44:26] our email and stuff like that right but [44:28] it's very very funny so I I I put a post [44:30] on LinkedIn yesterday saying like I [44:32] tagged the two CEOs I'm like we all [44:33] should talk actually and figure this out [44:36] you know so that we don't we don't [44:37] confuse and increase keep increasing our [44:39] SEO spend in in trying to optimize for [44:41] the name yeah don't bid on each other's [44:43] keywords well it's funny because you're [44:45] not competitors just for clarity it's [44:47] observe.ai I think you've got the best [44:49] name out of it and it's the you know [44:51] there were a few companies I've talked [44:53] to recently that just changed their [44:54] domain toai and it's good that you've [44:56] had that since 2017 I believe or since [44:58] the early days [44:59] soil this has been such a pleasure thank [45:02] you for all the insights I really really [45:04] enjoyed the conversation thank you g [45:06] thank you for having me [45:12] [Music] [45:19] [Music]
+2025-09-29 19:31:51,058 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Final metadata: youtube_urls=1 items
+2025-09-29 19:31:51,058 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] First youtube URL in final metadata: {'url': 'https://www.youtube.com/watch?v=6KbL8X2AYvY', 'video_id': '6KbL8X2AYvY', 'embed_url': 'https://www.youtube.com/embed/6KbL8X2AYvY'}
+2025-09-29 19:31:51,060 - VideoArticleSummarizer - INFO -    Title: Turn call centers into revenue drivers — N47
+2025-09-29 19:31:51,060 - VideoArticleSummarizer - INFO -    Filename: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:31:51,060 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:32:43,506 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:32:43,507 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] _generate_media_embed_html called
+2025-09-29 19:32:43,507 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] media_info keys: ['youtube_urls', 'video_embeds', 'iframe_sources', 'audio_urls', 'podcast_info']
+2025-09-29 19:32:43,507 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] youtube_urls length: 1
+2025-09-29 19:32:43,508 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] First youtube_url: {'url': 'https://www.youtube.com/watch?v=6KbL8X2AYvY', 'video_id': '6KbL8X2AYvY', 'embed_url': 'https://www.youtube.com/embed/6KbL8X2AYvY'}
+2025-09-29 19:32:43,508 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Generated video embed HTML for 6KbL8X2AYvY
+2025-09-29 19:32:43,508 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Embed HTML length: 395
+2025-09-29 19:32:43,508 - VideoArticleSummarizer - INFO -      🔍 [DEBUG] Media embed HTML length: 395
+2025-09-29 19:32:43,509 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:32:43,509 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:32:43,517 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:32:44,572 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:32:44,572 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:32:44,573 - VideoArticleSummarizer - INFO - Success! Generated: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:33:26,473 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:33:26,474 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:33:26,474 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:33:26,648 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:33:26,649 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:33:26,649 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:33:26,649 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:33:27,629 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:33:27,630 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] Transcript for 6KbL8X2AYvY: 11016 total words
+2025-09-29 19:33:27,630 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] TRANSCRIPT START (first 1000 words):
+2025-09-29 19:33:27,630 - VideoArticleSummarizer - INFO -      [0:07] welcome to the AI unveil podcast today [0:10] I'm speaking with swapel Jan founder and [0:12] CEO of observe AI an AI platform for [0:15] contact centers welcome swap now thank [0:18] you g thank you for having me thank you [0:20] for coming on well to kick things off [0:22] can you give us a brief summary of what [0:23] observe AI does yeah observe AI is uh is [0:28] a contact center AI company we help [0:30] large Enterprises who have large [0:31] customer service and contact centers so [0:33] think you know your large Banks and [0:35] large telecom companies we have large [0:37] call centers and we have human agents [0:38] there who are doing customer service uh [0:40] we help those those Enterprises use AI [0:43] to get more out of their contact center [0:45] right so what we do for them is uh we [0:47] have yci agents which can help them [0:49] automate certain calls um right so you [0:51] don't need you you don't need humans for [0:53] simple calls AI agents can take those we [0:55] provide AI co-pilots uh to human agents [0:58] so they they can do their job better and [0:59] faster and then we help these call [1:01] centers analyze massive amounts of data [1:03] that is being generated in the call [1:04] center we all remember that uh when we [1:07] call a bank we hear your call is being [1:09] recorded for quality and training uh [1:11] those calls are recorded and then [1:12] analyzed by us right so we help we help [1:14] all these Contra centers with different [1:15] use cases across the Spectrum with [1:17] eventual goal to get more out of it [1:19] either more revenue or reduce the cost [1:21] from your from your contact center when [1:23] was the company [1:24] founded yeah you know it's funny um we [1:27] are we are a pre llm company in a way so [1:30] we started in 2017 and I'll tell you a [1:32] funny story um so this is like a year [1:34] ago when chat GPT was out and everyone [1:36] was talking about we are an AI company [1:38] we are an AI company um so I was telling [1:40] somebody hey we observe.ai and we do [1:42] this they're like so did you become an [1:44] AI company this year or you were always [1:45] an AI company I'm like I don't know what [1:48] that means uh but so we were always an [1:50] AI company started in 2017 it's been or [1:52] roughly 70 7 and a half years in [1:54] operations uh we work with 300 plus [1:57] customers uh we work with people like do [1:59] das Pearson [2:00] Public Storage Cox and and the likes um [2:04] you know roughly 350 people in the [2:05] company CDC Venture bag investors like [2:07] South Bank Melo and obviously uh you [2:10] guys as [2:11] well yeah uh amazing and you know AI [2:14] contact center and AI support more [2:16] broadly is a very hot topic right now [2:18] with lots of new companies and hence the [2:19] question and before you started observe [2:21] AI can you tell us a bit about your [2:23] background and what was the aha moment [2:25] if that was pre- llm of course but what [2:27] was the aha moment that inspired you to [2:29] start the company [2:31] yeah absolutely so I don't come from [2:33] from a context Center a customer sport [2:34] background so my background is I'm a I'm [2:36] a software engineer my background did my [2:38] bachelor's in computer science I worked [2:40] at Twitter uh in San Francisco here for [2:43] three years then 2012 to 2015 I was at [2:45] Twitter and in 2015 I had a lot of foro [2:50] uh because all my friends were starting [2:52] companies in India so I decided to move [2:54] back to India uh to go back and and [2:57] start a company in India and I spent 18 [2:59] months in India trying to figure out an [3:01] idea to start a company at one point I [3:03] wanted to start an insurance company so [3:05] I became an insurance agent and started [3:07] selling insurance policies to just learn [3:09] more about insurance and realized it's [3:11] not for me and then I thought I'll [3:13] create the new American Express um so [3:15] then I applied for every single credit [3:16] card in India at one point I had 20 [3:18] credit cards and all of them were [3:20] calling me for payments so you know then [3:23] eventually decided no credit card is [3:24] also not a thing for me and I eventually [3:26] realized like you know it's it's B2B SAS [3:27] for me that's that's where my passion is [3:30] and I was really excited about speech so [3:31] in 2017 uh even though you know llm was [3:34] not really a thing a speech was taking [3:36] off right deep learning was coming up [3:38] and it was clear that the the machines [3:41] understanding of uh Speech human speech [3:43] is getting better um so we very clear [3:46] that we want to start a company in the [3:47] speed space and you know our our our [3:50] friends um told us that you know in [3:53] Manila you have these large call centers [3:55] and massive amounts of Agents so we [3:57] decided to just go there all right so I [3:59] spent six months in Philippines in [4:00] Manila uh and I would go and visit these [4:03] call centers and I would sit in them [4:06] kind of watch what people are doing [4:07] right so I would just look at an agent [4:09] look at what they're doing Day in the [4:10] Life look at a manager
+2025-09-29 19:33:27,630 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] TRANSCRIPT END (last 1000 words):
+2025-09-29 19:33:27,630 - VideoArticleSummarizer - INFO -      big [41:03] believer in just put it out there right [41:05] and then the customer will force us to [41:07] build the best product in the best [41:09] timeline if we internally think of the [41:11] best product in the best timeline it [41:12] will take years right so I'm a big [41:14] believer in using our customers and them [41:16] as a forcing function to build the best [41:18] products second thing I think more [41:20] personally for [41:21] me I think and again and not that I'm [41:24] I'm doing a great job of that [41:25] necessarily but it's a evolving myself [41:29] it's just continuously evolving what is [41:30] my role as a CEO uh right I ask myself [41:33] this question almost every week when I [41:35] sit down on Friday I'm looking at my [41:37] laptop and calendar I'm like what am I [41:39] doing what's my role I'm not a function [41:41] I'm not doing anything functionally [41:42] right I'm not running Marketing sales [41:43] engineering so what exactly do I do [41:45] right and that changes almost every six [41:47] months um right and and I have to evolve [41:51] I have to evolve I have to continue to [41:53] push myself if this company has to keep [41:55] growing it's just impossible so I think [41:57] that's the other thing that I feel is I [41:58] think that introspection is such a key [42:00] quality in leaders so I'm glad you're [42:01] thinking through that but I'm going to [42:02] push you on what do you think has [42:03] evolved in the last 6 months or in the [42:05] last 12 months what has been one or two [42:06] things that you've really had to evolve [42:08] on I have become more uh way more [42:11] intense so none of my meetings are easy [42:13] now and there been big transformation [42:15] I've been working on myself that now I [42:18] just push my team to the limits that we [42:21] have to be the best right I think I was [42:23] reading this post yesterday right which [42:25] which which was really interesting which [42:26] said that [42:27] in Venture right there's actually two [42:30] outcomes actually just two outcomes one [42:31] is the company's massive success or [42:34] there's nothing else so when you think [42:37] about that World um right and the [42:39] massive success is like 5% of the [42:41] companies you start thinking that a good [42:44] company doesn't mean anything what's the [42:46] point of a good company if it is not a [42:48] great company there's only great [42:49] companies and there's everyone else you [42:51] might as well shut down then continue to [42:53] grow at 20% 30% what's the point of that [42:56] right and that realization and struck a [42:58] bit C with me in the last 6 to 12 months [43:00] that either we are great or we are not [43:03] right and if we are not then you know [43:05] does doesn't really matter actually [43:08] right so I've become way more intense [43:09] I've become way more aggressive I've [43:11] become way more ambitious um right in [43:13] pushing this company to be that great [43:15] company yeah well from the sidelines we [43:17] can see some of that greatness shine [43:19] through and is the company Embraces the [43:22] new opportunity the expanded time but [43:24] also disruption uh you know good luck [43:26] but also excited to see all the [43:28] opportunities I typically ask this to [43:30] everyone but this is even more relevant [43:32] for you given your the post I saw on [43:34] LinkedIn you had a couple of days ago I [43:35] particular where can people find you but [43:37] I'm going to change this question a [43:38] little bit and saying your post how many [43:40] observe aiish name companies are there [43:44] that you're aware of that have recently [43:45] raised and then where can I actually [43:48] find you and not find those other two or [43:50] three [43:51] companies yeah so it's it's actually [43:53] very funny gar um so there's three of [43:55] them so just you know some time so we [43:58] great we are observe.ai all right [44:02] there's a company called observe Inc [44:05] right they don't have ai but they have [44:07] observe there's third company that we [44:09] discovered yesterday it's observo AI so [44:12] the only difference between usend them [44:13] as E versus o and I don't know why they [44:15] chose that so now there's three [44:16] companies which all are like observe [44:18] observe it's just like all the same [44:21] right and we keep getting you know [44:23] emails for people who think we are one [44:24] of them and I'm sure they get some of [44:26] our email and stuff like that right but [44:28] it's very very funny so I I I put a post [44:30] on LinkedIn yesterday saying like I [44:32] tagged the two CEOs I'm like we all [44:33] should talk actually and figure this out [44:36] you know so that we don't we don't [44:37] confuse and increase keep increasing our [44:39] SEO spend in in trying to optimize for [44:41] the name yeah don't bid on each other's [44:43] keywords well it's funny because you're [44:45] not competitors just for clarity it's [44:47] observe.ai I think you've got the best [44:49] name out of it and it's the you know [44:51] there were a few companies I've talked [44:53] to recently that just changed their [44:54] domain toai and it's good that you've [44:56] had that since 2017 I believe or since [44:58] the early days [44:59] soil this has been such a pleasure thank [45:02] you for all the insights I really really [45:04] enjoyed the conversation thank you g [45:06] thank you for having me [45:12] [Music] [45:19] [Music]
+2025-09-29 19:33:27,632 - VideoArticleSummarizer - INFO -    Title: Turn call centers into revenue drivers — N47
+2025-09-29 19:33:27,632 - VideoArticleSummarizer - INFO -    Filename: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:33:27,632 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:34:33,834 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:34:33,836 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:34:33,836 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:34:33,843 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:34:34,775 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:34:34,776 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:34:34,777 - VideoArticleSummarizer - INFO - Success! Generated: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:35:11,464 - VideoArticleSummarizer - INFO - VideoArticleSummarizer initialized. Log file: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/logs/video_article_summarizer_20250929.log
+2025-09-29 19:35:11,465 - VideoArticleSummarizer - INFO - Processing article: https://www.n47.com/insights/turn-call-centers-into-revenue-drivers
+2025-09-29 19:35:11,465 - VideoArticleSummarizer - INFO - 1. Extracting metadata...
+2025-09-29 19:35:11,614 - VideoArticleSummarizer - INFO -    Found YouTube videos, extracting transcripts...
+2025-09-29 19:35:11,614 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Video URL: https://www.youtube.com/watch?v=6KbL8X2AYvY
+2025-09-29 19:35:11,614 - VideoArticleSummarizer - INFO -      🎥 [HIGH PRIORITY] Embed URL: https://www.youtube.com/embed/6KbL8X2AYvY
+2025-09-29 19:35:11,614 - VideoArticleSummarizer - INFO -      Extracting transcript for: 6KbL8X2AYvY
+2025-09-29 19:35:13,075 - VideoArticleSummarizer - INFO -      ✓ Transcript extracted (auto_generated)
+2025-09-29 19:35:13,076 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] Transcript for 6KbL8X2AYvY: 11016 total words
+2025-09-29 19:35:13,077 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] TRANSCRIPT START (first 1000 words):
+2025-09-29 19:35:13,077 - VideoArticleSummarizer - INFO -      [0:07] welcome to the AI unveil podcast today [0:10] I'm speaking with swapel Jan founder and [0:12] CEO of observe AI an AI platform for [0:15] contact centers welcome swap now thank [0:18] you g thank you for having me thank you [0:20] for coming on well to kick things off [0:22] can you give us a brief summary of what [0:23] observe AI does yeah observe AI is uh is [0:28] a contact center AI company we help [0:30] large Enterprises who have large [0:31] customer service and contact centers so [0:33] think you know your large Banks and [0:35] large telecom companies we have large [0:37] call centers and we have human agents [0:38] there who are doing customer service uh [0:40] we help those those Enterprises use AI [0:43] to get more out of their contact center [0:45] right so what we do for them is uh we [0:47] have yci agents which can help them [0:49] automate certain calls um right so you [0:51] don't need you you don't need humans for [0:53] simple calls AI agents can take those we [0:55] provide AI co-pilots uh to human agents [0:58] so they they can do their job better and [0:59] faster and then we help these call [1:01] centers analyze massive amounts of data [1:03] that is being generated in the call [1:04] center we all remember that uh when we [1:07] call a bank we hear your call is being [1:09] recorded for quality and training uh [1:11] those calls are recorded and then [1:12] analyzed by us right so we help we help [1:14] all these Contra centers with different [1:15] use cases across the Spectrum with [1:17] eventual goal to get more out of it [1:19] either more revenue or reduce the cost [1:21] from your from your contact center when [1:23] was the company [1:24] founded yeah you know it's funny um we [1:27] are we are a pre llm company in a way so [1:30] we started in 2017 and I'll tell you a [1:32] funny story um so this is like a year [1:34] ago when chat GPT was out and everyone [1:36] was talking about we are an AI company [1:38] we are an AI company um so I was telling [1:40] somebody hey we observe.ai and we do [1:42] this they're like so did you become an [1:44] AI company this year or you were always [1:45] an AI company I'm like I don't know what [1:48] that means uh but so we were always an [1:50] AI company started in 2017 it's been or [1:52] roughly 70 7 and a half years in [1:54] operations uh we work with 300 plus [1:57] customers uh we work with people like do [1:59] das Pearson [2:00] Public Storage Cox and and the likes um [2:04] you know roughly 350 people in the [2:05] company CDC Venture bag investors like [2:07] South Bank Melo and obviously uh you [2:10] guys as [2:11] well yeah uh amazing and you know AI [2:14] contact center and AI support more [2:16] broadly is a very hot topic right now [2:18] with lots of new companies and hence the [2:19] question and before you started observe [2:21] AI can you tell us a bit about your [2:23] background and what was the aha moment [2:25] if that was pre- llm of course but what [2:27] was the aha moment that inspired you to [2:29] start the company [2:31] yeah absolutely so I don't come from [2:33] from a context Center a customer sport [2:34] background so my background is I'm a I'm [2:36] a software engineer my background did my [2:38] bachelor's in computer science I worked [2:40] at Twitter uh in San Francisco here for [2:43] three years then 2012 to 2015 I was at [2:45] Twitter and in 2015 I had a lot of foro [2:50] uh because all my friends were starting [2:52] companies in India so I decided to move [2:54] back to India uh to go back and and [2:57] start a company in India and I spent 18 [2:59] months in India trying to figure out an [3:01] idea to start a company at one point I [3:03] wanted to start an insurance company so [3:05] I became an insurance agent and started [3:07] selling insurance policies to just learn [3:09] more about insurance and realized it's [3:11] not for me and then I thought I'll [3:13] create the new American Express um so [3:15] then I applied for every single credit [3:16] card in India at one point I had 20 [3:18] credit cards and all of them were [3:20] calling me for payments so you know then [3:23] eventually decided no credit card is [3:24] also not a thing for me and I eventually [3:26] realized like you know it's it's B2B SAS [3:27] for me that's that's where my passion is [3:30] and I was really excited about speech so [3:31] in 2017 uh even though you know llm was [3:34] not really a thing a speech was taking [3:36] off right deep learning was coming up [3:38] and it was clear that the the machines [3:41] understanding of uh Speech human speech [3:43] is getting better um so we very clear [3:46] that we want to start a company in the [3:47] speed space and you know our our our [3:50] friends um told us that you know in [3:53] Manila you have these large call centers [3:55] and massive amounts of Agents so we [3:57] decided to just go there all right so I [3:59] spent six months in Philippines in [4:00] Manila uh and I would go and visit these [4:03] call centers and I would sit in them [4:06] kind of watch what people are doing [4:07] right so I would just look at an agent [4:09] look at what they're doing Day in the [4:10] Life look at a manager
+2025-09-29 19:35:13,077 - VideoArticleSummarizer - INFO -      📝 [HIGH PRIORITY] TRANSCRIPT END (last 1000 words):
+2025-09-29 19:35:13,077 - VideoArticleSummarizer - INFO -      big [41:03] believer in just put it out there right [41:05] and then the customer will force us to [41:07] build the best product in the best [41:09] timeline if we internally think of the [41:11] best product in the best timeline it [41:12] will take years right so I'm a big [41:14] believer in using our customers and them [41:16] as a forcing function to build the best [41:18] products second thing I think more [41:20] personally for [41:21] me I think and again and not that I'm [41:24] I'm doing a great job of that [41:25] necessarily but it's a evolving myself [41:29] it's just continuously evolving what is [41:30] my role as a CEO uh right I ask myself [41:33] this question almost every week when I [41:35] sit down on Friday I'm looking at my [41:37] laptop and calendar I'm like what am I [41:39] doing what's my role I'm not a function [41:41] I'm not doing anything functionally [41:42] right I'm not running Marketing sales [41:43] engineering so what exactly do I do [41:45] right and that changes almost every six [41:47] months um right and and I have to evolve [41:51] I have to evolve I have to continue to [41:53] push myself if this company has to keep [41:55] growing it's just impossible so I think [41:57] that's the other thing that I feel is I [41:58] think that introspection is such a key [42:00] quality in leaders so I'm glad you're [42:01] thinking through that but I'm going to [42:02] push you on what do you think has [42:03] evolved in the last 6 months or in the [42:05] last 12 months what has been one or two [42:06] things that you've really had to evolve [42:08] on I have become more uh way more [42:11] intense so none of my meetings are easy [42:13] now and there been big transformation [42:15] I've been working on myself that now I [42:18] just push my team to the limits that we [42:21] have to be the best right I think I was [42:23] reading this post yesterday right which [42:25] which which was really interesting which [42:26] said that [42:27] in Venture right there's actually two [42:30] outcomes actually just two outcomes one [42:31] is the company's massive success or [42:34] there's nothing else so when you think [42:37] about that World um right and the [42:39] massive success is like 5% of the [42:41] companies you start thinking that a good [42:44] company doesn't mean anything what's the [42:46] point of a good company if it is not a [42:48] great company there's only great [42:49] companies and there's everyone else you [42:51] might as well shut down then continue to [42:53] grow at 20% 30% what's the point of that [42:56] right and that realization and struck a [42:58] bit C with me in the last 6 to 12 months [43:00] that either we are great or we are not [43:03] right and if we are not then you know [43:05] does doesn't really matter actually [43:08] right so I've become way more intense [43:09] I've become way more aggressive I've [43:11] become way more ambitious um right in [43:13] pushing this company to be that great [43:15] company yeah well from the sidelines we [43:17] can see some of that greatness shine [43:19] through and is the company Embraces the [43:22] new opportunity the expanded time but [43:24] also disruption uh you know good luck [43:26] but also excited to see all the [43:28] opportunities I typically ask this to [43:30] everyone but this is even more relevant [43:32] for you given your the post I saw on [43:34] LinkedIn you had a couple of days ago I [43:35] particular where can people find you but [43:37] I'm going to change this question a [43:38] little bit and saying your post how many [43:40] observe aiish name companies are there [43:44] that you're aware of that have recently [43:45] raised and then where can I actually [43:48] find you and not find those other two or [43:50] three [43:51] companies yeah so it's it's actually [43:53] very funny gar um so there's three of [43:55] them so just you know some time so we [43:58] great we are observe.ai all right [44:02] there's a company called observe Inc [44:05] right they don't have ai but they have [44:07] observe there's third company that we [44:09] discovered yesterday it's observo AI so [44:12] the only difference between usend them [44:13] as E versus o and I don't know why they [44:15] chose that so now there's three [44:16] companies which all are like observe [44:18] observe it's just like all the same [44:21] right and we keep getting you know [44:23] emails for people who think we are one [44:24] of them and I'm sure they get some of [44:26] our email and stuff like that right but [44:28] it's very very funny so I I I put a post [44:30] on LinkedIn yesterday saying like I [44:32] tagged the two CEOs I'm like we all [44:33] should talk actually and figure this out [44:36] you know so that we don't we don't [44:37] confuse and increase keep increasing our [44:39] SEO spend in in trying to optimize for [44:41] the name yeah don't bid on each other's [44:43] keywords well it's funny because you're [44:45] not competitors just for clarity it's [44:47] observe.ai I think you've got the best [44:49] name out of it and it's the you know [44:51] there were a few companies I've talked [44:53] to recently that just changed their [44:54] domain toai and it's good that you've [44:56] had that since 2017 I believe or since [44:58] the early days [44:59] soil this has been such a pleasure thank [45:02] you for all the insights I really really [45:04] enjoyed the conversation thank you g [45:06] thank you for having me [45:12] [Music] [45:19] [Music]
+2025-09-29 19:35:13,078 - VideoArticleSummarizer - INFO -    Title: Turn call centers into revenue drivers — N47
+2025-09-29 19:35:13,078 - VideoArticleSummarizer - INFO -    Filename: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:35:13,078 - VideoArticleSummarizer - INFO - 2. Analyzing content with AI...
+2025-09-29 19:36:03,351 - VideoArticleSummarizer - INFO - 3. Generating HTML...
+2025-09-29 19:36:03,353 - VideoArticleSummarizer - INFO -    Created: /Users/gauravkotak/cursor-projects-1/automate_life/programs/video_summarizer/output/article_summaries/Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:36:03,353 - VideoArticleSummarizer - INFO - 4. Updating index...
+2025-09-29 19:36:03,359 - VideoArticleSummarizer - INFO - 5. Committing to git...
+2025-09-29 19:36:04,263 - VideoArticleSummarizer - INFO - ✅ Successfully committed and pushed to GitHub
+2025-09-29 19:36:04,263 - VideoArticleSummarizer - INFO - ✅ Processing complete: Turn_call_centers_into_revenue_drivers_N47.html
+2025-09-29 19:36:04,264 - VideoArticleSummarizer - INFO - Success! Generated: Turn_call_centers_into_revenue_drivers_N47.html
