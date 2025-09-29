@@ -96,26 +96,21 @@ class VideoArticleSummarizer:
     def _call_claude_api(self, prompt):
         """Call Claude Code API for AI-powered analysis"""
         try:
-            # Create a temporary file with the prompt
-            temp_file = self.base_dir / "temp_claude_prompt.txt"
-            with open(temp_file, 'w') as f:
-                f.write(prompt)
-
-            # Call Claude CLI (this is where AI magic happens)
+            # Call Claude CLI with --print flag for non-interactive mode
             result = subprocess.run([
                 self.claude_cmd,
-                "analyze",
-                str(temp_file)
-            ], capture_output=True, text=True, timeout=60)
-
-            # Clean up
-            temp_file.unlink(missing_ok=True)
+                "--print",
+                "--output-format", "text",
+                prompt
+            ], capture_output=True, text=True, timeout=120, cwd=self.base_dir)
 
             if result.returncode == 0:
                 return result.stdout.strip()
             else:
                 return f"Error calling Claude API: {result.stderr}"
 
+        except subprocess.TimeoutExpired:
+            return f"Claude API call timed out after 120 seconds"
         except Exception as e:
             return f"Error in Claude API call: {str(e)}"
 
@@ -152,7 +147,7 @@ class VideoArticleSummarizer:
                 "recommended_sections": []
             }
 
-    def _generate_html_content(self, metadata, ai_summary, filename):
+    def _generate_html_content(self, metadata, ai_summary):
         """Generate HTML content (deterministic template)"""
         timestamp_html = ""
         if ai_summary.get('video_timestamps'):
@@ -420,7 +415,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         # Step 4: Generate HTML (deterministic template)
         print("3. Generating HTML...")
-        html_content = self._generate_html_content(metadata, ai_summary, filename)
+        html_content = self._generate_html_content(metadata, ai_summary)
 
         # Step 5: Write file (deterministic)
         html_path = self.html_dir / filename
