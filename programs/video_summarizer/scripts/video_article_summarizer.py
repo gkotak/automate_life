@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from youtube_transcript_api import YouTubeTranscriptApi
+from dotenv import load_dotenv
 
 class VideoArticleSummarizer:
     def __init__(self, base_dir=None):
@@ -35,6 +36,12 @@ class VideoArticleSummarizer:
         self.html_dir = self.base_dir / "programs" / "video_summarizer" / "output" / "article_summaries"
         self.logs_dir = self.base_dir / "programs" / "video_summarizer" / "logs"
         self.claude_cmd = self._find_claude_cli()
+
+        # Load environment variables for credentials
+        load_dotenv(self.base_dir / '.env')
+
+        # Setup authenticated session
+        self.session = self._setup_authenticated_session()
 
         # Ensure directories exist
         self.html_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +82,69 @@ class VideoArticleSummarizer:
 
         # Log startup
         self.logger.info(f"VideoArticleSummarizer initialized. Log file: {log_file}")
+
+    def _setup_authenticated_session(self):
+        """Setup requests session with authentication credentials"""
+        session = requests.Session()
+
+        # Set default headers
+        user_agent = os.getenv('USER_AGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        session.headers.update({
+            'User-Agent': user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        })
+
+        # Add session cookies if provided
+        session_cookies = os.getenv('NEWSLETTER_SESSION_COOKIES')
+        if session_cookies:
+            # Parse cookie string format: "name1=value1; name2=value2"
+            for cookie in session_cookies.split(';'):
+                if '=' in cookie:
+                    name, value = cookie.strip().split('=', 1)
+                    session.cookies.set(name, value)
+
+        return session
+
+    def _authenticate_for_domain(self, domain, session):
+        """Perform domain-specific authentication if needed"""
+        try:
+            # Substack authentication
+            if 'substack.com' in domain:
+                email = os.getenv('SUBSTACK_EMAIL')
+                password = os.getenv('SUBSTACK_PASSWORD')
+                if email and password:
+                    self.logger.info("   Attempting Substack authentication...")
+                    login_url = "https://substack.com/api/v1/login"
+                    login_data = {
+                        'email': email,
+                        'password': password,
+                        'captcha_response': None
+                    }
+                    response = session.post(login_url, json=login_data)
+                    if response.status_code == 200:
+                        self.logger.info("   ✓ Substack authentication successful")
+                        return True
+                    else:
+                        self.logger.warning(f"   ⚠️ Substack authentication failed: {response.status_code}")
+
+            # Add more domain-specific authentication here
+            # Example for other platforms:
+            # elif 'example.com' in domain:
+            #     username = os.getenv('EXAMPLE_USERNAME')
+            #     password = os.getenv('EXAMPLE_PASSWORD')
+            #     if username and password:
+            #         # Perform authentication for example.com
+            #         pass
+
+            return False
+
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ Authentication failed for {domain}: {str(e)}")
+            return False
 
     def _log_transcript_excerpts(self, formatted_text, video_id):
         """Log first and last 100 words of transcript if available"""
@@ -386,6 +456,57 @@ class VideoArticleSummarizer:
 
         return sections
 
+    def _select_main_podcast_episode(self, audio_urls):
+        """Select the main podcast episode from multiple audio files, deduplicating and filtering segments"""
+        if not audio_urls:
+            return None
+
+        # Group audio files by unique identifiers
+        unique_audios = {}
+        for audio in audio_urls:
+            audio_id = audio.get('audio_id', audio.get('url', ''))
+            if audio_id and audio_id not in unique_audios:
+                unique_audios[audio_id] = audio
+
+        # Convert back to list
+        deduplicated_audios = list(unique_audios.values())
+
+        if len(deduplicated_audios) == 1:
+            return deduplicated_audios[0]
+
+        # Scoring system to identify the main episode vs segments/formats
+        def score_audio_file(audio):
+            score = 0
+            url = audio.get('url', '').lower()
+            audio_id = audio.get('audio_id', '').lower()
+
+            # Prefer files that seem like main episodes (not segments)
+            if any(term in url or term in audio_id for term in ['episode', 'full', 'complete']):
+                score += 10
+
+            # Deprioritize files that seem like segments or clips
+            if any(term in url or term in audio_id for term in ['segment', 'clip', 'part', 'chapter']):
+                score -= 5
+
+            # Deprioritize files that seem like different formats
+            if any(term in url or term in audio_id for term in ['preview', 'sample', 'intro', 'outro']):
+                score -= 3
+
+            # Prefer substack podcast type
+            if audio.get('platform') == 'substack' and audio.get('type') == 'podcast':
+                score += 5
+
+            # Use audio_id length as tiebreaker (longer IDs might be more specific)
+            score += len(audio.get('audio_id', '')) * 0.01
+
+            return score
+
+        # Sort by score and return the highest scoring audio file
+        scored_audios = [(score_audio_file(audio), audio) for audio in deduplicated_audios]
+        scored_audios.sort(key=lambda x: x[0], reverse=True)
+
+        return scored_audios[0][1] if scored_audios else deduplicated_audios[0]
+
     def _create_metadata_for_prompt(self, metadata):
         """Create a stripped-down version of metadata for Claude prompt (without full transcripts)"""
         stripped_metadata = {
@@ -434,10 +555,13 @@ class VideoArticleSummarizer:
     def _extract_basic_metadata(self, url):
         """Extract basic metadata from URL (deterministic part)"""
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-            }
-            response = requests.get(url, headers=headers, timeout=10)
+            # Use authenticated session
+            domain = urlparse(url).netloc
+
+            # Attempt domain-specific authentication if needed
+            self._authenticate_for_domain(domain, self.session)
+
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
 
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -467,36 +591,58 @@ class VideoArticleSummarizer:
 
             # Extract YouTube transcripts if videos found
             transcripts = {}
-            if media_info['youtube_urls']:
-                self.logger.info("   Found YouTube videos, extracting transcripts...")
-                for video in media_info['youtube_urls']:
-                    video_id = video['video_id']
-                    # HIGH PRIORITY: Log video URLs and embed codes
-                    self.logger.info(f"     🎥 [HIGH PRIORITY] Video URL: {video['url']}")
-                    self.logger.info(f"     🎥 [HIGH PRIORITY] Embed URL: {video['embed_url']}")
-                    self.logger.info(f"     Extracting transcript for: {video_id}")
-                    transcript_data = self._extract_youtube_transcript(video_id)
-                    transcripts[video_id] = transcript_data
-                    if transcript_data['success']:
-                        self.logger.info(f"     ✓ Transcript extracted ({transcript_data['type']})")
-                        # Log transcript excerpts if available
-                        if transcript_data.get('transcript'):
-                            formatted_text = self._format_transcript_for_analysis(transcript_data)
-                            self._log_transcript_excerpts(formatted_text, video_id)
-                    else:
-                        self.logger.info(f"     ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
+            has_video_transcript = False
 
-            # Log audio content found
-            if media_info['audio_urls']:
-                self.logger.info(f"   Found {len(media_info['audio_urls'])} audio file(s)")
-                for audio in media_info['audio_urls']:
-                    # HIGH PRIORITY: Log audio URLs and embed codes
-                    self.logger.info(f"     🎧 [HIGH PRIORITY] Audio URL: {audio['url']}")
-                    self.logger.info(f"     Audio: {audio['platform']} - {audio['type']}")
-                    if audio['platform'] == 'substack':
-                        self.logger.info(f"     Audio ID: {audio['audio_id']}")
-                        # Note: Substack audio transcription would require additional API access
+            if media_info['youtube_urls']:
+                self.logger.info("   Found YouTube videos, extracting transcript from main video...")
+                # Only process the first/main video, ignore related content
+                main_video = media_info['youtube_urls'][0]
+                video_id = main_video['video_id']
+
+                # HIGH PRIORITY: Log main video URLs and embed codes
+                self.logger.info(f"     🎥 [HIGH PRIORITY] Main Video URL: {main_video['url']}")
+                self.logger.info(f"     🎥 [HIGH PRIORITY] Embed URL: {main_video['embed_url']}")
+
+                if len(media_info['youtube_urls']) > 1:
+                    self.logger.info(f"     Found {len(media_info['youtube_urls'])} videos total, processing only the main video")
+
+                self.logger.info(f"     Extracting transcript for: {video_id}")
+                transcript_data = self._extract_youtube_transcript(video_id)
+                transcripts[video_id] = transcript_data
+
+                if transcript_data['success']:
+                    self.logger.info(f"     ✓ Transcript extracted ({transcript_data['type']})")
+                    has_video_transcript = True
+                    # Log transcript excerpts if available
+                    if transcript_data.get('transcript'):
+                        formatted_text = self._format_transcript_for_analysis(transcript_data)
+                        self._log_transcript_excerpts(formatted_text, video_id)
+                else:
+                    self.logger.info(f"     ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
+
+                # Update media_info to only include the main video
+                media_info['youtube_urls'] = [main_video]
+
+            # Only process audio if we don't have video content with transcripts
+            if media_info['audio_urls'] and not has_video_transcript:
+                # Deduplicate and select main podcast episode
+                main_audio = self._select_main_podcast_episode(media_info['audio_urls'])
+                if main_audio:
+                    self.logger.info(f"   Found audio content, selected main podcast episode:")
+                    self.logger.info(f"     🎧 [HIGH PRIORITY] Audio URL: {main_audio['url']}")
+                    self.logger.info(f"     Audio: {main_audio['platform']} - {main_audio['type']}")
+                    if main_audio['platform'] == 'substack':
+                        self.logger.info(f"     Audio ID: {main_audio['audio_id']}")
                         self.logger.info("     Note: Substack audio transcription requires manual processing or external service")
+                    # Update media_info to only include the main audio file
+                    media_info['audio_urls'] = [main_audio]
+                else:
+                    self.logger.info("   Audio files found but no main episode could be identified")
+                    media_info['audio_urls'] = []
+            elif media_info['audio_urls'] and has_video_transcript:
+                self.logger.info(f"   Found {len(media_info['audio_urls'])} audio files, but skipping since video transcript is available")
+                # Clear audio URLs since we're prioritizing video
+                media_info['audio_urls'] = []
 
             return {
                 'title': title,
@@ -782,9 +928,12 @@ class VideoArticleSummarizer:
             embed_html = f'''
     <div class="video-container">
         <h2>🎥 Watch the Video</h2>
+        <div class="speed-notice">
+            ⚡ Video automatically plays at 2x speed for efficient viewing. You can adjust speed in player controls.
+        </div>
         <div class="video-embed">
             <iframe
-                src="https://www.youtube.com/embed/{video_id}?enablejsapi=1"
+                src="https://www.youtube.com/embed/{video_id}?enablejsapi=1&playsinline=1"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowfullscreen>
             </iframe>
@@ -800,9 +949,12 @@ class VideoArticleSummarizer:
                 embed_html = f'''
     <div class="video-container">
         <h2>🎥 Watch the Video</h2>
+        <div class="speed-notice">
+            ⚡ Video automatically plays at 2x speed for efficient viewing. You can adjust speed in player controls.
+        </div>
         <div class="video-embed">
             <iframe
-                src="https://www.youtube.com/embed/{video_id}?enablejsapi=1"
+                src="https://www.youtube.com/embed/{video_id}?enablejsapi=1&playsinline=1"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowfullscreen>
             </iframe>
@@ -886,11 +1038,10 @@ class VideoArticleSummarizer:
                         if timestamp and media_info.get('youtube_urls'):
                             # Convert timestamp to seconds for video jump functionality
                             seconds = self._convert_timestamp_to_seconds(timestamp)
-                            quote_html = f'<div class="transcript-quote">"{transcript_quote}"</div>' if transcript_quote else ''
+                            # Removed transcript quotes from Key Insights section for cleaner presentation
                             insights_html += f'''<li class="insight-with-timestamp">
                                 {insight_text}
                                 <span class="insight-timestamp" onclick="jumpToTime({seconds})" title="Jump to {timestamp}">🎬 {timestamp}</span>
-                                {quote_html}
                             </li>'''
                         else:
                             insights_html += f'<li>{insight_text}</li>'

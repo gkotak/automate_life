@@ -96,6 +96,16 @@
             border-left: 4px solid #2c5aa0;
         }
 
+        .speed-notice {
+            background: #e8f4fd;
+            color: #1565c0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+            border-left: 3px solid #1565c0;
+        }
+
         .video-embed {
             position: relative;
             padding-bottom: 56.25%; /* 16:9 aspect ratio */
@@ -303,8 +313,20 @@
                 const currentSrc = iframe.src;
                 const baseUrl = currentSrc.split('?')[0];
 
-                // Update iframe src to jump to specific time
-                iframe.src = `${baseUrl}?enablejsapi=1&start=${seconds}&autoplay=1`;
+                // Update iframe src to jump to specific time at 2x speed
+                iframe.src = `${baseUrl}?enablejsapi=1&start=${seconds}&autoplay=1&playsinline=1`;
+
+                // Set 2x playback speed after video loads
+                iframe.onload = function() {
+                    // Try to set playback rate via postMessage
+                    setTimeout(() => {
+                        try {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"setPlaybackRate","args":[2]}', '*');
+                        } catch (e) {
+                            console.log('Could not set 2x playback rate - user interaction may be required');
+                        }
+                    }, 1000);
+                };
 
                 // Scroll to video for better user experience
                 const videoContainer = document.querySelector('.video-container');
@@ -316,6 +338,22 @@
                 }
             }
         }
+
+        // Set initial 2x speed when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const iframe = document.querySelector('.video-embed iframe');
+            if (iframe) {
+                iframe.onload = function() {
+                    setTimeout(() => {
+                        try {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"setPlaybackRate","args":[2]}', '*');
+                        } catch (e) {
+                            console.log('Could not set initial 2x playback rate - user interaction may be required');
+                        }
+                    }, 2000);
+                };
+            }
+        });
 
         // Optional: Add keyboard shortcuts for common timestamps
         document.addEventListener('keydown', function(event) {
