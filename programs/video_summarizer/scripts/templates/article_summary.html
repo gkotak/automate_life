@@ -142,6 +142,16 @@
             color: #666;
         }
 
+        .speed-notice-audio {
+            background: #e8f4fd;
+            color: #1565c0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+            border-left: 3px solid #4a90e2;
+        }
+
         .audio-timestamps {
             background: #f8f9fa;
             padding: 20px;
@@ -339,8 +349,32 @@
             }
         }
 
+        // Function to jump to specific time in embedded audio
+        function jumpToAudioTime(seconds) {
+            const audio = document.querySelector('.audio-embed audio');
+            if (audio) {
+                try {
+                    audio.currentTime = seconds;
+                    audio.playbackRate = 2.0; // Set 2x speed
+                    audio.play();
+
+                    // Scroll to audio for better user experience
+                    const audioContainer = document.querySelector('.audio-container');
+                    if (audioContainer) {
+                        audioContainer.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                } catch (e) {
+                    console.log('Could not jump to audio time:', e);
+                }
+            }
+        }
+
         // Set initial 2x speed when page loads
         document.addEventListener('DOMContentLoaded', function() {
+            // Set 2x speed for video
             const iframe = document.querySelector('.video-embed iframe');
             if (iframe) {
                 iframe.onload = function() {
@@ -352,6 +386,29 @@
                         }
                     }, 2000);
                 };
+            }
+
+            // Set 2x speed for audio
+            const audio = document.querySelector('.audio-embed audio');
+            if (audio) {
+                audio.addEventListener('loadedmetadata', function() {
+                    try {
+                        audio.playbackRate = 2.0;
+                        console.log('Audio playback rate set to 2x');
+                    } catch (e) {
+                        console.log('Could not set audio playback rate:', e);
+                    }
+                });
+
+                // If audio is already loaded
+                if (audio.readyState >= 1) {
+                    try {
+                        audio.playbackRate = 2.0;
+                        console.log('Audio playback rate set to 2x (already loaded)');
+                    } catch (e) {
+                        console.log('Could not set audio playback rate:', e);
+                    }
+                }
             }
         });
 

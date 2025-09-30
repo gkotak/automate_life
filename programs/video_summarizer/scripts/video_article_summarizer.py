@@ -30,7 +30,7 @@ class VideoArticleSummarizer:
                 current_dir = current_dir.parent
             else:
                 # Fallback: assume script is in programs/video_summarizer/scripts/
-                base_dir = Path(__file__).parent.parent.parent
+                base_dir = Path(__file__).parent.parent.parent.parent
 
         self.base_dir = Path(base_dir)
         self.html_dir = self.base_dir / "programs" / "video_summarizer" / "output" / "article_summaries"
@@ -118,6 +118,8 @@ class VideoArticleSummarizer:
     def _detect_platform(self, url):
         """Detect the platform/service from URL patterns"""
         domain = urlparse(url).netloc.lower()
+        self.logger.info(f"🔍 [PLATFORM DETECTION] Analyzing URL: {url}")
+        self.logger.info(f"🔍 [PLATFORM DETECTION] Domain: {domain}")
 
         # Platform detection patterns
         platforms = {
@@ -164,19 +166,95 @@ class VideoArticleSummarizer:
         # Check each platform's patterns
         for platform, patterns in platforms.items():
             if any(pattern(domain) for pattern in patterns):
+                self.logger.info(f"✅ [PLATFORM DETECTION] Detected platform: {platform}")
                 return platform
 
         # Check for common newsletter/blog indicators in the URL
         url_lower = url.lower()
         if any(indicator in url_lower for indicator in ['/newsletter/', '/blog/', '/p/', '/post/']):
+            self.logger.info(f"✅ [PLATFORM DETECTION] Detected platform: newsletter_generic (URL contains newsletter/blog indicators)")
             return 'newsletter_generic'
 
+        self.logger.info(f"✅ [PLATFORM DETECTION] Detected platform: generic (no specific platform detected)")
         return 'generic'
+
+    def _detect_paywall(self, platform, url, session):
+        """Detect if the content is behind a paywall"""
+        paywall_indicators = {
+            'substack': ['premium', 'paid', 'subscriber', 'paywall'],
+            'medium': ['member', 'premium', 'paywall'],
+            'patreon': ['patron', 'membership', 'tier'],
+            'generic': ['premium', 'paid', 'subscription', 'member', 'paywall']
+        }
+
+        # Check URL for paywall indicators
+        url_lower = url.lower()
+        indicators = paywall_indicators.get(platform, paywall_indicators['generic'])
+
+        has_paywall_in_url = any(indicator in url_lower for indicator in indicators)
+
+        if has_paywall_in_url:
+            self.logger.info(f"🔒 [PAYWALL DETECTION] URL contains paywall indicators: {url}")
+            return True
+
+        # For now, assume subscription platforms likely have paywalls
+        subscription_platforms = ['substack', 'medium', 'patreon', 'newsletter_generic']
+        if platform in subscription_platforms:
+            self.logger.info(f"🔒 [PAYWALL DETECTION] Platform '{platform}' typically has subscription content")
+            return True
+
+        self.logger.info(f"🔓 [PAYWALL DETECTION] No paywall detected for platform '{platform}'")
+        return False
+
+    def _check_credential_availability(self, platform):
+        """Check if credentials are available for the platform"""
+        credentials_found = []
+
+        if platform == 'substack':
+            if os.getenv('SUBSTACK_EMAIL') and os.getenv('SUBSTACK_PASSWORD'):
+                credentials_found.append('email/password')
+        elif platform == 'medium':
+            if os.getenv('MEDIUM_SESSION_COOKIE'):
+                credentials_found.append('session_cookie')
+        elif platform == 'patreon':
+            if os.getenv('PATREON_SESSION_COOKIE'):
+                credentials_found.append('session_cookie')
+        elif platform == 'youtube':
+            if os.getenv('YOUTUBE_API_KEY'):
+                credentials_found.append('api_key')
+        else:
+            # Check for generic credentials
+            platform_upper = platform.upper()
+            for cred_type in ['SESSION_COOKIE', 'AUTH_TOKEN', 'ACCESS_TOKEN']:
+                if os.getenv(f'{platform_upper}_{cred_type}'):
+                    credentials_found.append(cred_type.lower())
+
+        # Check for generic session cookies
+        if os.getenv('NEWSLETTER_SESSION_COOKIES'):
+            credentials_found.append('generic_session_cookies')
+
+        if credentials_found:
+            self.logger.info(f"🔑 [CREDENTIALS] Found credentials for '{platform}': {', '.join(credentials_found)}")
+            return True
+        else:
+            self.logger.info(f"🚫 [CREDENTIALS] No credentials found for '{platform}' in .env.local")
+            return False
 
     def _authenticate_for_platform(self, platform, url, session):
         """Perform platform-specific authentication based on detected platform"""
         try:
-            self.logger.info(f"   Detected platform: {platform}")
+            # Check for paywall
+            has_paywall = self._detect_paywall(platform, url, session)
+
+            # Check credential availability
+            has_credentials = self._check_credential_availability(platform)
+
+            if has_paywall and not has_credentials:
+                self.logger.warning(f"⚠️ [AUTH WARNING] Paywall detected but no credentials available for '{platform}'")
+            elif has_paywall and has_credentials:
+                self.logger.info(f"🔐 [AUTH READY] Paywall detected and credentials available for '{platform}' - attempting authentication")
+            elif not has_paywall:
+                self.logger.info(f"🌐 [AUTH INFO] No paywall detected for '{platform}' - proceeding without authentication")
 
             if platform == 'substack':
                 return self._authenticate_substack(session)
@@ -197,7 +275,7 @@ class VideoArticleSummarizer:
                 return self._authenticate_generic(platform, session)
 
         except Exception as e:
-            self.logger.warning(f"   ⚠️ Authentication failed for {platform}: {str(e)}")
+            self.logger.error(f"❌ [AUTH ERROR] Authentication failed for {platform}: {str(e)}")
             return False
 
     def _authenticate_substack(self, session):
@@ -206,53 +284,68 @@ class VideoArticleSummarizer:
         password = os.getenv('SUBSTACK_PASSWORD')
 
         if email and password:
-            self.logger.info("   Attempting Substack authentication...")
+            self.logger.info("🔐 [AUTH] Attempting Substack authentication with email/password...")
             login_url = "https://substack.com/api/v1/login"
             login_data = {
                 'email': email,
                 'password': password,
                 'captcha_response': None
             }
-            response = session.post(login_url, json=login_data)
-            if response.status_code == 200:
-                self.logger.info("   ✓ Substack authentication successful")
+            try:
+                response = session.post(login_url, json=login_data, timeout=10)
+                if response.status_code == 200:
+                    self.logger.info("✅ [AUTH SUCCESS] Substack authentication successful - logged in with email/password")
+                    return True
+                else:
+                    self.logger.error(f"❌ [AUTH FAILED] Substack authentication failed - Status: {response.status_code}, Response: {response.text[:200]}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"❌ [AUTH ERROR] Substack authentication error: {str(e)}")
+                return False
+        else:
+            self.logger.info("🔑 [AUTH] No Substack email/password found - checking for session cookies...")
+            # Check if generic session cookies might work
+            if os.getenv('NEWSLETTER_SESSION_COOKIES'):
+                self.logger.info("✅ [AUTH] Using generic session cookies for Substack")
                 return True
             else:
-                self.logger.warning(f"   ⚠️ Substack authentication failed: {response.status_code}")
-        else:
-            self.logger.info("   No Substack credentials found, using session cookies if available")
-        return False
+                self.logger.info("🚫 [AUTH] No authentication available for Substack")
+                return False
 
     def _authenticate_medium(self, session):
         """Authenticate with Medium"""
-        # Medium typically uses session cookies or OAuth
         session_cookie = os.getenv('MEDIUM_SESSION_COOKIE')
         if session_cookie:
+            self.logger.info("🔐 [AUTH] Applying Medium session cookie...")
             session.cookies.set('sid', session_cookie, domain='.medium.com')
-            self.logger.info("   ✓ Medium session cookie applied")
+            self.logger.info("✅ [AUTH SUCCESS] Medium session cookie applied successfully")
             return True
-        self.logger.info("   No Medium credentials found")
-        return False
+        else:
+            self.logger.info("🚫 [AUTH] No Medium session cookie found in .env.local")
+            return False
 
     def _authenticate_patreon(self, session):
         """Authenticate with Patreon"""
         session_cookie = os.getenv('PATREON_SESSION_COOKIE')
         if session_cookie:
+            self.logger.info("🔐 [AUTH] Applying Patreon session cookie...")
             session.cookies.set('session_id', session_cookie, domain='.patreon.com')
-            self.logger.info("   ✓ Patreon session cookie applied")
+            self.logger.info("✅ [AUTH SUCCESS] Patreon session cookie applied successfully")
             return True
-        self.logger.info("   No Patreon credentials found")
-        return False
+        else:
+            self.logger.info("🚫 [AUTH] No Patreon session cookie found in .env.local")
+            return False
 
     def _authenticate_youtube(self, session):
         """Authenticate with YouTube (for premium content)"""
         api_key = os.getenv('YOUTUBE_API_KEY')
         if api_key:
-            # YouTube API authentication would be handled differently
-            self.logger.info("   ✓ YouTube API key available")
+            self.logger.info("🔐 [AUTH] YouTube API key found - ready for premium content access")
+            self.logger.info("✅ [AUTH SUCCESS] YouTube API authentication configured")
             return True
-        self.logger.info("   No YouTube API key found")
-        return False
+        else:
+            self.logger.info("🚫 [AUTH] No YouTube API key found in .env.local")
+            return False
 
     def _authenticate_ghost(self, url, session):
         """Authenticate with Ghost-based sites"""
@@ -294,17 +387,24 @@ class VideoArticleSummarizer:
 
     def _authenticate_generic(self, platform, session):
         """Generic authentication using session cookies"""
+        self.logger.info(f"🔐 [AUTH] Attempting generic authentication for {platform}...")
+
         # Check for platform-specific session cookies
         platform_upper = platform.upper()
+        credentials_applied = []
+
         for cookie_name in ['SESSION_COOKIE', 'AUTH_TOKEN', 'ACCESS_TOKEN']:
             cookie_value = os.getenv(f'{platform_upper}_{cookie_name}')
             if cookie_value:
                 session.cookies.set(cookie_name.lower(), cookie_value)
-                self.logger.info(f"   ✓ {platform} {cookie_name.lower()} applied")
-                return True
+                credentials_applied.append(cookie_name.lower())
 
-        self.logger.info(f"   No credentials found for {platform}")
-        return False
+        if credentials_applied:
+            self.logger.info(f"✅ [AUTH SUCCESS] {platform} authentication applied: {', '.join(credentials_applied)}")
+            return True
+        else:
+            self.logger.info(f"🚫 [AUTH] No generic credentials found for {platform} in .env.local")
+            return False
 
     def _log_transcript_excerpts(self, formatted_text, video_id):
         """Log first and last 100 words of transcript if available"""
@@ -352,6 +452,21 @@ class VideoArticleSummarizer:
                 continue
 
         raise RuntimeError("Claude CLI not found. Please install Claude Code.")
+
+    def _clean_title_indicators(self, title):
+        """Remove repeated indicator text from title"""
+        import re
+
+        # Remove repeated patterns of indicators
+        indicators = ['📹 VIDEO', '🎧 AUDIO', '🔄 UPDATED']
+        for indicator in indicators:
+            # Remove the indicator text itself (not the spans)
+            title = title.replace(indicator, '')
+
+        # Remove any multiple spaces
+        title = re.sub(r'\s+', ' ', title).strip()
+
+        return title
 
     def _sanitize_filename(self, title):
         """Convert title to safe filename with underscores"""
@@ -976,6 +1091,17 @@ class VideoArticleSummarizer:
         7. When finding timestamps, look for keywords and phrases that match your insights
         """
 
+        # Determine the correct JavaScript function for media type
+        if metadata.get('media_info') and metadata['media_info']['youtube_urls']:
+            jump_function = "jumpToTime"
+            media_type_indicator = "video"
+        elif metadata.get('media_info') and metadata['media_info']['audio_urls']:
+            jump_function = "jumpToAudioTime"
+            media_type_indicator = "audio"
+        else:
+            jump_function = "jumpToTime"  # Default fallback
+            media_type_indicator = "content"
+
         prompt = f"""
         Analyze this article: {url}
 
@@ -999,15 +1125,15 @@ class VideoArticleSummarizer:
         2. For SUMMARY CONTENT:
            - Structure the summary with clear H3/H4 headings for major subsections
            - Add clickable timestamps to each subsection heading where that content is discussed
-           - Format like: '<h3>🎯 Topic Name <span class="section-timestamp" onclick="jumpToTime(1800)" title="Jump to 30:00">⏰ 30:00</span></h3>'
-           - Ensure the timestamps correspond to where that topic actually begins in the video
+           - Format like: '<h3>🎯 Topic Name <span class="section-timestamp" onclick="{jump_function}(1800)" title="Jump to 30:00">⏰ 30:00</span></h3>'
+           - Ensure the timestamps correspond to where that topic actually begins in the content
            - Cover the content chronologically and logically
 
         3. For MEDIA TIMESTAMPS:
-           - Identify 6-10 key moments throughout the video
+           - Identify 6-10 key moments throughout the {media_type_indicator}
            - Focus on: key insights, important quotes, actionable advice, transitions, conclusions
            - Provide rich descriptions of what happens at each timestamp
-           - Ensure timestamps are distributed throughout the video timeline
+           - Ensure timestamps are distributed throughout the {media_type_indicator} timeline
 
         VALIDATION RULES:
         - Only use timestamps that actually exist in the provided transcript
@@ -1131,6 +1257,9 @@ class VideoArticleSummarizer:
                 embed_html = f'''
     <div class="audio-container">
         <h2>🎧 Listen to the Podcast</h2>
+        <div class="speed-notice-audio">
+            ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
+        </div>
         <div class="audio-embed">
             <audio controls style="width: 100%; max-width: 600px;">
                 <source src="{audio_data['url']}" type="audio/mpeg">
@@ -1149,6 +1278,9 @@ class VideoArticleSummarizer:
                 embed_html = f'''
     <div class="audio-container">
         <h2>🎧 Listen to the Audio</h2>
+        <div class="speed-notice-audio">
+            ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
+        </div>
         <div class="audio-embed">
             <audio controls style="width: 100%; max-width: 600px;">
                 <source src="{audio_data['url']}" type="audio/mpeg">
@@ -1203,6 +1335,13 @@ class VideoArticleSummarizer:
                                 {insight_text}
                                 <span class="insight-timestamp" onclick="jumpToTime({seconds})" title="Jump to {timestamp}">🎬 {timestamp}</span>
                             </li>'''
+                        elif timestamp and media_info.get('audio_urls'):
+                            # Convert timestamp to seconds for audio jump functionality
+                            seconds = self._convert_timestamp_to_seconds(timestamp)
+                            insights_html += f'''<li class="insight-with-timestamp">
+                                {insight_text}
+                                <span class="insight-timestamp" onclick="jumpToAudioTime({seconds})" title="Jump to {timestamp}">🎧 {timestamp}</span>
+                            </li>'''
                         else:
                             insights_html += f'<li>{insight_text}</li>'
                     else:
@@ -1248,20 +1387,34 @@ class VideoArticleSummarizer:
                 sections['TIMESTAMPS_SECTION'] = timestamps_html
                 sections['VIDEO_ID'] = video_id
 
-            # Handle audio content (non-interactive timestamps)
+            # Handle audio content (interactive timestamps)
             elif media_info.get('audio_urls'):
                 timestamps_html = '<div class="audio-timestamps"><h3>🎧 Audio Highlights</h3>'
-                timestamps_html += '<p><em>Key moments from the audio content:</em></p><ul>'
+                timestamps_html += '<p><em>Click timestamps to jump to that part of the audio:</em></p><ul>'
 
                 for ts in timestamps:
                     time_str = ts.get("time", "")
                     description = ts.get("description", "No description")
                     media_type = ts.get("type", "audio")
+                    transcript_quote = ts.get("transcript_quote", "")
 
                     if time_str:
+                        # Convert timestamp to seconds for audio jump functionality
+                        seconds = self._convert_timestamp_to_seconds(time_str)
                         timestamps_html += f'''
                         <li class="timestamp-item">
-                            <strong>{time_str}</strong> - {description}
+                            <span class="timestamp-link" onclick="jumpToAudioTime({seconds})">
+                                <strong>{time_str}</strong>
+                            </span>
+                            <button class="play-button" onclick="jumpToAudioTime({seconds})">▶ Play</button>
+                            <br>
+                            <span class="timestamp-description">{description}</span>'''
+
+                        if transcript_quote:
+                            timestamps_html += f'''
+                            <div class="transcript-quote">"{transcript_quote}"</div>'''
+
+                        timestamps_html += '''
                         </li>'''
                     else:
                         # If no time available, just show as discussion point
@@ -1341,18 +1494,22 @@ class VideoArticleSummarizer:
                 try:
                     with open(article_path, 'r') as f:
                         content = f.read()
-                        if 'video-container' in content or 'Video Content:</strong> Yes' in content:
+                        # More specific detection to avoid CSS false positives
+                        if 'Video Content:</strong> Yes' in content:
                             stats['video_articles'] += 1
-                        if 'audio-container' in content or 'Audio Content:</strong> Yes' in content:
+                        if 'Audio Content:</strong> Yes' in content:
                             stats['audio_articles'] += 1
                 except:
                     pass
 
             # Extract domain from URL if available
-            if 'url' in article:
-                domain = urlparse(article['url']).netloc
-                if domain:
-                    stats['domains'].add(domain)
+            if 'url' in article and article['url']:
+                try:
+                    domain = urlparse(article['url']).netloc
+                    if domain:
+                        stats['domains'].add(domain)
+                except:
+                    pass
 
         stats['domains_count'] = len(stats['domains'])
         return stats
@@ -1375,8 +1532,9 @@ class VideoArticleSummarizer:
                 try:
                     with open(article_path, 'r') as f:
                         content = f.read()
-                        has_video = 'video-container' in content or 'Video Content:</strong> Yes' in content
-                        has_audio = 'audio-container' in content or 'Audio Content:</strong> Yes' in content
+                        # More specific detection to avoid CSS false positives
+                        has_video = 'Video Content:</strong> Yes' in content
+                        has_audio = 'Audio Content:</strong> Yes' in content
                 except:
                     pass
 
@@ -1416,11 +1574,27 @@ class VideoArticleSummarizer:
                     link = item.find('a', class_='article-title')
                     desc = item.find('p', class_='article-description')
                     if link and desc:
+                        # Extract URL from article HTML file for better domain statistics
+                        article_url = ''
+                        try:
+                            article_file = self.html_dir / link.get('href')
+                            if article_file.exists():
+                                with open(article_file, 'r') as af:
+                                    article_content = af.read()
+                                    # Look for URL in metadata section
+                                    url_pattern = r'<li><strong>URL:</strong> <a href="([^"]+)"'
+                                    import re
+                                    url_match = re.search(url_pattern, article_content)
+                                    if url_match:
+                                        article_url = url_match.group(1)
+                        except:
+                            pass
+
                         articles_data.append({
                             'filename': link.get('href'),
-                            'title': link.get_text().replace('📹 VIDEO', '').replace('🔄 UPDATED', '').strip(),
+                            'title': self._clean_title_indicators(link.get_text()),
                             'description': desc.get_text(),
-                            'url': metadata.get('url', '') if metadata else ''
+                            'url': article_url if article_url else (metadata.get('url', '') if metadata else '')
                         })
 
         # Check if article already exists and update or add
