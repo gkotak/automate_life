@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>From managing people to managing AI: How the same leadership skills apply in the age of AI | Julie Zhuo - Summary</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            border-bottom: 3px solid #2c5aa0;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c5aa0;
+            margin: 0 0 10px 0;
+        }
+        .metadata {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+        .summary-section {
+            margin: 30px 0;
+        }
+        .summary-section h2 {
+            color: #1a365d;
+            border-left: 4px solid #2c5aa0;
+            padding-left: 15px;
+            margin-bottom: 20px;
+        }
+        .summary-section h3 {
+            color: #1a365d;
+            border-left: 4px solid #2c5aa0;
+            padding-left: 15px;
+        }
+        ul {
+            padding-left: 25px;
+        }
+        li {
+            margin: 12px 0;
+        }
+        .source-link {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        .source-link a {
+            color: #2c5aa0;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .source-link a:hover {
+            text-decoration: underline;
+        }
+        .key-insight {
+            background: #e6f3ff;
+            border: 1px solid #2c5aa0;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .video-timestamps {
+            background: #f0f8ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+        .video-timestamps ul {
+            margin: 10px 0;
+        }
+        .video-timestamps li {
+            font-family: 'Monaco', monospace;
+            background: #fff;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+
+        .video-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+
+        .speed-notice {
+            background: #e8f4fd;
+            color: #1565c0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+            border-left: 3px solid #1565c0;
+        }
+
+        .video-embed {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .video-embed iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .audio-container {
+            background: #f0f8ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .audio-embed {
+            margin: 15px 0;
+        }
+
+        .audio-info {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .audio-timestamps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .media-timestamps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #666;
+        }
+
+        .timestamp-item {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            transition: background-color 0.2s ease;
+        }
+
+        .timestamp-item:hover {
+            background: #f0f8ff;
+        }
+
+        .timestamp-link {
+            color: #2c5aa0;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: bold;
+            font-family: 'Monaco', monospace;
+        }
+
+        .timestamp-link:hover {
+            color: #1a365d;
+        }
+
+        .play-button {
+            background: #2c5aa0;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: 8px;
+        }
+
+        .play-button:hover {
+            background: #1a365d;
+        }
+
+        .timestamp-description {
+            color: #555;
+            font-size: 0.9em;
+            line-height: 1.4;
+            margin-top: 5px;
+            display: block;
+        }
+
+        .insight-timestamp {
+            background: #2c5aa0;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-left: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+
+        .insight-timestamp:hover {
+            background: #1a365d;
+        }
+
+        .transcript-quote {
+            font-style: italic;
+            color: #666;
+            background: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border-left: 3px solid #2c5aa0;
+            margin: 8px 0 4px 20px;
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+
+        .insight-with-timestamp {
+            margin-bottom: 16px;
+        }
+
+        .section-item {
+            border-left: 4px solid #4CAF50;
+        }
+
+        .section-item .timestamp-link {
+            color: #4CAF50;
+            font-size: 1.05em;
+        }
+
+        .section-item .timestamp-link:hover {
+            color: #45a049;
+        }
+
+        .section-timestamp {
+            background: #4CAF50;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-left: 10px;
+            text-decoration: none;
+            font-weight: normal;
+            transition: background-color 0.2s ease;
+        }
+
+        .section-timestamp:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>From managing people to managing AI: How the same leadership skills apply in the age of AI | Julie Zhuo</h1>
+        <p><strong>Source:</strong> www.lennysnewsletter.com</p>
+    </div>
+
+    <div class="metadata">
+        <h2>Article Details</h2>
+        <ul>
+            <li><strong>URL:</strong> <a href="https://www.lennysnewsletter.com/p/from-managing-people-to-managing-ai-julie-zhuo" target="_blank">https://www.lennysnewsletter.com/p/from-managing-people-to-managing-ai-julie-zhuo</a></li>
+            <li><strong>Domain:</strong> www.lennysnewsletter.com</li>
+            <li><strong>Analyzed:</strong> September 30, 2025 at 05:29 PM</li>
+            <li><strong>Video Content:</strong> Yes</li>
+            <li><strong>Audio Content:</strong> Yes</li>
+        </ul>
+    </div>
+
+    <div class="summary-section"><h3>💡 Key Insights</h3><ul><li class="insight-with-timestamp">
+                                Organizations are flattening as AI enables individual contributors to perform multiple roles traditionally requiring different specialists
+                                <span class="insight-timestamp" onclick="jumpToTime(0)" title="Jump to 0:00">🎬 0:00</span>
+                            </li><li class="insight-with-timestamp">
+                                Management remains critical but shifts from managing people to orchestrating AI models with different strengths
+                                <span class="insight-timestamp" onclick="jumpToTime(22)" title="Jump to 0:22">🎬 0:22</span>
+                            </li><li class="insight-with-timestamp">
+                                The biggest change for managers is the accelerating rate of change requiring adaptive resilience
+                                <span class="insight-timestamp" onclick="jumpToTime(43)" title="Jump to 0:43">🎬 0:43</span>
+                            </li><li class="insight-with-timestamp">
+                                Successful managers must be 'sturdy while being flexible' like a willow tree that survives storms through adaptability
+                                <span class="insight-timestamp" onclick="jumpToTime(51)" title="Jump to 0:51">🎬 0:51</span>
+                            </li><li class="insight-with-timestamp">
+                                The philosophy of 'diagnose with data, treat with design' balances analytical insights with creative solutions
+                                <span class="insight-timestamp" onclick="jumpToTime(65)" title="Jump to 1:05">🎬 1:05</span>
+                            </li><li class="insight-with-timestamp">
+                                Fast-growing companies often rely on instincts rather than data, but eventually need analytical rigor when growth slows
+                                <span class="insight-timestamp" onclick="jumpToTime(73)" title="Jump to 1:13">🎬 1:13</span>
+                            </li><li class="insight-with-timestamp">
+                                Traditional role boundaries should dissolve in favor of a unified 'builder' identity across disciplines
+                                <span class="insight-timestamp" onclick="jumpToTime(13)" title="Jump to 0:13">🎬 0:13</span>
+                            </li><li class="insight-with-timestamp">
+                                Google's layoffs of middle managers signal a broader industry trend toward flatter, AI-enabled organizations
+                                <span class="insight-timestamp" onclick="jumpToTime(19)" title="Jump to 0:19">🎬 0:19</span>
+                            </li></ul></div>
+
+    
+    <div class="video-container">
+        <h2>🎥 Watch the Video</h2>
+        <div class="speed-notice">
+            ⚡ Video automatically plays at 2x speed for efficient viewing. You can adjust speed in player controls.
+        </div>
+        <div class="video-embed">
+            <iframe
+                src="https://www.youtube.com/embed/c_w0LaFahxk?enablejsapi=1&playsinline=1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>
+
+    <div class="summary-section">
+        <h2>Summary</h2>
+        <div><h2>From Managing People to Managing AI: Julie Zhuo on Leadership Evolution</h2>
+
+<p>In this deep conversation, Julie Zhuo—former head of design at Facebook and author of "The Making of a Manager"—explores how traditional management skills translate directly to the AI era. Now founder of Sundial, an AI-powered analytics company, Zhuo offers unique insights from both mega-corp and startup perspectives.</p>
+
+<h3>🔄 The Great Organizational Flattening <span class="section-timestamp" onclick="jumpToTime(0)" title="Jump to 0:00">⏰ 0:00</span></h3>
+<p>Organizations are experiencing a fundamental restructuring as AI capabilities democratize skills across roles. The traditional hierarchy is dissolving as individual contributors can now accomplish tasks that previously required entire teams.</p>
+
+<h3>🎯 Management as Resource Orchestration <span class="section-timestamp" onclick="jumpToTime(22)" title="Jump to 0:22">⏰ 0:22</span></h3>
+<p>While the fundamentals of management remain—having a north star and vision—the resources being managed are shifting from primarily human teams to a combination of people and AI models. Managers must now understand different model strengths and assemble the right tools for specific purposes.</p>
+
+<h3>🌊 Accelerating Change Management <span class="section-timestamp" onclick="jumpToTime(39)" title="Jump to 0:39">⏰ 0:39</span></h3>
+<p>The core challenge for modern managers is the exponentially increasing rate of change. Success requires developing resilience while maintaining adaptability—embodied in Zhuo's willow tree metaphor.</p>
+
+<h3>📊 Data-Driven Design Philosophy <span class="section-timestamp" onclick="jumpToTime(65)" title="Jump to 1:05">⏰ 1:05</span></h3>
+<p>Zhuo's evolution from design leader to data advocate reflects a crucial insight: "diagnose with data, treat with design." This approach balances analytical rigor with creative problem-solving, essential for AI-era decision making.</p>
+
+<h3>🚀 The Future Builder Identity <span class="section-timestamp" onclick="jumpToTime(15)" title="Jump to 0:15">⏰ 0:15</span></h3>
+<p>Traditional role boundaries between engineers, designers, and product managers are dissolving. Zhuo envisions a future where everyone adopts the unified identity of "builders," equipped with AI tools to execute across disciplines.</p></div>
+    </div>
+
+    <div class="video-timestamps"><h3>🎬 Interactive Video Highlights</h3><p><em>Click timestamps to jump to that part of the video:</em></p><ul>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(0)">
+                            <strong>0:00</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(0)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Zhuo opens with the observation that organizations are flattening as AI enables individuals to perform multiple specialized roles, fundamentally changing traditional hierarchies</span>
+                        <div class="transcript-quote">"We're seeing this kind of flattening of orgs. Everyone's becoming an IC again"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(13)">
+                            <strong>0:13</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(13)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Discussion of dissolving traditional role boundaries (engineer, PM, designer) in favor of a unified 'builder' identity empowered by AI capabilities</span>
+                        <div class="transcript-quote">"We need to dissolve the boundaries of these traditional roles and call ourselves builders"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(22)">
+                            <strong>0:22</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(22)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Explanation of how management fundamentals remain constant (north star, vision) but the resources shift from people to AI models with different strengths</span>
+                        <div class="transcript-quote">"Management is still really critical... now it's basically models and different models have different strengths"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(43)">
+                            <strong>0:43</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(43)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Core insight about management evolution: while managing change has always been central, the rate of change is now exponentially accelerating</span>
+                        <div class="transcript-quote">"It's always been manager's job to manage change. I just think the rate of change is accelerating"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(51)">
+                            <strong>0:51</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(51)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Introduction of the willow tree metaphor for modern management - being sturdy yet flexible to survive constant storms and disasters</span>
+                        <div class="transcript-quote">"be sturdy while being flexible... the willow tree. It can survive a lot of storms"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(65)">
+                            <strong>1:05</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(65)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Zhuo's key philosophy revealed: 'diagnose with data, treat with design' - balancing analytical rigor with creative problem-solving</span>
+                        <div class="transcript-quote">"You want to diagnose with data and treat with design"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(87)">
+                            <strong>1:27</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(87)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Lenny introduces Julie Zhuo's impressive background: former Facebook head of design for 3+ billion users, author of 'The Making of a Manager', and founder of AI company Sundial</span>
+                        <div class="transcript-quote">"Today my guest is Julie Zoo... longtime head of design for the Facebook app used by over 3 billion people"</div>
+                    </li>
+                    <li class="timestamp-item">
+                        <span class="timestamp-link" onclick="jumpToTime(150)">
+                            <strong>2:30</strong>
+                        </span>
+                        <button class="play-button" onclick="jumpToTime(150)">▶ Play</button>
+                        <br>
+                        <span class="timestamp-description">Overview of conversation topics including management-to-AI parallels, valuable future skills, management advice, and decision-making frameworks</span>
+                        <div class="transcript-quote">"we talk about how learning to be a great manager directly translates to learning how to use AI tools extremely well"</div>
+                    </li></ul></div>
+
+    
+
+    <div class="source-link">
+        <p><a href="https://www.lennysnewsletter.com/p/from-managing-people-to-managing-ai-julie-zhuo" target="_blank">🔗 Read Original Article</a></p>
+        <p><em>Summary generated on September 30, 2025</em></p>
+    </div>
+
+    <script>
+        // Function to jump to specific time in embedded YouTube video
+        function jumpToTime(seconds) {
+            const iframe = document.querySelector('.video-embed iframe');
+            if (iframe) {
+                const currentSrc = iframe.src;
+                const baseUrl = currentSrc.split('?')[0];
+
+                // Update iframe src to jump to specific time at 2x speed
+                iframe.src = `${baseUrl}?enablejsapi=1&start=${seconds}&autoplay=1&playsinline=1`;
+
+                // Set 2x playback speed after video loads
+                iframe.onload = function() {
+                    // Try to set playback rate via postMessage
+                    setTimeout(() => {
+                        try {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"setPlaybackRate","args":[2]}', '*');
+                        } catch (e) {
+                            console.log('Could not set 2x playback rate - user interaction may be required');
+                        }
+                    }, 1000);
+                };
+
+                // Scroll to video for better user experience
+                const videoContainer = document.querySelector('.video-container');
+                if (videoContainer) {
+                    videoContainer.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }
+        }
+
+        // Set initial 2x speed when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const iframe = document.querySelector('.video-embed iframe');
+            if (iframe) {
+                iframe.onload = function() {
+                    setTimeout(() => {
+                        try {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"setPlaybackRate","args":[2]}', '*');
+                        } catch (e) {
+                            console.log('Could not set initial 2x playback rate - user interaction may be required');
+                        }
+                    }, 2000);
+                };
+            }
+        });
+
+        // Optional: Add keyboard shortcuts for common timestamps
+        document.addEventListener('keydown', function(event) {
+            // Only trigger if user isn't typing in an input field
+            if (event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+                const timestampItems = document.querySelectorAll('.timestamp-item');
+                const key = parseInt(event.key);
+
+                if (key >= 1 && key <= timestampItems.length) {
+                    const timestampLink = timestampItems[key - 1].querySelector('.timestamp-link');
+                    if (timestampLink) {
+                        timestampLink.click();
+                    }
+                }
+            }
+        });
+
+        // Add visual feedback for timestamp clicks
+        document.addEventListener('click', function(event) {
+            if (event.target.classList.contains('timestamp-link') || event.target.classList.contains('play-button')) {
+                // Add brief visual feedback
+                event.target.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    event.target.style.transform = 'scale(1)';
+                }, 150);
+            }
+        });
+    </script>
+</body>
+</html>
