@@ -37,8 +37,14 @@ class VideoArticleSummarizer:
         self.logs_dir = self.base_dir / "programs" / "video_summarizer" / "logs"
         self.claude_cmd = self._find_claude_cli()
 
-        # Load environment variables for credentials
-        load_dotenv(self.base_dir / '.env')
+        # Load environment variables for credentials (prioritize .env.local)
+        env_local = self.base_dir / '.env.local'
+        env_default = self.base_dir / '.env'
+
+        if env_local.exists():
+            load_dotenv(env_local)
+        elif env_default.exists():
+            load_dotenv(env_default)
 
         # Setup authenticated session
         self.session = self._setup_authenticated_session()
@@ -109,42 +115,196 @@ class VideoArticleSummarizer:
 
         return session
 
-    def _authenticate_for_domain(self, domain, session):
-        """Perform domain-specific authentication if needed"""
+    def _detect_platform(self, url):
+        """Detect the platform/service from URL patterns"""
+        domain = urlparse(url).netloc.lower()
+
+        # Platform detection patterns
+        platforms = {
+            'substack': [
+                lambda d: d.endswith('.substack.com'),
+                lambda d: 'substack.com' in d,
+                lambda d: any(pattern in d for pattern in ['newsletter', 'substack'])
+            ],
+            'medium': [
+                lambda d: d.endswith('.medium.com'),
+                lambda d: d == 'medium.com',
+                lambda d: 'medium.com' in d
+            ],
+            'patreon': [
+                lambda d: d == 'patreon.com',
+                lambda d: d.endswith('.patreon.com')
+            ],
+            'youtube': [
+                lambda d: d in ['youtube.com', 'www.youtube.com', 'youtu.be', 'm.youtube.com']
+            ],
+            'ghost': [
+                lambda d: 'ghost.io' in d,
+                lambda d: any(ghost_indicator in url.lower() for ghost_indicator in ['/ghost/', 'ghost.org'])
+            ],
+            'convertkit': [
+                lambda d: 'convertkit.com' in d,
+                lambda d: 'ck.page' in d
+            ],
+            'beehiiv': [
+                lambda d: 'beehiiv.com' in d
+            ],
+            'mailchimp': [
+                lambda d: 'mailchimp.com' in d,
+                lambda d: 'us' in d and 'campaign-archive.com' in d  # Mailchimp archives
+            ],
+            'linkedin': [
+                lambda d: d in ['linkedin.com', 'www.linkedin.com']
+            ],
+            'twitter': [
+                lambda d: d in ['twitter.com', 'www.twitter.com', 'x.com', 'www.x.com']
+            ]
+        }
+
+        # Check each platform's patterns
+        for platform, patterns in platforms.items():
+            if any(pattern(domain) for pattern in patterns):
+                return platform
+
+        # Check for common newsletter/blog indicators in the URL
+        url_lower = url.lower()
+        if any(indicator in url_lower for indicator in ['/newsletter/', '/blog/', '/p/', '/post/']):
+            return 'newsletter_generic'
+
+        return 'generic'
+
+    def _authenticate_for_platform(self, platform, url, session):
+        """Perform platform-specific authentication based on detected platform"""
         try:
-            # Substack authentication
-            if 'substack.com' in domain:
-                email = os.getenv('SUBSTACK_EMAIL')
-                password = os.getenv('SUBSTACK_PASSWORD')
-                if email and password:
-                    self.logger.info("   Attempting Substack authentication...")
-                    login_url = "https://substack.com/api/v1/login"
-                    login_data = {
-                        'email': email,
-                        'password': password,
-                        'captcha_response': None
-                    }
-                    response = session.post(login_url, json=login_data)
-                    if response.status_code == 200:
-                        self.logger.info("   ✓ Substack authentication successful")
-                        return True
-                    else:
-                        self.logger.warning(f"   ⚠️ Substack authentication failed: {response.status_code}")
+            self.logger.info(f"   Detected platform: {platform}")
 
-            # Add more domain-specific authentication here
-            # Example for other platforms:
-            # elif 'example.com' in domain:
-            #     username = os.getenv('EXAMPLE_USERNAME')
-            #     password = os.getenv('EXAMPLE_PASSWORD')
-            #     if username and password:
-            #         # Perform authentication for example.com
-            #         pass
-
-            return False
+            if platform == 'substack':
+                return self._authenticate_substack(session)
+            elif platform == 'medium':
+                return self._authenticate_medium(session)
+            elif platform == 'patreon':
+                return self._authenticate_patreon(session)
+            elif platform == 'youtube':
+                return self._authenticate_youtube(session)
+            elif platform == 'ghost':
+                return self._authenticate_ghost(url, session)
+            elif platform in ['convertkit', 'beehiiv', 'mailchimp', 'newsletter_generic']:
+                return self._authenticate_newsletter_generic(platform, session)
+            elif platform in ['linkedin', 'twitter']:
+                return self._authenticate_social(platform, session)
+            else:
+                # Generic authentication using session cookies
+                return self._authenticate_generic(platform, session)
 
         except Exception as e:
-            self.logger.warning(f"   ⚠️ Authentication failed for {domain}: {str(e)}")
+            self.logger.warning(f"   ⚠️ Authentication failed for {platform}: {str(e)}")
             return False
+
+    def _authenticate_substack(self, session):
+        """Authenticate with Substack"""
+        email = os.getenv('SUBSTACK_EMAIL')
+        password = os.getenv('SUBSTACK_PASSWORD')
+
+        if email and password:
+            self.logger.info("   Attempting Substack authentication...")
+            login_url = "https://substack.com/api/v1/login"
+            login_data = {
+                'email': email,
+                'password': password,
+                'captcha_response': None
+            }
+            response = session.post(login_url, json=login_data)
+            if response.status_code == 200:
+                self.logger.info("   ✓ Substack authentication successful")
+                return True
+            else:
+                self.logger.warning(f"   ⚠️ Substack authentication failed: {response.status_code}")
+        else:
+            self.logger.info("   No Substack credentials found, using session cookies if available")
+        return False
+
+    def _authenticate_medium(self, session):
+        """Authenticate with Medium"""
+        # Medium typically uses session cookies or OAuth
+        session_cookie = os.getenv('MEDIUM_SESSION_COOKIE')
+        if session_cookie:
+            session.cookies.set('sid', session_cookie, domain='.medium.com')
+            self.logger.info("   ✓ Medium session cookie applied")
+            return True
+        self.logger.info("   No Medium credentials found")
+        return False
+
+    def _authenticate_patreon(self, session):
+        """Authenticate with Patreon"""
+        session_cookie = os.getenv('PATREON_SESSION_COOKIE')
+        if session_cookie:
+            session.cookies.set('session_id', session_cookie, domain='.patreon.com')
+            self.logger.info("   ✓ Patreon session cookie applied")
+            return True
+        self.logger.info("   No Patreon credentials found")
+        return False
+
+    def _authenticate_youtube(self, session):
+        """Authenticate with YouTube (for premium content)"""
+        api_key = os.getenv('YOUTUBE_API_KEY')
+        if api_key:
+            # YouTube API authentication would be handled differently
+            self.logger.info("   ✓ YouTube API key available")
+            return True
+        self.logger.info("   No YouTube API key found")
+        return False
+
+    def _authenticate_ghost(self, url, session):
+        """Authenticate with Ghost-based sites"""
+        # Ghost sites often use member authentication
+        site_name = urlparse(url).netloc.replace('.', '_').upper()
+        email = os.getenv(f'{site_name}_EMAIL') or os.getenv('GHOST_EMAIL')
+        password = os.getenv(f'{site_name}_PASSWORD') or os.getenv('GHOST_PASSWORD')
+
+        if email and password:
+            self.logger.info(f"   Attempting Ghost authentication for {site_name}")
+            # Ghost authentication would need site-specific implementation
+            return True
+        self.logger.info("   No Ghost credentials found")
+        return False
+
+    def _authenticate_newsletter_generic(self, platform, session):
+        """Authenticate with generic newsletter platforms"""
+        platform_upper = platform.upper()
+        session_cookie = os.getenv(f'{platform_upper}_SESSION_COOKIE')
+
+        if session_cookie:
+            session.cookies.set('session', session_cookie)
+            self.logger.info(f"   ✓ {platform} session cookie applied")
+            return True
+        self.logger.info(f"   No {platform} credentials found")
+        return False
+
+    def _authenticate_social(self, platform, session):
+        """Authenticate with social media platforms"""
+        platform_upper = platform.upper()
+        session_cookie = os.getenv(f'{platform_upper}_SESSION_COOKIE')
+
+        if session_cookie:
+            session.cookies.set('auth_token', session_cookie)
+            self.logger.info(f"   ✓ {platform} session cookie applied")
+            return True
+        self.logger.info(f"   No {platform} credentials found")
+        return False
+
+    def _authenticate_generic(self, platform, session):
+        """Generic authentication using session cookies"""
+        # Check for platform-specific session cookies
+        platform_upper = platform.upper()
+        for cookie_name in ['SESSION_COOKIE', 'AUTH_TOKEN', 'ACCESS_TOKEN']:
+            cookie_value = os.getenv(f'{platform_upper}_{cookie_name}')
+            if cookie_value:
+                session.cookies.set(cookie_name.lower(), cookie_value)
+                self.logger.info(f"   ✓ {platform} {cookie_name.lower()} applied")
+                return True
+
+        self.logger.info(f"   No credentials found for {platform}")
+        return False
 
     def _log_transcript_excerpts(self, formatted_text, video_id):
         """Log first and last 100 words of transcript if available"""
@@ -555,11 +715,11 @@ class VideoArticleSummarizer:
     def _extract_basic_metadata(self, url):
         """Extract basic metadata from URL (deterministic part)"""
         try:
-            # Use authenticated session
-            domain = urlparse(url).netloc
+            # Detect platform and authenticate accordingly
+            platform = self._detect_platform(url)
 
-            # Attempt domain-specific authentication if needed
-            self._authenticate_for_domain(domain, self.session)
+            # Attempt platform-specific authentication if needed
+            self._authenticate_for_platform(platform, url, self.session)
 
             response = self.session.get(url, timeout=30)
             response.raise_for_status()
