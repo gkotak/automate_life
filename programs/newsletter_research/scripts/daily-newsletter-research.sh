@@ -3,14 +3,31 @@
 # Daily Newsletter Research Automation Script
 # This script runs the newsletter research workflow automatically
 
+# Find project root by looking for characteristic files
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+
+# Look upward for project root markers
+while [[ "$PROJECT_ROOT" != "/" ]]; do
+    if [[ -d "$PROJECT_ROOT/.git" ]] || [[ -f "$PROJECT_ROOT/CLAUDE.md" ]]; then
+        break
+    fi
+    PROJECT_ROOT="$(dirname "$PROJECT_ROOT")"
+done
+
+# If no markers found, assume script is in programs/newsletter_research/scripts/
+if [[ "$PROJECT_ROOT" == "/" ]]; then
+    PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+fi
+
 # Set working directory
-cd "/Users/gauravkotak/cursor-projects-1/automate_life"
+cd "$PROJECT_ROOT"
 
 # Ensure PATH includes common locations for Claude CLI
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 # Log file for tracking runs
-LOG_FILE="/Users/gauravkotak/cursor-projects-1/automate_life/programs/newsletter_research/logs/newsletter-research.log"
+LOG_FILE="$PROJECT_ROOT/programs/newsletter_research/logs/newsletter-research.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
 # Function to log with timestamp

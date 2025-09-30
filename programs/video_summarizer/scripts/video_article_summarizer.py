@@ -18,7 +18,19 @@ from bs4 import BeautifulSoup
 from youtube_transcript_api import YouTubeTranscriptApi
 
 class VideoArticleSummarizer:
-    def __init__(self, base_dir="/Users/gauravkotak/cursor-projects-1/automate_life"):
+    def __init__(self, base_dir=None):
+        if base_dir is None:
+            # Find the project root by looking for characteristic files
+            current_dir = Path(__file__).parent
+            while current_dir != current_dir.parent:
+                if (current_dir / '.git').exists() or (current_dir / 'CLAUDE.md').exists():
+                    base_dir = current_dir
+                    break
+                current_dir = current_dir.parent
+            else:
+                # Fallback: assume script is in programs/video_summarizer/scripts/
+                base_dir = Path(__file__).parent.parent.parent
+
         self.base_dir = Path(base_dir)
         self.html_dir = self.base_dir / "programs" / "video_summarizer" / "output" / "article_summaries"
         self.logs_dir = self.base_dir / "programs" / "video_summarizer" / "logs"
@@ -65,11 +77,11 @@ class VideoArticleSummarizer:
         self.logger.info(f"VideoArticleSummarizer initialized. Log file: {log_file}")
 
     def _log_transcript_excerpts(self, formatted_text, video_id):
-        """Log first and last 1000 words of transcript if available"""
+        """Log first and last 100 words of transcript if available"""
         if not formatted_text:
             return
 
-        # Split into words to get first and last 1000 words
+        # Split into words to get first and last 100 words
         words = formatted_text.split()
         total_words = len(words)
 
@@ -78,18 +90,18 @@ class VideoArticleSummarizer:
 
         self.logger.info(f"     📝 [HIGH PRIORITY] Transcript for {video_id}: {total_words} total words")
 
-        # Log first 1000 words
+        # Log first 100 words
         if total_words > 0:
-            first_1000 = ' '.join(words[:1000])
-            self.logger.info(f"     📝 [HIGH PRIORITY] TRANSCRIPT START (first 1000 words):")
-            self.logger.info(f"     {first_1000}")
+            first_100 = ' '.join(words[:100])
+            self.logger.info(f"     📝 [HIGH PRIORITY] TRANSCRIPT START (first 100 words):")
+            self.logger.info(f"     {first_100}")
 
-        # Log last 1000 words if transcript is longer than 1000 words
-        if total_words > 1000:
-            last_1000 = ' '.join(words[-1000:])
-            self.logger.info(f"     📝 [HIGH PRIORITY] TRANSCRIPT END (last 1000 words):")
-            self.logger.info(f"     {last_1000}")
-        elif total_words <= 1000:
+        # Log last 100 words if transcript is longer than 100 words
+        if total_words > 100:
+            last_100 = ' '.join(words[-100:])
+            self.logger.info(f"     📝 [HIGH PRIORITY] TRANSCRIPT END (last 100 words):")
+            self.logger.info(f"     {last_100}")
+        elif total_words <= 100:
             self.logger.info(f"     📝 [HIGH PRIORITY] Complete transcript logged above ({total_words} words)")
 
     def _find_claude_cli(self):
@@ -298,6 +310,127 @@ class VideoArticleSummarizer:
 
         return "\n".join(formatted_text)
 
+    def _find_transcript_timestamp_for_content(self, transcript_data, search_keywords):
+        """Find the timestamp in transcript where specific content/keywords appear"""
+        if not transcript_data or not transcript_data.get('success'):
+            return None, None
+
+        transcript = transcript_data.get('transcript', [])
+        search_keywords_lower = [kw.lower() for kw in search_keywords]
+
+        best_matches = []
+
+        for entry in transcript:
+            start_time = entry.get('start', 0)
+            text = entry.get('text', '').strip().lower()
+
+            # Count how many keywords appear in this entry
+            keyword_count = sum(1 for keyword in search_keywords_lower if keyword in text)
+
+            if keyword_count > 0:
+                minutes = int(start_time // 60)
+                seconds = int(start_time % 60)
+                timestamp = f"{minutes}:{seconds:02d}"
+
+                best_matches.append({
+                    'timestamp': timestamp,
+                    'text': entry.get('text', '').strip(),
+                    'keyword_count': keyword_count,
+                    'start_time': start_time
+                })
+
+        # Sort by keyword count and then by time (prefer earlier occurrences)
+        best_matches.sort(key=lambda x: (-x['keyword_count'], x['start_time']))
+
+        if best_matches:
+            best_match = best_matches[0]
+            return best_match['timestamp'], best_match['text']
+
+        return None, None
+
+    def _extract_content_sections_from_transcript(self, transcript_data, num_sections=5):
+        """Automatically divide transcript into logical sections based on content flow"""
+        if not transcript_data or not transcript_data.get('success'):
+            return []
+
+        transcript = transcript_data.get('transcript', [])
+        if len(transcript) < num_sections:
+            return []
+
+        total_duration = transcript[-1].get('start', 0) if transcript else 0
+        section_duration = total_duration / num_sections
+
+        sections = []
+        for i in range(num_sections):
+            section_start_time = i * section_duration
+
+            # Find the closest transcript entry to this time
+            closest_entry = min(transcript,
+                              key=lambda x: abs(x.get('start', 0) - section_start_time))
+
+            start_time = closest_entry.get('start', 0)
+            minutes = int(start_time // 60)
+            seconds = int(start_time % 60)
+            timestamp = f"{minutes}:{seconds:02d}"
+
+            # Get some context text for this section
+            context_text = closest_entry.get('text', '').strip()
+
+            sections.append({
+                'timestamp': timestamp,
+                'start_time': start_time,
+                'context_text': context_text,
+                'section_number': i + 1,
+                'duration_minutes': int(section_duration / 60) if section_duration > 60 else 1
+            })
+
+        return sections
+
+    def _create_metadata_for_prompt(self, metadata):
+        """Create a stripped-down version of metadata for Claude prompt (without full transcripts)"""
+        stripped_metadata = {
+            'title': metadata.get('title', ''),
+            'url': metadata.get('url', ''),
+            'domain': metadata.get('domain', ''),
+            'has_video_indicators': metadata.get('has_video_indicators', False),
+            'has_audio_indicators': metadata.get('has_audio_indicators', False),
+            'extracted_at': metadata.get('extracted_at', ''),
+            'media_info': {
+                'youtube_urls': metadata.get('media_info', {}).get('youtube_urls', []),
+                'audio_urls': [
+                    {
+                        'platform': audio.get('platform', ''),
+                        'type': audio.get('type', '')
+                    } for audio in metadata.get('media_info', {}).get('audio_urls', [])
+                ],
+                'podcast_info': metadata.get('media_info', {}).get('podcast_info', {})
+            }
+        }
+
+        # Add transcript summary info without the actual transcript data
+        if metadata.get('transcripts'):
+            transcript_summary = {}
+            for video_id, transcript_data in metadata['transcripts'].items():
+                if transcript_data.get('success'):
+                    transcript_list = transcript_data.get('transcript', [])
+                    total_duration = transcript_list[-1].get('start', 0) if transcript_list else 0
+                    transcript_summary[video_id] = {
+                        'success': True,
+                        'type': transcript_data.get('type', 'unknown'),
+                        'language': transcript_data.get('language', 'en'),
+                        'total_entries': len(transcript_list),
+                        'duration_seconds': int(total_duration),
+                        'duration_formatted': f"{int(total_duration // 60)}:{int(total_duration % 60):02d}"
+                    }
+                else:
+                    transcript_summary[video_id] = {
+                        'success': False,
+                        'error': transcript_data.get('error', 'Unknown error')
+                    }
+            stripped_metadata['transcript_summary'] = transcript_summary
+
+        return stripped_metadata
+
     def _extract_basic_metadata(self, url):
         """Extract basic metadata from URL (deterministic part)"""
         try:
@@ -492,46 +625,104 @@ class VideoArticleSummarizer:
         # Include transcript data if available
         if metadata.get('transcripts'):
             available_transcripts = []
+            full_transcript_text = ""
             for video_id, transcript_data in metadata['transcripts'].items():
                 if transcript_data.get('success'):
                     formatted_transcript = self._format_transcript_for_analysis(transcript_data)
                     if formatted_transcript:
+                        full_transcript_text += formatted_transcript + "\n\n"
+                        # Include more of the transcript for better analysis
                         available_transcripts.append(f"""
         VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
-        {formatted_transcript[:5000]}...  # Truncated for prompt size
+        {formatted_transcript[:8000]}{'...' if len(formatted_transcript) > 8000 else ''}
         """)
 
             if available_transcripts:
+                # Generate automatic sections from transcript for reference
+                sections_from_transcript = []
+                for video_id, transcript_data in metadata['transcripts'].items():
+                    if transcript_data.get('success'):
+                        auto_sections = self._extract_content_sections_from_transcript(transcript_data, 6)
+                        sections_from_transcript.extend(auto_sections)
+
+                sections_context = ""
+                if sections_from_transcript:
+                    sections_context = f"""
+
+        SUGGESTED SECTIONS (based on transcript timeline):
+        {chr(10).join([f"Section {s['section_number']}: {s['timestamp']} - '{s['context_text'][:100]}...' (≈{s['duration_minutes']} min)" for s in sections_from_transcript])}
+        """
+
                 transcript_context = f"""
         TRANSCRIPT DATA AVAILABLE: The following are actual transcripts from the YouTube videos.
         Use these to create ACCURATE timestamps and content descriptions:
 
         {''.join(available_transcripts)}
+        {sections_context}
 
-        Since you have the actual transcript, please provide precise timestamps that match the actual content,
-        not estimates. Focus on the most valuable parts of the video content.
+        CRITICAL: Since you have the actual transcript with timestamps, you must:
+        1. Find the EXACT timestamp where each key insight is mentioned by searching through the transcript
+        2. Map summary sections to their corresponding timestamps in the transcript
+        3. Use only timestamps that actually exist in the transcript data
+        4. Quote specific phrases from the transcript when referencing insights (brief 5-10 word quotes)
+        5. Ensure every insight has a corresponding timestamp from the actual transcript
+        6. Use the suggested sections as a guide but feel free to adjust based on content flow
+        7. When finding timestamps, look for keywords and phrases that match your insights
         """
 
         prompt = f"""
         Analyze this article: {url}
 
         Create a comprehensive summary with the following structure:
-        1. Write a clear, structured summary (max 1000 words) in HTML format
+        1. Write a clear, structured summary (max 1000 words) in HTML format with embedded timestamps for each major subsection
         2. Extract 5-8 key insights as bullet points
         3. If video/audio content exists, identify specific timestamps with detailed descriptions
 
         {media_context}
         {transcript_context}
 
-        Please provide a clean, well-formatted response focusing on the content value rather than technical processing details.
+        ENHANCED TIMESTAMP MAPPING REQUIREMENTS:
+        When transcript data is available, you MUST:
 
-        Article metadata: {json.dumps(metadata, indent=2)}
+        1. For KEY INSIGHTS:
+           - Search through the transcript to find the exact moment each insight is discussed
+           - Include the specific timestamp (MM:SS) where that insight appears
+           - Quote a brief phrase from the transcript to validate the timestamp
+           - If an insight spans multiple parts, use the first significant mention
+
+        2. For SUMMARY CONTENT:
+           - Structure the summary with clear H3/H4 headings for major subsections
+           - Add clickable timestamps to each subsection heading where that content is discussed
+           - Format like: '<h3>🎯 Topic Name <span class="section-timestamp" onclick="jumpToTime(1800)" title="Jump to 30:00">⏰ 30:00</span></h3>'
+           - Ensure the timestamps correspond to where that topic actually begins in the video
+           - Cover the content chronologically and logically
+
+        3. For MEDIA TIMESTAMPS:
+           - Identify 6-10 key moments throughout the video
+           - Focus on: key insights, important quotes, actionable advice, transitions, conclusions
+           - Provide rich descriptions of what happens at each timestamp
+           - Ensure timestamps are distributed throughout the video timeline
+
+        VALIDATION RULES:
+        - Only use timestamps that actually exist in the provided transcript
+        - Verify each timestamp by checking the actual transcript text
+        - If you cannot find a specific timestamp for an insight, mark it as "general" content
+        - Prioritize accuracy over completeness
+
+        Article metadata: {json.dumps(self._create_metadata_for_prompt(metadata), indent=2)}
 
         Return your response in this JSON format:
         {{
-            "summary": "HTML formatted summary content",
-            "key_insights": ["insight 1", "insight 2", ...],
-            "media_timestamps": [{{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio"}}, ...]
+            "summary": "HTML formatted summary content with embedded section timestamps",
+            "key_insights": [
+                {{"insight": "insight text", "timestamp": "MM:SS", "transcript_quote": "brief quote from transcript at this time"}},
+                {{"insight": "insight text", "timestamp": "MM:SS", "transcript_quote": "brief quote from transcript at this time"}},
+                ...
+            ],
+            "media_timestamps": [
+                {{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio", "transcript_quote": "relevant quote from transcript"}},
+                ...
+            ]
         }}
 
         Note: For audio content, if no specific timestamps are available, focus on key discussion topics and insights instead.
@@ -556,8 +747,9 @@ class VideoArticleSummarizer:
             formatted_summary = self._format_summary_as_html(response)
             return {
                 "summary": formatted_summary,
-                "key_insights": ["Content analyzed - see summary for details"],
-                "media_timestamps": []
+                "key_insights": [{"insight": "Content analyzed - see summary for details", "timestamp": ""}],
+                "media_timestamps": [],
+                "summary_sections": []
             }
 
     def _load_template(self, template_name="article_summary.html"):
@@ -671,18 +863,48 @@ class VideoArticleSummarizer:
 
         # Generate insights section
         insights = ai_summary.get('key_insights', [])
-        if insights and insights != ["Analysis completed but formatting needs review"] and insights != ["Content analyzed - see summary for details"]:
-            insights_html = '<div class="summary-section"><h3>💡 Key Insights</h3><ul>'
-            for insight in insights:
-                insights_html += f'<li>{insight}</li>'
-            insights_html += '</ul></div>'
-            sections['INSIGHTS_SECTION'] = insights_html
+        media_info = metadata.get('media_info', {})
+
+        if insights and len(insights) > 0:
+            # Check if insights are in new format with timestamps or old format
+            first_insight = insights[0]
+
+            # Skip if it's just the fallback content
+            if (isinstance(first_insight, dict) and first_insight.get('insight') == "Content analyzed - see summary for details") or \
+               (isinstance(first_insight, str) and first_insight in ["Analysis completed but formatting needs review", "Content analyzed - see summary for details"]):
+                sections['INSIGHTS_SECTION'] = ''
+            else:
+                insights_html = '<div class="summary-section"><h3>💡 Key Insights</h3><ul>'
+
+                for insight in insights:
+                    if isinstance(insight, dict):
+                        # New format with timestamp and optional transcript quote
+                        insight_text = insight.get('insight', '')
+                        timestamp = insight.get('timestamp', '')
+                        transcript_quote = insight.get('transcript_quote', '')
+
+                        if timestamp and media_info.get('youtube_urls'):
+                            # Convert timestamp to seconds for video jump functionality
+                            seconds = self._convert_timestamp_to_seconds(timestamp)
+                            quote_html = f'<div class="transcript-quote">"{transcript_quote}"</div>' if transcript_quote else ''
+                            insights_html += f'''<li class="insight-with-timestamp">
+                                {insight_text}
+                                <span class="insight-timestamp" onclick="jumpToTime({seconds})" title="Jump to {timestamp}">🎬 {timestamp}</span>
+                                {quote_html}
+                            </li>'''
+                        else:
+                            insights_html += f'<li>{insight_text}</li>'
+                    else:
+                        # Old format (plain string)
+                        insights_html += f'<li>{insight}</li>'
+
+                insights_html += '</ul></div>'
+                sections['INSIGHTS_SECTION'] = insights_html
         else:
             sections['INSIGHTS_SECTION'] = ''
 
         # Generate interactive media timestamps section (video/audio)
         timestamps = ai_summary.get('media_timestamps', [])  # Updated to use media_timestamps
-        media_info = metadata.get('media_info', {})
 
         if timestamps:
             # Check if we have video content with interactivity
@@ -695,7 +917,10 @@ class VideoArticleSummarizer:
                     time_str = ts.get("time", "0:00")
                     description = ts.get("description", "No description")
                     media_type = ts.get("type", "video")
+                    transcript_quote = ts.get("transcript_quote", "")
                     seconds = self._convert_timestamp_to_seconds(time_str)
+
+                    quote_html = f'<div class="transcript-quote">"{transcript_quote}"</div>' if transcript_quote else ''
 
                     timestamps_html += f'''
                     <li class="timestamp-item">
@@ -705,6 +930,7 @@ class VideoArticleSummarizer:
                         <button class="play-button" onclick="jumpToTime({seconds})">▶ Play</button>
                         <br>
                         <span class="timestamp-description">{description}</span>
+                        {quote_html}
                     </li>'''
 
                 timestamps_html += '</ul></div>'
@@ -754,6 +980,8 @@ class VideoArticleSummarizer:
             sections['TIMESTAMPS_SECTION'] = ''
             sections['VIDEO_ID'] = ''
 
+        # Summary sections are now integrated into the main summary content
+        sections['SUMMARY_SECTIONS'] = ''
 
         return sections
 
