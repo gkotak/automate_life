@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greatest Of All Talk - Summary</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            border-bottom: 3px solid #2c5aa0;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c5aa0;
+            margin: 0 0 10px 0;
+        }
+        .metadata {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+        .summary-section {
+            margin: 30px 0;
+        }
+        .summary-section h2 {
+            color: #1a365d;
+            border-left: 4px solid #2c5aa0;
+            padding-left: 15px;
+            margin-bottom: 20px;
+        }
+        .summary-section h3 {
+            color: #1a365d;
+            border-left: 4px solid #2c5aa0;
+            padding-left: 15px;
+        }
+        ul {
+            padding-left: 25px;
+        }
+        li {
+            margin: 12px 0;
+        }
+        .source-link {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        .source-link a {
+            color: #2c5aa0;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .source-link a:hover {
+            text-decoration: underline;
+        }
+        .key-insight {
+            background: #e6f3ff;
+            border: 1px solid #2c5aa0;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .video-timestamps {
+            background: #f0f8ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+        .video-timestamps ul {
+            margin: 10px 0;
+        }
+        .video-timestamps li {
+            font-family: 'Monaco', monospace;
+            background: #fff;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+
+        .video-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+
+        .speed-notice {
+            background: #e8f4fd;
+            color: #1565c0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+            border-left: 3px solid #1565c0;
+        }
+
+        .video-embed {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .video-embed iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .audio-container {
+            background: #f0f8ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .audio-embed {
+            margin: 15px 0;
+        }
+
+        .audio-info {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .audio-timestamps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #4a90e2;
+        }
+
+        .media-timestamps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #666;
+        }
+
+        .timestamp-item {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            transition: background-color 0.2s ease;
+        }
+
+        .timestamp-item:hover {
+            background: #f0f8ff;
+        }
+
+        .timestamp-link {
+            color: #2c5aa0;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: bold;
+            font-family: 'Monaco', monospace;
+        }
+
+        .timestamp-link:hover {
+            color: #1a365d;
+        }
+
+        .play-button {
+            background: #2c5aa0;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: 8px;
+        }
+
+        .play-button:hover {
+            background: #1a365d;
+        }
+
+        .timestamp-description {
+            color: #555;
+            font-size: 0.9em;
+            line-height: 1.4;
+            margin-top: 5px;
+            display: block;
+        }
+
+        .insight-timestamp {
+            background: #2c5aa0;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-left: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+
+        .insight-timestamp:hover {
+            background: #1a365d;
+        }
+
+        .transcript-quote {
+            font-style: italic;
+            color: #666;
+            background: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border-left: 3px solid #2c5aa0;
+            margin: 8px 0 4px 20px;
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+
+        .insight-with-timestamp {
+            margin-bottom: 16px;
+        }
+
+        .section-item {
+            border-left: 4px solid #4CAF50;
+        }
+
+        .section-item .timestamp-link {
+            color: #4CAF50;
+            font-size: 1.05em;
+        }
+
+        .section-item .timestamp-link:hover {
+            color: #45a049;
+        }
+
+        .section-timestamp {
+            background: #4CAF50;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-left: 10px;
+            text-decoration: none;
+            font-weight: normal;
+            transition: background-color 0.2s ease;
+        }
+
+        .section-timestamp:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Greatest Of All Talk</h1>
+        <p><strong>Source:</strong> goat.passport.online</p>
+    </div>
+
+    <div class="metadata">
+        <h2>Article Details</h2>
+        <ul>
+            <li><strong>URL:</strong> <a href="https://goat.passport.online/member/episode/a-standoff-in-a-two-horse-town-the-van-vleet-injury-and-whats-next-in-houston-notes-on-tatum-zion-ace-and-ant" target="_blank">https://goat.passport.online/member/episode/a-standoff-in-a-two-horse-town-the-van-vleet-injury-and-whats-next-in-houston-notes-on-tatum-zion-ace-and-ant</a></li>
+            <li><strong>Domain:</strong> goat.passport.online</li>
+            <li><strong>Analyzed:</strong> September 30, 2025 at 04:51 PM</li>
+            <li><strong>Video Content:</strong> No</li>
+            <li><strong>Audio Content:</strong> Yes</li>
+        </ul>
+    </div>
+
+    <div class="summary-section"><h3>💡 Key Insights</h3><ul><li>Houston Rockets facing internal organizational challenges described as a 'standoff'</li><li>Fred VanVleet's injury has significant implications for team strategy</li><li>Jayson Tatum's current performance warrants detailed analysis</li><li>Zion Williamson's health and play remain key storylines</li><li>Anthony Edwards continues to be a focal point for NBA analysis</li></ul></div>
+
+    
+
+    <div class="summary-section">
+        <h2>Summary</h2>
+        <div><h2>Greatest Of All Talk: NBA Analysis Episode</h2><p>This episode of Greatest Of All Talk covers several key NBA storylines, focusing primarily on the Houston Rockets' situation and injury updates, along with player analysis.</p><h3>🏀 Houston Rockets Situation</h3><p>The hosts discuss what's described as a 'standoff in a two-horse town,' likely referring to internal team dynamics or front office decisions affecting the Rockets' direction.</p><h3>⚕️ Fred VanVleet Injury Update</h3><p>Analysis of Fred VanVleet's injury status and its implications for his team's performance and playoff positioning.</p><h3>🌟 Player Spotlight Analysis</h3><p>Deep dive into the current performance and impact of several key NBA players:</p><ul><li><strong>Jayson Tatum</strong> - Discussion of his recent play and role with the Celtics</li><li><strong>Zion Williamson</strong> - Health updates and performance analysis</li><li><strong>Anthony Edwards</strong> - Development and impact on the Timberwolves</li></ul><p>The episode likely provides Sharp and Goliver's characteristic analytical approach to these storylines, combining statistical insights with broader NBA context.</p></div>
+    </div>
+
+    <div class="media-timestamps"><h3>📋 Key Points</h3><ul><li><strong>unavailable</strong> - Introduction and episode overview</li><li><strong>unavailable</strong> - Houston Rockets 'standoff' discussion begins</li><li><strong>unavailable</strong> - Fred VanVleet injury analysis</li><li><strong>unavailable</strong> - Jayson Tatum performance breakdown</li><li><strong>unavailable</strong> - Zion Williamson health and impact discussion</li><li><strong>unavailable</strong> - Anthony Edwards analysis</li></ul></div>
+
+    
+
+    <div class="source-link">
+        <p><a href="https://goat.passport.online/member/episode/a-standoff-in-a-two-horse-town-the-van-vleet-injury-and-whats-next-in-houston-notes-on-tatum-zion-ace-and-ant" target="_blank">🔗 Read Original Article</a></p>
+        <p><em>Summary generated on September 30, 2025</em></p>
+    </div>
+
+    <script>
+        // Function to jump to specific time in embedded YouTube video
+        function jumpToTime(seconds) {
+            const iframe = document.querySelector('.video-embed iframe');
+            if (iframe) {
+                const currentSrc = iframe.src;
+                const baseUrl = currentSrc.split('?')[0];
+
+                // Update iframe src to jump to specific time at 2x speed
+                iframe.src = `${baseUrl}?enablejsapi=1&start=${seconds}&autoplay=1&playsinline=1`;
+
+                // Set 2x playback speed after video loads
+                iframe.onload = function() {
+                    // Try to set playback rate via postMessage
+                    setTimeout(() => {
+                        try {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"setPlaybackRate","args":[2]}', '*');
+                        } catch (e) {
+                            console.log('Could not set 2x playback rate - user interaction may be required');
+                        }
+                    }, 1000);
+                };
+
+                // Scroll to video for better user experience
+                const videoContainer = document.querySelector('.video-container');
+                if (videoContainer) {
+                    videoContainer.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }
+        }
+
+        // Set initial 2x speed when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const iframe = document.querySelector('.video-embed iframe');
+            if (iframe) {
+                iframe.onload = function() {
+                    setTimeout(() => {
+                        try {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"setPlaybackRate","args":[2]}', '*');
+                        } catch (e) {
+                            console.log('Could not set initial 2x playback rate - user interaction may be required');
+                        }
+                    }, 2000);
+                };
+            }
+        });
+
+        // Optional: Add keyboard shortcuts for common timestamps
+        document.addEventListener('keydown', function(event) {
+            // Only trigger if user isn't typing in an input field
+            if (event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+                const timestampItems = document.querySelectorAll('.timestamp-item');
+                const key = parseInt(event.key);
+
+                if (key >= 1 && key <= timestampItems.length) {
+                    const timestampLink = timestampItems[key - 1].querySelector('.timestamp-link');
+                    if (timestampLink) {
+                        timestampLink.click();
+                    }
+                }
+            }
+        });
+
+        // Add visual feedback for timestamp clicks
+        document.addEventListener('click', function(event) {
+            if (event.target.classList.contains('timestamp-link') || event.target.classList.contains('play-button')) {
+                // Add brief visual feedback
+                event.target.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    event.target.style.transform = 'scale(1)';
+                }, 150);
+            }
+        });
+    </script>
+</body>
+</html>
