@@ -197,14 +197,67 @@ class VideoArticleSummarizer:
             self.logger.info(f"🔒 [PAYWALL DETECTION] URL contains paywall indicators: {url}")
             return True
 
-        # For now, assume subscription platforms likely have paywalls
-        subscription_platforms = ['substack', 'medium', 'patreon', 'newsletter_generic']
-        if platform in subscription_platforms:
-            self.logger.info(f"🔒 [PAYWALL DETECTION] Platform '{platform}' typically has subscription content")
-            return True
-
-        self.logger.info(f"🔓 [PAYWALL DETECTION] No paywall detected for platform '{platform}'")
+        # Only assume paywall if URL explicitly indicates premium content
+        # Remove blanket assumption for subscription platforms
+        self.logger.info(f"🔓 [PAYWALL DETECTION] No explicit paywall indicators found in URL for platform '{platform}'")
         return False
+
+    def _is_content_accessible(self, response, platform):
+        """Check if content is accessible without authentication based on response"""
+        if response.status_code != 200:
+            return False
+
+        content = response.text.lower()
+
+        # Platform-specific paywall indicators in the actual content
+        paywall_content_indicators = {
+            'substack': [
+                'subscribers only',
+                'paid subscribers',
+                'subscribe to read',
+                'unlock full post',
+                'become a paid subscriber',
+                'this post is for paid subscribers',
+                'sign in to continue reading'
+            ],
+            'medium': [
+                'member-only story',
+                'this story is published in',
+                'sign up to continue reading',
+                'become a member to read'
+            ],
+            'patreon': [
+                'this post is for patrons only',
+                'become a patron',
+                'pledge'
+            ]
+        }
+
+        indicators = paywall_content_indicators.get(platform, [])
+
+        # If any paywall indicators are found in the content, it's not accessible
+        for indicator in indicators:
+            if indicator in content:
+                self.logger.info(f"🔒 [CONTENT CHECK] Found paywall indicator in content: '{indicator}'")
+                return False
+
+        # Additional checks for content that might indicate successful access
+        # Look for actual article content indicators
+        content_indicators = ['<article', '<main', 'class="post', 'class="article']
+        has_content_structure = any(indicator in content for indicator in content_indicators)
+
+        # Check content length (very short responses might indicate blocked access)
+        content_length = len(content)
+
+        if has_content_structure and content_length > 1000:
+            self.logger.info(f"🔓 [CONTENT CHECK] Content appears accessible (length: {content_length}, has structure: {has_content_structure})")
+            return True
+        elif content_length < 500:
+            self.logger.info(f"🔒 [CONTENT CHECK] Content too short ({content_length} chars), likely blocked")
+            return False
+        else:
+            self.logger.info(f"🤔 [CONTENT CHECK] Content structure unclear (length: {content_length}, has structure: {has_content_structure})")
+            return has_content_structure
 
     def _check_credential_availability(self, platform):
         """Check if credentials are available for the platform"""
@@ -243,19 +296,31 @@ class VideoArticleSummarizer:
     def _authenticate_for_platform(self, platform, url, session):
         """Perform platform-specific authentication based on detected platform"""
         try:
-            # Check for paywall
-            has_paywall = self._detect_paywall(platform, url, session)
+            # First, try to access the content without authentication
+            self.logger.info(f"🔍 [AUTH CHECK] Testing access to '{platform}' content without authentication...")
+
+            try:
+                test_response = session.get(url, timeout=15)
+                # Check if we can access the content without authentication
+                if self._is_content_accessible(test_response, platform):
+                    self.logger.info(f"✅ [AUTH SKIP] Content is publicly accessible for '{platform}' - no authentication needed")
+                    return True
+                else:
+                    self.logger.info(f"🔒 [AUTH CHECK] Content appears to be behind paywall for '{platform}'")
+            except Exception as e:
+                self.logger.info(f"🔍 [AUTH CHECK] Initial access test failed: {str(e)}")
 
             # Check credential availability
             has_credentials = self._check_credential_availability(platform)
 
-            if has_paywall and not has_credentials:
-                self.logger.warning(f"⚠️ [AUTH WARNING] Paywall detected but no credentials available for '{platform}'")
-            elif has_paywall and has_credentials:
-                self.logger.info(f"🔐 [AUTH READY] Paywall detected and credentials available for '{platform}' - attempting authentication")
-            elif not has_paywall:
-                self.logger.info(f"🌐 [AUTH INFO] No paywall detected for '{platform}' - proceeding without authentication")
+            # If content is not accessible and we have credentials, try authentication
+            if has_credentials:
+                self.logger.info(f"🔐 [AUTH ATTEMPT] Content not accessible without authentication and credentials available for '{platform}' - attempting authentication")
+            else:
+                self.logger.warning(f"⚠️ [AUTH WARNING] Content appears restricted but no credentials available for '{platform}' - proceeding without authentication")
+                return True  # Continue anyway, sometimes partial content is still useful
 
+            # Attempt authentication if we have credentials
             if platform == 'substack':
                 return self._authenticate_substack(session)
             elif platform == 'medium':
@@ -296,12 +361,15 @@ class VideoArticleSummarizer:
                 if response.status_code == 200:
                     self.logger.info("✅ [AUTH SUCCESS] Substack authentication successful - logged in with email/password")
                     return True
+                elif response.status_code == 429:
+                    self.logger.warning(f"⚠️ [AUTH RATE LIMITED] Substack rate limiting - too many login attempts. Proceeding without authentication.")
+                    return True  # Continue processing without auth rather than failing completely
                 else:
                     self.logger.error(f"❌ [AUTH FAILED] Substack authentication failed - Status: {response.status_code}, Response: {response.text[:200]}")
-                    return False
+                    return True  # Continue processing without auth rather than failing completely
             except Exception as e:
                 self.logger.error(f"❌ [AUTH ERROR] Substack authentication error: {str(e)}")
-                return False
+                return True  # Continue processing without auth rather than failing completely
         else:
             self.logger.info("🔑 [AUTH] No Substack email/password found - checking for session cookies...")
             # Check if generic session cookies might work
@@ -310,7 +378,7 @@ class VideoArticleSummarizer:
                 return True
             else:
                 self.logger.info("🚫 [AUTH] No authentication available for Substack")
-                return False
+                return True  # Continue processing without auth rather than failing completely
 
     def _authenticate_medium(self, session):
         """Authenticate with Medium"""
@@ -594,6 +662,8 @@ class VideoArticleSummarizer:
                         'text': entry.text,
                         'duration': getattr(entry, 'duration', 0)
                     })
+
+
                 return {
                     'success': True,
                     'type': 'manual',
@@ -613,6 +683,8 @@ class VideoArticleSummarizer:
                             'text': entry.text,
                             'duration': getattr(entry, 'duration', 0)
                         })
+
+
                     return {
                         'success': True,
                         'type': 'auto_generated',
@@ -692,6 +764,7 @@ class VideoArticleSummarizer:
             return best_match['timestamp'], best_match['text']
 
         return None, None
+
 
     def _extract_content_sections_from_transcript(self, transcript_data, num_sections=5):
         """Automatically divide transcript into logical sections based on content flow"""
@@ -1030,15 +1103,36 @@ class VideoArticleSummarizer:
 
         # Handle audio/podcast content
         if metadata.get('media_info') and metadata['media_info']['audio_urls']:
-            media_context += f"""
-        IMPORTANT: This article contains audio/podcast content. Audio URLs found: {metadata['media_info']['audio_urls']}
+            # Check if we have real transcript data for audio content
+            has_real_transcript = metadata.get('transcripts') and any(
+                transcript_data.get('success') for transcript_data in metadata['transcripts'].values()
+            )
+
+            if has_real_transcript:
+                # Audio with transcript - allow timestamps
+                media_context += f"""
+        IMPORTANT: This article contains audio/podcast content with transcript data available. Audio URLs found: {metadata['media_info']['audio_urls']}
 
         This appears to be a podcast episode. Please:
         - Identify key discussion points and insights from the conversation
         - Extract actionable advice or key takeaways
         - Note the participants/speakers if mentioned in the content
-        - Provide time-based highlights if duration information is available
+        - Provide time-based highlights using the available transcript timestamps
         - Focus on the most valuable segments for listeners
+
+        Audio Platform: {metadata['media_info']['audio_urls'][0]['platform'] if metadata['media_info']['audio_urls'] else 'unknown'}
+        """
+            else:
+                # Audio without transcript - no timestamps
+                media_context += f"""
+        IMPORTANT: This article contains audio/podcast content (no transcript available). Audio URLs found: {metadata['media_info']['audio_urls']}
+
+        This appears to be a podcast episode. Please:
+        - Identify key discussion points and insights from the conversation
+        - Extract actionable advice or key takeaways
+        - Note the participants/speakers if mentioned in the content
+        - Focus on the most valuable content and main themes
+        - DO NOT include any timestamps or time-based references since no transcript is available
 
         Audio Platform: {metadata['media_info']['audio_urls'][0]['platform'] if metadata['media_info']['audio_urls'] else 'unknown'}
         """
@@ -1055,7 +1149,7 @@ class VideoArticleSummarizer:
                         # Include more of the transcript for better analysis
                         available_transcripts.append(f"""
         VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
-        {formatted_transcript[:8000]}{'...' if len(formatted_transcript) > 8000 else ''}
+        {formatted_transcript[:150000]}{'...' if len(formatted_transcript) > 150000 else ''}
         """)
 
             if available_transcripts:
@@ -1081,14 +1175,14 @@ class VideoArticleSummarizer:
         {''.join(available_transcripts)}
         {sections_context}
 
-        CRITICAL: Since you have the actual transcript with timestamps, you must:
-        1. Find the EXACT timestamp where each key insight is mentioned by searching through the transcript
-        2. Map summary sections to their corresponding timestamps in the transcript
-        3. Use only timestamps that actually exist in the transcript data
-        4. Quote specific phrases from the transcript when referencing insights (brief 5-10 word quotes)
-        5. Ensure every insight has a corresponding timestamp from the actual transcript
-        6. Use the suggested sections as a guide but feel free to adjust based on content flow
-        7. When finding timestamps, look for keywords and phrases that match your insights
+        CRITICAL TIMESTAMP RULES - NEVER EXTRAPOLATE OR GUESS:
+        1. ONLY include timestamps that you can find EXACT matches for in the provided transcript text
+        2. If you cannot find the exact text/keywords for an insight in the transcript, DO NOT include a timestamp
+        3. The transcript text above shows the COMPLETE range of content you have access to
+        4. NEVER guess or extrapolate timestamps beyond what is explicitly shown in the transcript
+        5. If the transcript is incomplete (ends with "..."), do NOT create timestamps for content beyond that point
+        6. Better to have NO timestamp than an inaccurate one
+        7. For insights without timestamps, use empty string: "timestamp": ""
         """
 
         # Determine the correct JavaScript function for media type
@@ -1135,29 +1229,34 @@ class VideoArticleSummarizer:
            - Provide rich descriptions of what happens at each timestamp
            - Ensure timestamps are distributed throughout the {media_type_indicator} timeline
 
-        VALIDATION RULES:
-        - Only use timestamps that actually exist in the provided transcript
-        - Verify each timestamp by checking the actual transcript text
-        - If you cannot find a specific timestamp for an insight, mark it as "general" content
-        - Prioritize accuracy over completeness
+        STRICT VALIDATION RULES - NO EXTRAPOLATION ALLOWED:
+        - ONLY use timestamps that you can see explicitly in the transcript text above
+        - NEVER create timestamps for content beyond the transcript range
+        - If no matching transcript text exists for an insight, use empty timestamp: ""
+        - If the transcript ends with "..." that means it's truncated - do NOT guess beyond that point
+        - ALL insights should still be included, just without timestamps if no transcript match exists
+        - Accuracy is more important than having timestamps
 
         Article metadata: {json.dumps(self._create_metadata_for_prompt(metadata), indent=2)}
 
         Return your response in this JSON format:
         {{
-            "summary": "HTML formatted summary content with embedded section timestamps",
+            "summary": "HTML formatted summary content (no timestamps in summary if no transcript data)",
             "key_insights": [
-                {{"insight": "insight text", "timestamp": "MM:SS", "transcript_quote": "brief quote from transcript at this time"}},
-                {{"insight": "insight text", "timestamp": "MM:SS", "transcript_quote": "brief quote from transcript at this time"}},
+                {{"insight": "insight text found in transcript", "timestamp": "MM:SS", "transcript_quote": "exact quote from transcript"}},
+                {{"insight": "insight text NOT found in transcript", "timestamp": "", "transcript_quote": ""}},
                 ...
             ],
             "media_timestamps": [
-                {{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio", "transcript_quote": "relevant quote from transcript"}},
-                ...
+                {{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "video|audio", "transcript_quote": "exact quote from transcript"}}
             ]
         }}
 
-        Note: For audio content, if no specific timestamps are available, focus on key discussion topics and insights instead.
+        CRITICAL:
+        - Use empty string "" for timestamp if no transcript match exists
+        - Only include media_timestamps entries for content you can find in the provided transcript
+        - Include ALL insights (with or without timestamps) but NEVER guess timestamps
+        - If transcript is truncated, only use timestamps from the visible portion
         """
 
         response = self._call_claude_api(prompt)
@@ -1166,6 +1265,7 @@ class VideoArticleSummarizer:
         parsed_json = self._extract_json_from_response(response)
 
         if parsed_json:
+
             # Ensure summary is properly formatted as HTML
             if 'summary' in parsed_json:
                 summary = parsed_json['summary']
@@ -1363,11 +1463,19 @@ class VideoArticleSummarizer:
                 timestamps_html = '<div class="video-timestamps"><h3>🎬 Interactive Video Highlights</h3>'
                 timestamps_html += '<p><em>Click timestamps to jump to that part of the video:</em></p><ul>'
 
+                valid_timestamps = 0
+
                 for ts in timestamps:
-                    time_str = ts.get("time", "0:00")
+                    time_str = ts.get("time", "")
                     description = ts.get("description", "No description")
                     media_type = ts.get("type", "video")
                     transcript_quote = ts.get("transcript_quote", "")
+
+                    # Skip entries without valid timestamps
+                    if not time_str or time_str.strip() == "":
+                        continue
+
+                    valid_timestamps += 1
                     seconds = self._convert_timestamp_to_seconds(time_str)
 
                     quote_html = f'<div class="transcript-quote">"{transcript_quote}"</div>' if transcript_quote else ''
@@ -1384,8 +1492,14 @@ class VideoArticleSummarizer:
                     </li>'''
 
                 timestamps_html += '</ul></div>'
-                sections['TIMESTAMPS_SECTION'] = timestamps_html
-                sections['VIDEO_ID'] = video_id
+
+                # Only show the section if we have valid timestamps
+                if valid_timestamps > 0:
+                    sections['TIMESTAMPS_SECTION'] = timestamps_html
+                    sections['VIDEO_ID'] = video_id
+                else:
+                    sections['TIMESTAMPS_SECTION'] = ''
+                    sections['VIDEO_ID'] = video_id
 
             # Handle audio content (interactive timestamps)
             elif media_info.get('audio_urls'):
