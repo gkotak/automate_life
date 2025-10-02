@@ -94,6 +94,11 @@ class AuthenticationManager:
         Returns:
             Tuple of (auth_required, reason)
         """
+        # First check if URL already contains authentication tokens
+        if self._url_has_auth_token(url, platform):
+            self.logger.info(f"✅ [AUTH SKIP] URL already contains authentication token for '{platform}'")
+            return False, "url_contains_auth_token"
+
         self.logger.info(f"🔍 [AUTH CHECK] Testing access to '{platform}' content without authentication...")
 
         try:
@@ -161,6 +166,38 @@ class AuthenticationManager:
         from urllib.parse import urlparse
         parsed = urlparse(url)
         return parsed.netloc.lower()
+
+    def _url_has_auth_token(self, url: str, platform: str) -> bool:
+        """
+        Check if URL already contains authentication tokens
+
+        Args:
+            url: The URL to check
+            platform: The platform name
+
+        Returns:
+            True if URL contains auth tokens
+        """
+        from urllib.parse import urlparse, parse_qs
+
+        try:
+            parsed = urlparse(url)
+            query_params = parse_qs(parsed.query)
+
+            # Check for platform-specific auth tokens
+            if platform == 'stratechery':
+                return 'access_token' in query_params
+            elif platform == 'substack':
+                return any(param in query_params for param in ['token', 'access_token', 'auth'])
+            elif platform == 'medium':
+                return any(param in query_params for param in ['token', 'session'])
+
+            # Generic check for common auth parameters
+            auth_params = ['access_token', 'token', 'auth', 'key', 'session']
+            return any(param in query_params for param in auth_params)
+
+        except Exception:
+            return False
 
     def _get_platform_credentials(self, platform: str) -> Dict:
         """Get credentials for a specific platform"""
