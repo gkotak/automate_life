@@ -19,7 +19,7 @@ class Config:
     MAX_WHISPER_FILE_SIZE_MB = 25
     RSS_POST_RECENCY_DAYS = 3
     TRACKING_CLEANUP_DAYS = 30
-    MAX_ARTICLE_WORDS = 2000  # Limit for Claude CLI prompt size
+    MAX_ARTICLE_WORDS = 15000  # Limit for Claude CLI prompt size
 
     # HTTP timeouts (seconds)
     DEFAULT_TIMEOUT = 30
