@@ -124,7 +124,7 @@ AI Analysis → HTML Template → Interactive Summary → Git Commit → Index U
 
 ### Essential Files
 - `newsletter_podcast_links.md`: Platform URLs and RSS feeds to monitor
-- `processed_posts.json`: Tracking database for duplicate prevention
+- `output/processed_posts.json`: Tracking database for duplicate prevention
 - `.env.local`: Authentication credentials for various platforms
 - `templates/article_summary.html`: HTML template for generated summaries
 
