@@ -502,43 +502,31 @@ CRITICAL:
 </div>'''
 
     def _generate_audio_embed_html(self, metadata: Dict) -> str:
-        """Generate audio embed HTML"""
+        """Generate standardized audio embed HTML (platform-agnostic)"""
         audio_urls = metadata['media_info']['audio_urls']
         if not audio_urls:
             return ""
 
         audio_data = audio_urls[0]  # Use first audio
         audio_url = audio_data['url']
-        platform = audio_data.get('platform', 'unknown')
+        audio_type = audio_data.get('type', 'audio/mpeg')
 
-        if platform == 'stratechery':
-            return f'''
+        # Standardized audio player for all platforms
+        return f'''
 <div class="audio-container">
-    <h2>🎧 Listen to the Podcast</h2>
+    <h2>🎧 Listen to Audio</h2>
     <div class="speed-notice">
         ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
     </div>
     <div class="audio-embed">
         <audio controls controlsList="nodownload" style="width: 100%; max-width: 600px;">
-            <source src="{audio_url}" type="audio/mpeg">
+            <source src="{audio_url}" type="{audio_type}">
             Your browser does not support the audio element.
         </audio>
     </div>
     <p class="audio-note">
-        <strong>Note:</strong> This is the Stratechery podcast version of the article.
-        Audio duration: Approximately 13-15 minutes.
+        <strong>Note:</strong> Audio content embedded from original article.
     </p>
-</div>'''
-        else:
-            return f'''
-<div class="audio-container">
-    <h2>🎧 Listen to Audio</h2>
-    <div class="audio-embed">
-        <audio controls style="width: 100%; max-width: 600px;">
-            <source src="{audio_url}" type="audio/mpeg">
-            Your browser does not support the audio element.
-        </audio>
-    </div>
 </div>'''
 
     # Utility methods (keeping existing implementations)

@@ -55,7 +55,7 @@ class AuthenticationManager:
 
     def detect_platform(self, url: str) -> str:
         """
-        Detect the platform from URL
+        Detect the platform from URL (only for username/password authentication)
 
         Args:
             url: The URL to analyze
@@ -68,15 +68,13 @@ class AuthenticationManager:
         domain = self._extract_domain(url)
         self.logger.info(f"🔍 [PLATFORM DETECTION] Domain: {domain}")
 
-        # Platform detection logic
+        # Only detect platforms that need specific username/password authentication
         if any(substack_indicator in domain for substack_indicator in [
             'substack.com', 'newsletter.com', 'lennysnewsletter.com'
         ]):
             platform = 'substack'
         elif 'medium.com' in domain:
             platform = 'medium'
-        elif 'stratechery.com' in domain:
-            platform = 'stratechery'
         else:
             platform = 'generic'
 
@@ -95,8 +93,8 @@ class AuthenticationManager:
             Tuple of (auth_required, reason)
         """
         # First check if URL already contains authentication tokens
-        if self._url_has_auth_token(url, platform):
-            self.logger.info(f"✅ [AUTH SKIP] URL already contains authentication token for '{platform}'")
+        if self._has_access_token(url):
+            self.logger.info(f"✅ [AUTH SKIP] URL already contains authentication token")
             return False, "url_contains_auth_token"
 
         self.logger.info(f"🔍 [AUTH CHECK] Testing access to '{platform}' content without authentication...")
@@ -151,13 +149,11 @@ class AuthenticationManager:
         self.logger.info(f"🔑 [CREDENTIALS] Found credentials for '{platform}': {', '.join(platform_credentials.keys())}")
         self.logger.info(f"🔐 [AUTH ATTEMPT] Content not accessible without authentication and credentials available for '{platform}' - attempting authentication")
 
-        # Try authentication based on platform
+        # Try authentication based on platform (only for username/password)
         if platform == 'substack':
             return self._authenticate_substack(platform_credentials)
         elif platform == 'medium':
             return self._authenticate_medium(platform_credentials)
-        elif platform == 'stratechery':
-            return self._authenticate_stratechery(platform_credentials)
         else:
             return self._authenticate_generic(platform_credentials)
 
@@ -167,13 +163,12 @@ class AuthenticationManager:
         parsed = urlparse(url)
         return parsed.netloc.lower()
 
-    def _url_has_auth_token(self, url: str, platform: str) -> bool:
+    def _has_access_token(self, url: str) -> bool:
         """
-        Check if URL already contains authentication tokens
+        Check if URL contains any authentication tokens (generic pattern detection)
 
         Args:
             url: The URL to check
-            platform: The platform name
 
         Returns:
             True if URL contains auth tokens
@@ -184,19 +179,16 @@ class AuthenticationManager:
             parsed = urlparse(url)
             query_params = parse_qs(parsed.query)
 
-            # Check for platform-specific auth tokens
-            if platform == 'stratechery':
-                return 'access_token' in query_params
-            elif platform == 'substack':
-                return any(param in query_params for param in ['token', 'access_token', 'auth'])
-            elif platform == 'medium':
-                return any(param in query_params for param in ['token', 'session'])
+            # Generic token parameters that indicate authentication
+            token_patterns = [
+                'access_token', 'token', 'auth_token', 'bearer', 'jwt',
+                'auth', 'session', 'key', 'api_key', 'authkey'
+            ]
 
-            # Generic check for common auth parameters
-            auth_params = ['access_token', 'token', 'auth', 'key', 'session']
-            return any(param in query_params for param in auth_params)
+            return any(param in query_params for param in token_patterns)
 
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Error checking URL tokens: {e}")
             return False
 
     def _get_platform_credentials(self, platform: str) -> Dict:
@@ -248,10 +240,6 @@ class AuthenticationManager:
         # Medium authentication implementation
         return False, "Medium authentication not yet implemented"
 
-    def _authenticate_stratechery(self, credentials: Dict) -> Tuple[bool, str]:
-        """Authenticate with Stratechery"""
-        # Stratechery authentication implementation
-        return False, "Stratechery authentication not yet implemented"
 
     def _authenticate_generic(self, credentials: Dict) -> Tuple[bool, str]:
         """Generic authentication attempt"""
