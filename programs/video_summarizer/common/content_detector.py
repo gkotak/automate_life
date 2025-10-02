@@ -132,10 +132,8 @@ class ContentTypeDetector:
         """
         audio_urls = []
 
-        # Check for Stratechery-specific audio player first
-        stratechery_audio = self._detect_stratechery_audio(soup)
-        if stratechery_audio:
-            audio_urls.extend(stratechery_audio)
+        # Check for Stratechery-specific audio player first (but only for text indicators)
+        # The actual audio URLs will be found by the standard <audio>/<source> detection below
 
         # Look for audio elements
         audio_elements = soup.find_all('audio')

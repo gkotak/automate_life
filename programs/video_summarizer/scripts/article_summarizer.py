@@ -359,7 +359,7 @@ CRITICAL:
                 "--print",
                 "--output-format", "text",
                 prompt
-            ], capture_output=True, text=True, timeout=120, cwd=self.base_dir)
+            ], capture_output=True, text=True, timeout=300, cwd=self.base_dir)
 
             if result.returncode == 0:
                 return result.stdout.strip()
