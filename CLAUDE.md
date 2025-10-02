@@ -4,79 +4,74 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Claude Code configuration repository that automates newsletter research and content creation through a specialized agent system. The project consists of custom slash commands, specialized subagents, and an organized workflow for analyzing competitor newsletters and generating compelling newsletter drafts.
+This is a Claude Code configuration repository that automates content analysis and summarization. The primary focus is the video summarizer tool which processes articles, extracts video/audio content, and generates comprehensive summaries with interactive features.
 
 ## Key Commands
 
-### Newsletter Research Workflow
-- `/newsletter-research` - Initiates the complete newsletter research and writing workflow
-  - Validates newsletter links exist in `.claude/newsletter/newsletter links.md`
-  - Creates timestamped research session
-  - Outputs newsletter URLs for agent processing
-  - Sets up directory structure for saving results
-
-### Required Setup
-Before running `/newsletter-research`:
-1. Ensure `.claude/newsletter/newsletter links.md` exists with actual newsletter URLs
-2. Replace placeholder URLs with real competitor and industry leader newsletters
-3. Have login credentials ready for any paid newsletter subscriptions
+### Video Summarizer
+- `/video_article_summarizer` - Processes articles and generates interactive summaries
+  - Extracts video/audio content from URLs
+  - Generates AI-powered summaries with timestamps
+  - Creates HTML pages with embedded media and clickable timestamps
+  - Supports 2x speed playback for efficient content consumption
 
 ## Architecture Overview
 
 ### Core System Components
 
-**Slash Commands** (`.claude/commands/`)
-- `newsletter-research.js` - Main orchestrator that initializes the workflow and validates setup
+**Video Summarizer** (`programs/video_summarizer/`)
+- Intelligent article content extraction with media detection
+- YouTube transcript extraction and analysis
+- AI-powered content summarization using Claude Code CLI
+- Interactive HTML generation with embedded media players
+- Smart authentication for protected content (Substack, Medium, etc.)
 
-**Specialized Agents** (`.claude/agents/`)
-- `content-researcher.js` - Analyzes competitor newsletters for trending topics and content gaps
-- `newsletter-writer.js` - Creates compelling newsletter drafts with subject lines
-
-**Workflow Documentation**
-- `.claude/newsletter-research-system.md` - Complete implementation guide with agent prompts and success criteria
-
-### Agent System Architecture
-
-The system uses a two-stage agent workflow:
-
-1. **Content Research Phase**: `content-researcher` agent fetches recent posts from newsletter URLs, identifies 5-7 trending topics, finds content gaps, and creates structured research reports
-2. **Content Creation Phase**: `newsletter-writer` agent uses research insights to create 3 subject line options and 500-800 word newsletter drafts
-
-### File Organization
-
-**Newsletter Content Structure**:
+**File Organization**:
 ```
-.claude/newsletter/
-├── newsletter links.md          # Newsletter URLs to analyze
-├── research/YYYY-MM-DD-research.md     # Research reports by date
-└── drafts/YYYY-MM-DD-newsletter-draft.md # Newsletter drafts by date
+programs/video_summarizer/
+├── scripts/                    # Core processing scripts
+├── output/                     # Generated summaries and tracking
+│   ├── article_summaries/      # HTML summary files
+│   └── processed_posts.json    # Processing history
+├── logs/                       # Processing logs
+└── templates/                  # HTML templates
 ```
 
 **Configuration**:
 ```
 .claude/
 ├── settings.local.json         # Claude Code permissions
-├── agents/                     # Specialized subagents
-├── commands/                   # Custom slash commands
-└── newsletter-research-system.md # Complete workflow guide
+└── commands/                   # Custom slash commands
 ```
 
-### Agent Execution Flow
+### Processing Flow
 
-1. Run `/newsletter-research` to initialize and get newsletter URLs
-2. Launch content-researcher agent with newsletter URLs from slash command output
-3. Launch newsletter-writer agent with research findings from step 2
-4. Results are saved with consistent timestamp formatting (YYYY-MM-DD)
+1. **Content Extraction**: Analyze URL and detect video/audio/text content
+2. **Media Processing**: Extract YouTube transcripts, identify main audio content
+3. **AI Analysis**: Generate structured summary with timestamps using Claude
+4. **HTML Generation**: Create interactive page with embedded media
+5. **Version Control**: Auto-commit and push to GitHub
 
 ### Content Standards
 
-**Research Output**: Trending topics with evidence, content gaps, time-sensitive angles, competitor analysis
-**Newsletter Output**: 3 subject lines under 50 characters, 500-800 word drafts with hooks, insights, practical takeaways, conversational tone
+**Summary Output**: Structured HTML with key insights, timestamps, and embedded media
+**Media Integration**: 2x speed playback, clickable timestamps, interactive navigation
+**Authentication**: Smart detection and handling of paywalled content
 
 ## Development Notes
 
-- All agents are Node.js modules that export descriptions and metadata
-- The system prioritizes authentic, value-first content over promotional content
-- Newsletter links file must contain real URLs for effective research
-- Timestamps follow YYYY-MM-DD format for consistent file organization
-- Focus is on creating newsletters people want to forward to friends
+- All processing uses Claude Code CLI for AI analysis
+- System prioritizes main content over related/promotional material
+- Timestamps are validated against actual transcript data
+- HTML templates support both video and audio content with appropriate players
+- Authentication framework supports multiple platforms (Substack, Medium, Patreon, etc.)
+- Output files are organized in dedicated output directory for clean structure
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+
+
+      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.

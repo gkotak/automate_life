@@ -19,7 +19,7 @@ Convert the existing video summarizer program into a standalone web app with the
 │   ┌───────────────┐ │    │   ┌───────────────┐ │    │   ┌───────────────┐ │
 │   │ • Video Proc  │ │    │   │ • Search UI   │ │    │   │ • Database    │ │
 │   │ • AI Analysis │ │──────→ │ • CRUD Ops    │ │──────→ │ • Vector Search│ │
-│   │ • Daily Auto  │ │    │   │ • Auth        │ │    │   │ • Real-time   │ │
+│   │ • Manual Proc │ │    │   │ • Auth        │ │    │   │ • Real-time   │ │
 │   │ • Data Upload │ │    │   │ • Real-time   │ │    │   │ • Auth        │ │
 │   └───────────────┘ │    │   └───────────────┘ │    │   └───────────────┘ │
 └─────────────────────┘    └─────────────────────┘    └─────────────────────┘
@@ -30,7 +30,7 @@ Convert the existing video summarizer program into a standalone web app with the
 ### **Advantages Over Cloud Processing**
 - **No processing time limits** - Run AI analysis as long as needed locally
 - **Lower costs** - No backend hosting fees (only Supabase + Vercel free tiers)
-- **Familiar workflow** - Keep existing automation and Python environment
+- **Familiar workflow** - Keep existing manual workflow and Python environment
 - **Zero rewrite** - Minimal changes to existing processing logic
 
 ### **Component Responsibilities**
@@ -38,7 +38,7 @@ Convert the existing video summarizer program into a standalone web app with the
 #### **Local Python Processing (Your Machine)**
 - ✅ **Existing video processing** - Keep current Python scripts
 - ✅ **AI analysis** - No time constraints, full Claude integration
-- ✅ **Daily automation** - Continue cron job workflow
+- ✅ **Manual processing** - On-demand workflow only
 - ✅ **Data upload** - Push results to Supabase after processing
 - ✅ **Embedding generation** - Create vectors for semantic search
 
@@ -190,7 +190,7 @@ $$;
 - Claude API integration (keep existing)
 - Supabase Python client (for data upload)
 - SentenceTransformers (for embeddings)
-- Schedule/cron (for automation)
+- Manual execution (no scheduling)
 ```
 
 ### **Infrastructure**
@@ -337,7 +337,7 @@ def process_article(url):
 ### **Phase 3: Local Processing Enhancement (Week 4-5)**
 1. **Add Supabase integration** to existing Python scripts
 2. **Implement embedding generation** with SentenceTransformers
-3. **Update automation scripts** to upload results after processing
+3. **Update manual scripts** to upload results after processing
 4. **Add error handling** for upload failures
 5. **Test end-to-end workflow** from local processing to web display
 
@@ -347,9 +347,9 @@ def process_article(url):
 3. **Analytics and insights** dashboard
 4. **Performance optimization** and caching
 
-### **Phase 5: Deployment & Automation (Week 8)**
+### **Phase 5: Deployment & Manual Processing (Week 8)**
 1. **Production deployment** on Vercel (frontend only)
-2. **Local automation enhancement** with Supabase upload
+2. **Local processing enhancement** with Supabase upload
 3. **Monitoring and alerting** setup
 4. **Documentation and user guides**
 
@@ -395,7 +395,7 @@ def process_article(url):
 ### **Advanced Features (Phase 3-4)**
 - [ ] Semantic search with vector embeddings
 - [ ] Real-time processing updates
-- [ ] RSS feed automation
+- [ ] Manual RSS feed processing
 - [ ] Admin dashboard
 
 ### **Future Enhancements**

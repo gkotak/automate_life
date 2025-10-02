@@ -549,7 +549,7 @@ class VideoArticleSummarizer:
         return filename[:100] if filename else "untitled_article"
 
     def _extract_media_urls(self, soup, page_content):
-        """Extract video and audio URLs from page content"""
+        """Extract video and audio URLs from page content with enhanced validation"""
         media_info = {
             'youtube_urls': [],
             'video_embeds': [],
@@ -558,7 +558,10 @@ class VideoArticleSummarizer:
             'podcast_info': {}
         }
 
-        # Extract YouTube URLs from various sources
+        # Get article content only (not entire page including CSS/JS)
+        article_content = self._get_article_content_only(soup)
+
+        # Extract YouTube URLs from article content only
         youtube_patterns = [
             r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
             r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
@@ -567,16 +570,23 @@ class VideoArticleSummarizer:
 
         found_video_ids = set()
         for pattern in youtube_patterns:
-            matches = re.findall(pattern, page_content)
+            matches = re.findall(pattern, article_content)
             for match in matches:
                 video_id = match
                 if video_id not in found_video_ids:
-                    found_video_ids.add(video_id)
-                    media_info['youtube_urls'].append({
-                        'url': f"https://www.youtube.com/watch?v={video_id}",
-                        'video_id': video_id,
-                        'embed_url': f"https://www.youtube.com/embed/{video_id}"
-                    })
+                    # Validate that this video is actually part of the article
+                    is_valid, context = self._validate_video_context(soup, video_id)
+                    if is_valid:
+                        found_video_ids.add(video_id)
+                        self.logger.info(f"✅ [VIDEO FOUND] {video_id} - Context: {context}")
+                        media_info['youtube_urls'].append({
+                            'url': f"https://www.youtube.com/watch?v={video_id}",
+                            'video_id': video_id,
+                            'embed_url': f"https://www.youtube.com/embed/{video_id}",
+                            'context': context
+                        })
+                    else:
+                        self.logger.info(f"⚠️ [VIDEO SKIPPED] {video_id} - False positive: {context}")
 
         # Extract iframe sources
         iframes = soup.find_all('iframe')
@@ -640,6 +650,78 @@ class VideoArticleSummarizer:
             }
 
         return media_info
+
+    def _get_article_content_only(self, soup):
+        """Extract only article content, excluding CSS/JS/metadata"""
+        # Remove script, style, and noscript tags
+        for element in soup(['script', 'style', 'noscript', 'head']):
+            element.decompose()
+
+        # Try to find main article content containers
+        article_selectors = [
+            'article', 'main', '.post-content', '.entry-content',
+            '.article-body', '.content', '.post-body', '.article-content',
+            '[role="main"]', '.article', '.story-body'
+        ]
+
+        article_content = ""
+        for selector in article_selectors:
+            containers = soup.select(selector)
+            if containers:
+                article_content = ' '.join([str(container) for container in containers])
+                break
+
+        # Fallback: use remaining content after removing scripts/styles
+        if not article_content:
+            article_content = str(soup)
+
+        return article_content
+
+    def _validate_video_context(self, soup, video_id):
+        """Verify if video is actually embedded in article content (strict: embedded only)"""
+
+        # ONLY check for actual iframe embeds - no links or text references
+        iframes = soup.find_all('iframe')
+        for iframe in iframes:
+            src = iframe.get('src', '')
+            if src and f'youtube.com/embed/{video_id}' in src:
+                # Verify it's actually a YouTube embed domain
+                if src.startswith(('http://youtube.com/embed', 'https://youtube.com/embed',
+                                 'http://www.youtube.com/embed', 'https://www.youtube.com/embed')):
+                    return True, "embedded_iframe"
+
+        # If no embedded iframe found, treat as text-only article
+        return False, "no_embedded_video"
+
+    def _extract_article_text_content(self, soup):
+        """Extract clean article text for text-only processing"""
+        # Remove unwanted elements
+        for element in soup(['script', 'style', 'noscript', 'head', 'nav', 'footer', 'aside']):
+            element.decompose()
+
+        # Find main article content
+        article_selectors = [
+            'article', 'main', '.post-content', '.entry-content',
+            '.article-body', '.content', '.post-body', '.article-content',
+            '[role="main"]', '.article', '.story-body', '.post'
+        ]
+
+        article_text = ""
+        for selector in article_selectors:
+            containers = soup.select(selector)
+            if containers:
+                # Get text content and clean it up
+                article_text = ' '.join([container.get_text(separator=' ', strip=True) for container in containers])
+                break
+
+        # Fallback: get all remaining text
+        if not article_text:
+            article_text = soup.get_text(separator=' ', strip=True)
+
+        # Clean up whitespace
+        article_text = ' '.join(article_text.split())
+
+        return article_text
 
     def _extract_youtube_transcript(self, video_id):
         """Extract transcript from YouTube video if available"""
@@ -992,6 +1074,23 @@ class VideoArticleSummarizer:
                 # Clear audio URLs since we're prioritizing video
                 media_info['audio_urls'] = []
 
+            # Extract article text content for text-only articles
+            article_text = ""
+            is_text_only = not media_info['youtube_urls'] and not media_info['audio_urls']
+
+            if is_text_only:
+                self.logger.info("   No media content found - extracting article text for text-only processing")
+                article_text = self._extract_article_text_content(soup)
+                if article_text:
+                    word_count = len(article_text.split())
+                    self.logger.info(f"   📄 [TEXT ARTICLE] Extracted {word_count} words of article content")
+                    # Limit text size for prompt efficiency (max ~2000 words to avoid Claude CLI limits)
+                    if word_count > 2000:
+                        article_text = ' '.join(article_text.split()[:2000]) + '...'
+                        self.logger.info(f"   📄 [TEXT ARTICLE] Truncated to 2000 words for processing")
+                else:
+                    self.logger.info("   ⚠️ [TEXT ARTICLE] No readable article content found")
+
             return {
                 'title': title,
                 'url': url,
@@ -1000,6 +1099,7 @@ class VideoArticleSummarizer:
                 'has_audio_indicators': has_audio_indicators,
                 'media_info': media_info,
                 'transcripts': transcripts,
+                'article_text': article_text,  # New field for text-only articles
                 'extracted_at': datetime.now().isoformat()
             }
 
@@ -1018,6 +1118,7 @@ class VideoArticleSummarizer:
                     'podcast_info': {}
                 },
                 'transcripts': {},
+                'article_text': "",  # Empty for error cases
                 'extraction_error': str(e),
                 'extracted_at': datetime.now().isoformat()
             }
@@ -1025,6 +1126,7 @@ class VideoArticleSummarizer:
     def _call_claude_api(self, prompt):
         """Call Claude Code API for AI-powered analysis"""
         try:
+
             # Call Claude CLI with --print flag for non-interactive mode
             result = subprocess.run([
                 self.claude_cmd,
@@ -1036,11 +1138,14 @@ class VideoArticleSummarizer:
             if result.returncode == 0:
                 return result.stdout.strip()
             else:
+                self.logger.error(f"   ❌ Claude API failed with return code {result.returncode}: {result.stderr}")
                 return f"Error calling Claude API: {result.stderr}"
 
         except subprocess.TimeoutExpired:
+            self.logger.error("   ❌ Claude API call timed out after 120 seconds")
             return f"Claude API call timed out after 120 seconds"
         except Exception as e:
+            self.logger.error(f"   ❌ Exception in Claude API call: {str(e)}")
             return f"Error in Claude API call: {str(e)}"
 
     def _extract_json_from_response(self, response):
@@ -1089,8 +1194,29 @@ class VideoArticleSummarizer:
         media_context = ""
         transcript_context = ""
 
+        # Check if this is a text-only article
+        has_video = metadata.get('media_info') and metadata['media_info']['youtube_urls']
+        has_audio = metadata.get('media_info') and metadata['media_info']['audio_urls']
+        is_text_only = not has_video and not has_audio
+
+        if is_text_only:
+            # Handle text-only articles
+            media_context += f"""
+        IMPORTANT: This is a TEXT-ONLY article with no video or audio content.
+
+        For text-only articles, please focus on:
+        - Extracting key insights from the written content
+        - Identifying main themes and arguments
+        - Summarizing actionable takeaways
+        - Highlighting important quotes or data points
+        - Structuring the content logically with clear headings
+        - NO timestamps should be included (since there's no media)
+
+        Article text content: {metadata.get('article_text', 'Content not available')}
+        """
+
         # Handle video content
-        if metadata.get('media_info') and metadata['media_info']['youtube_urls']:
+        elif has_video:
             media_context += f"""
         IMPORTANT: This article contains video content. Video URLs found: {metadata['media_info']['youtube_urls']}
 
@@ -1102,7 +1228,7 @@ class VideoArticleSummarizer:
         """
 
         # Handle audio/podcast content
-        if metadata.get('media_info') and metadata['media_info']['audio_urls']:
+        elif has_audio:
             # Check if we have real transcript data for audio content
             has_real_transcript = metadata.get('transcripts') and any(
                 transcript_data.get('success') for transcript_data in metadata['transcripts'].values()
@@ -1577,8 +1703,8 @@ class VideoArticleSummarizer:
             'DOMAIN': metadata['domain'],
             'URL': metadata['url'],
             'EXTRACTED_AT': datetime.fromisoformat(metadata['extracted_at'].replace('Z', '+00:00')).strftime('%B %d, %Y at %I:%M %p'),
-            'HAS_VIDEO': 'Yes' if metadata.get('has_video_indicators') else 'No',
-            'HAS_AUDIO': 'Yes' if metadata.get('has_audio_indicators') else 'No',
+            'HAS_VIDEO': 'Yes' if metadata.get('media_info', {}).get('youtube_urls') else 'No',
+            'HAS_AUDIO': 'Yes' if metadata.get('media_info', {}).get('audio_urls') else 'No',
             'SUMMARY_CONTENT': ai_summary.get('summary', 'Summary not available'),
             'GENERATION_DATE': datetime.now().strftime('%B %d, %Y'),
             **sections
