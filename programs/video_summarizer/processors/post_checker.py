@@ -5,7 +5,6 @@ Manually checks platform URLs for new posts and outputs URLs for processing
 """
 
 import json
-import hashlib
 import time
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
@@ -21,6 +20,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from common.base import BaseProcessor
 from common.config import Config
+from common.url_utils import normalize_url, generate_post_id
 
 # Suppress XML parsing warnings since we'll handle them properly
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -109,9 +109,11 @@ class PostChecker(BaseProcessor):
         return urls
 
     def _get_post_hash(self, title, url):
-        """Generate a unique hash for a post based on title and URL"""
-        content = f"{title}|{url}"
-        return hashlib.md5(content.encode()).hexdigest()
+        """
+        Generate a unique hash for a post based on title and normalized base URL.
+        This prevents duplicate entries when URLs have different parameters.
+        """
+        return generate_post_id(title, url)
 
     def _is_rss_feed(self, url, response=None):
         """Detect if URL is an RSS/XML feed"""

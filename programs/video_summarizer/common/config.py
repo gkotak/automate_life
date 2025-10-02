@@ -4,6 +4,10 @@ Centralized configuration management for video summarizer
 """
 
 import os
+import logging
+import subprocess
+from pathlib import Path
+from datetime import datetime
 from typing import Dict, Optional
 
 
@@ -15,6 +19,7 @@ class Config:
     MAX_WHISPER_FILE_SIZE_MB = 25
     RSS_POST_RECENCY_DAYS = 3
     TRACKING_CLEANUP_DAYS = 30
+    MAX_ARTICLE_WORDS = 2000  # Limit for Claude CLI prompt size
 
     # HTTP timeouts (seconds)
     DEFAULT_TIMEOUT = 30
@@ -111,6 +116,87 @@ class Config:
             'twitter': ['twitter.com', 'x.com'],
             'rss_feed': ['/feed', '/rss', '/atom', '.xml', '.rss']
         }
+
+    @staticmethod
+    def setup_logging(session_name: str, base_dir: Path) -> logging.Logger:
+        """
+        Set up logging for a processing session
+
+        Args:
+            session_name: Name for this session (e.g., 'ArticleSummarizer')
+            base_dir: Base directory for the project
+
+        Returns:
+            Configured logger instance
+        """
+        # Create logs directory
+        logs_dir = base_dir / "programs" / "video_summarizer" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create log filename with current date
+        log_filename = f"{session_name.lower()}_{datetime.now().strftime('%Y%m%d')}.log"
+        log_file = logs_dir / log_filename
+
+        # Configure logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[
+                logging.FileHandler(log_file, encoding='utf-8'),
+                logging.StreamHandler()
+            ]
+        )
+
+        logger = logging.getLogger(session_name)
+        logger.info(f"{session_name} initialized. Log file: {log_file}")
+
+        return logger
+
+    @staticmethod
+    def find_project_root() -> Path:
+        """
+        Find the project root directory by looking for marker files
+
+        Returns:
+            Path to project root directory
+        """
+        current_path = Path(__file__).resolve()
+
+        # Look for project markers
+        markers = ['.git', 'programs', 'README.md', '.env']
+
+        for parent in [current_path] + list(current_path.parents):
+            for marker in markers:
+                if (parent / marker).exists():
+                    return parent
+
+        # Fallback to predefined structure
+        return current_path.parent.parent.parent.parent
+
+    @staticmethod
+    def find_claude_cli() -> str:
+        """
+        Find Claude CLI executable
+
+        Returns:
+            Path to Claude CLI executable
+        """
+        locations = [
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/claude",
+            "claude"  # Try PATH
+        ]
+
+        for location in locations:
+            try:
+                result = subprocess.run([location, "--version"],
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    return location
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+
+        raise FileNotFoundError("Claude CLI not found. Please install it first.")
 
     @staticmethod
     def get_claude_prompts() -> Dict[str, str]:

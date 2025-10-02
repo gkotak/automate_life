@@ -1,0 +1,222 @@
+"""
+Authentication Module
+
+Handles authentication for various platforms and content sources.
+"""
+
+import logging
+import json
+import requests
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
+
+class AuthenticationManager:
+    """Manages authentication for different platforms"""
+
+    def __init__(self, base_dir: Path, session: requests.Session):
+        self.base_dir = base_dir
+        self.session = session
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.credentials = self._load_credentials()
+
+    def _load_credentials(self) -> Dict:
+        """Load credentials from environment and credential files"""
+        credentials = {}
+
+        # Load from credential files
+        cred_files = [
+            self.base_dir / '.env.local',
+            self.base_dir / '.env',
+            self.base_dir / 'programs' / 'video_summarizer' / 'config' / 'credentials.json'
+        ]
+
+        for cred_file in cred_files:
+            if cred_file.exists():
+                try:
+                    if cred_file.suffix == '.json':
+                        with open(cred_file, 'r') as f:
+                            file_creds = json.load(f)
+                            credentials.update(file_creds)
+                    else:
+                        # Handle .env files
+                        with open(cred_file, 'r') as f:
+                            for line in f:
+                                line = line.strip()
+                                if line and not line.startswith('#') and '=' in line:
+                                    key, value = line.split('=', 1)
+                                    credentials[key.strip()] = value.strip().strip('"\'')
+                except Exception as e:
+                    self.logger.warning(f"Could not load credentials from {cred_file}: {e}")
+
+        return credentials
+
+    def detect_platform(self, url: str) -> str:
+        """
+        Detect the platform from URL
+
+        Args:
+            url: The URL to analyze
+
+        Returns:
+            Platform name (substack, medium, generic, etc.)
+        """
+        self.logger.info(f"🔍 [PLATFORM DETECTION] Analyzing URL: {url}")
+
+        domain = self._extract_domain(url)
+        self.logger.info(f"🔍 [PLATFORM DETECTION] Domain: {domain}")
+
+        # Platform detection logic
+        if any(substack_indicator in domain for substack_indicator in [
+            'substack.com', 'newsletter.com', 'lennysnewsletter.com'
+        ]):
+            platform = 'substack'
+        elif 'medium.com' in domain:
+            platform = 'medium'
+        elif 'stratechery.com' in domain:
+            platform = 'stratechery'
+        else:
+            platform = 'generic'
+
+        self.logger.info(f"✅ [PLATFORM DETECTION] Detected platform: {platform}")
+        return platform
+
+    def check_authentication_required(self, url: str, platform: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if authentication is required for the given URL
+
+        Args:
+            url: The URL to check
+            platform: The detected platform
+
+        Returns:
+            Tuple of (auth_required, reason)
+        """
+        self.logger.info(f"🔍 [AUTH CHECK] Testing access to '{platform}' content without authentication...")
+
+        try:
+            # Test access without authentication
+            response = self.session.get(url, timeout=30)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            content_length = len(response.text)
+            has_structure = bool(soup.find(['article', 'main', 'div']))
+
+            self.logger.info(f"🔓 [CONTENT CHECK] Content appears accessible (length: {content_length}, has structure: {has_structure})")
+
+            # Check for paywall indicators
+            paywall_indicators = [
+                'subscribe', 'subscription', 'paywall', 'premium', 'members only',
+                'subscribers only', 'sign up', 'unlock', 'upgrade'
+            ]
+
+            content_text = response.text.lower()
+            for indicator in paywall_indicators:
+                if indicator in content_text:
+                    self.logger.info(f"🔒 [CONTENT CHECK] Found paywall indicator in content: '{indicator}'")
+                    self.logger.info(f"🔒 [AUTH CHECK] Content appears to be behind paywall for '{platform}'")
+                    return True, f"paywall_detected: {indicator}"
+
+            # If content is accessible, no auth needed
+            self.logger.info(f"✅ [AUTH SKIP] Content is publicly accessible for '{platform}' - no authentication needed")
+            return False, "publicly_accessible"
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ [AUTH CHECK] Could not test access: {e}")
+            return True, f"access_test_failed: {str(e)}"
+
+    def authenticate_if_needed(self, url: str, platform: str) -> Tuple[bool, str]:
+        """
+        Authenticate if credentials are available and needed
+
+        Args:
+            url: The URL to authenticate for
+            platform: The platform name
+
+        Returns:
+            Tuple of (success, message)
+        """
+        # Check if we have credentials for this platform
+        platform_credentials = self._get_platform_credentials(platform)
+
+        if not platform_credentials:
+            return False, f"No credentials available for platform: {platform}"
+
+        self.logger.info(f"🔑 [CREDENTIALS] Found credentials for '{platform}': {', '.join(platform_credentials.keys())}")
+        self.logger.info(f"🔐 [AUTH ATTEMPT] Content not accessible without authentication and credentials available for '{platform}' - attempting authentication")
+
+        # Try authentication based on platform
+        if platform == 'substack':
+            return self._authenticate_substack(platform_credentials)
+        elif platform == 'medium':
+            return self._authenticate_medium(platform_credentials)
+        elif platform == 'stratechery':
+            return self._authenticate_stratechery(platform_credentials)
+        else:
+            return self._authenticate_generic(platform_credentials)
+
+    def _extract_domain(self, url: str) -> str:
+        """Extract domain from URL"""
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        return parsed.netloc.lower()
+
+    def _get_platform_credentials(self, platform: str) -> Dict:
+        """Get credentials for a specific platform"""
+        platform_creds = {}
+
+        # Look for platform-specific credentials
+        for key, value in self.credentials.items():
+            if platform.lower() in key.lower():
+                platform_creds[key] = value
+
+        # Also include generic credentials
+        generic_keys = ['email', 'password', 'username', 'api_key', 'token']
+        for key in generic_keys:
+            if key in self.credentials:
+                platform_creds[key] = self.credentials[key]
+
+        return platform_creds
+
+    def _authenticate_substack(self, credentials: Dict) -> Tuple[bool, str]:
+        """Authenticate with Substack"""
+        self.logger.info("🔐 [AUTH] Attempting Substack authentication with email/password...")
+
+        try:
+            # Substack authentication logic
+            login_url = "https://substack.com/api/v1/login"
+            auth_data = {
+                'email': credentials.get('email', credentials.get('substack_email')),
+                'password': credentials.get('password', credentials.get('substack_password')),
+                'captcha_response': None
+            }
+
+            response = self.session.post(login_url, json=auth_data, timeout=30)
+
+            if response.status_code == 200:
+                self.logger.info("✅ [AUTH SUCCESS] Substack authentication successful")
+                return True, "Substack authentication successful"
+            else:
+                error_msg = f"Status: {response.status_code}, Response: {response.text[:100]}"
+                self.logger.error(f"❌ [AUTH FAILED] Substack authentication failed - {error_msg}")
+                return False, f"Substack authentication failed - {error_msg}"
+
+        except Exception as e:
+            self.logger.error(f"❌ [AUTH ERROR] Substack authentication error: {e}")
+            return False, f"Substack authentication error: {str(e)}"
+
+    def _authenticate_medium(self, credentials: Dict) -> Tuple[bool, str]:
+        """Authenticate with Medium"""
+        # Medium authentication implementation
+        return False, "Medium authentication not yet implemented"
+
+    def _authenticate_stratechery(self, credentials: Dict) -> Tuple[bool, str]:
+        """Authenticate with Stratechery"""
+        # Stratechery authentication implementation
+        return False, "Stratechery authentication not yet implemented"
+
+    def _authenticate_generic(self, credentials: Dict) -> Tuple[bool, str]:
+        """Generic authentication attempt"""
+        # Generic authentication implementation
+        return False, "Generic authentication not yet implemented"

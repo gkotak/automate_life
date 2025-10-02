@@ -10,11 +10,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
-import hashlib
 
 # Import our base class
 sys.path.append(str(Path(__file__).parent.parent))
 from common.base import BaseProcessor
+from common.url_utils import normalize_url, generate_post_id
 
 
 class LegacyMigrator(BaseProcessor):
@@ -44,9 +44,11 @@ class LegacyMigrator(BaseProcessor):
             raise
 
     def _generate_post_id(self, title: str, url: str) -> str:
-        """Generate a unique ID for a post"""
-        content = f"{title}:{url}"
-        return hashlib.md5(content.encode()).hexdigest()
+        """
+        Generate a unique ID for a post based on title and normalized base URL.
+        This prevents duplicate entries when URLs have different parameters.
+        """
+        return generate_post_id(title, url)
 
     def _parse_markdown_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Parse a found_urls_*.md file and extract post data"""
