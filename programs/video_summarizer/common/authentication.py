@@ -216,8 +216,8 @@ class AuthenticationManager:
             # Substack authentication logic
             login_url = "https://substack.com/api/v1/login"
             auth_data = {
-                'email': credentials.get('email', credentials.get('substack_email')),
-                'password': credentials.get('password', credentials.get('substack_password')),
+                'email': credentials.get('email', credentials.get('substack_email', credentials.get('SUBSTACK_EMAIL'))),
+                'password': credentials.get('password', credentials.get('substack_password', credentials.get('SUBSTACK_PASSWORD'))),
                 'captcha_response': None
             }
 
