@@ -426,36 +426,45 @@ class DailyPostChecker:
             self.logger.warning(f"❌ Error checking post date for {post_url}: {e}")
             return True  # Assume recent if we can't determine
 
-    def _run_video_summarizer(self, post_url):
-        """Run the video summarizer script on a new post"""
+    def _save_urls_to_markdown(self, new_posts):
+        """Save found URLs to a markdown file instead of processing them"""
         try:
-            self.logger.info(f"🚀 Running video summarizer for: {post_url}")
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = self.base_dir / "programs" / "video_summarizer" / f"found_urls_{timestamp}.md"
 
-            # Check if summarizer script exists
-            if not self.summarizer_script.exists():
-                self.logger.error(f"Summarizer script not found: {self.summarizer_script}")
-                return False
+            self.logger.info(f"📄 Saving {len(new_posts)} URLs to: {output_file}")
 
-            # Run the summarizer script
-            result = subprocess.run([
-                str(self.summarizer_script),
-                post_url
-            ], capture_output=True, text=True, timeout=300, cwd=self.base_dir)
+            with open(output_file, 'w') as f:
+                f.write(f"# New URLs Found - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write(f"Found {len(new_posts)} new articles/posts from the last 3 days.\n\n")
+                f.write("## URLs for Processing\n\n")
 
-            if result.returncode == 0:
-                self.logger.info(f"✅ Successfully processed: {post_url}")
-                self.logger.info(f"Output: {result.stdout.strip()}")
-                return True
-            else:
-                self.logger.error(f"❌ Summarizer failed for {post_url}: {result.stderr}")
-                return False
+                for i, post in enumerate(new_posts, 1):
+                    f.write(f"{i}. **{post['title']}**\n")
+                    f.write(f"   - URL: {post['url']}\n")
+                    f.write(f"   - Platform: {post['platform']}\n")
+                    f.write(f"   - Source: {post.get('source_feed', 'N/A')}\n")
+                    if post.get('published_date'):
+                        f.write(f"   - Published: {post['published_date']}\n")
+                    f.write(f"\n")
 
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"❌ Summarizer timed out for {post_url}")
-            return False
+                f.write("## Manual Processing Commands\n\n")
+                f.write("To process any of these URLs manually, use:\n")
+                f.write("```bash\n")
+                f.write("cd /path/to/video_summarizer\n")
+                f.write("./scripts/summarize_article.sh [URL]\n")
+                f.write("```\n\n")
+                f.write("Or process specific URLs:\n")
+                for post in new_posts:
+                    f.write(f"# {post['title'][:50]}...\n")
+                    f.write(f"./scripts/summarize_article.sh \"{post['url']}\"\n\n")
+
+            self.logger.info(f"✅ URLs saved to: {output_file}")
+            return str(output_file)
+
         except Exception as e:
-            self.logger.error(f"❌ Error running summarizer for {post_url}: {e}")
-            return False
+            self.logger.error(f"❌ Error saving URLs to markdown: {e}")
+            return None
 
     def check_for_new_posts(self):
         """Main method to check all platforms for new posts"""
@@ -466,8 +475,8 @@ class DailyPostChecker:
         self.logger.info(f"📋 Loaded {len(tracked_posts)} previously tracked posts")
 
         new_posts_found = 0
-        processed_posts = 0
         total_posts_checked = 0
+        new_posts_for_processing = []
 
         # Read platform URLs
         platform_urls = self._read_platform_urls()
@@ -512,22 +521,27 @@ class DailyPostChecker:
                         self.logger.info(f"   📝 NEW POST QUALIFIED FOR PROCESSING: {post['title']}")
                         new_posts_found += 1
 
-                        # Run video summarizer
-                        self.logger.info(f"   🚀 Launching video summarizer for post...")
-                        if self._run_video_summarizer(post['url']):
-                            processed_posts += 1
-                            # Mark as processed
-                            tracked_posts[post_hash] = {
-                                'title': post['title'],
-                                'url': post['url'],
-                                'platform': post['platform'],
-                                'processed_at': datetime.now().isoformat(),
-                                'source_feed': platform_url,
-                                'published_date': published_date.isoformat() if published_date else None
-                            }
-                            self.logger.info(f"   ✅ POST SUCCESSFULLY PROCESSED AND TRACKED")
-                        else:
-                            self.logger.warning(f"   ❌ Failed to process post: {post['title']}")
+                        # Add to processing list instead of processing immediately
+                        new_posts_for_processing.append({
+                            'title': post['title'],
+                            'url': post['url'],
+                            'platform': post['platform'],
+                            'source_feed': platform_url,
+                            'published_date': published_date.isoformat() if published_date else None,
+                            'post_hash': post_hash
+                        })
+
+                        # Mark as found (but not processed)
+                        tracked_posts[post_hash] = {
+                            'title': post['title'],
+                            'url': post['url'],
+                            'platform': post['platform'],
+                            'found_at': datetime.now().isoformat(),
+                            'source_feed': platform_url,
+                            'published_date': published_date.isoformat() if published_date else None,
+                            'status': 'found_not_processed'
+                        }
+                        self.logger.info(f"   📋 POST ADDED TO PROCESSING QUEUE")
                     else:
                         self.logger.info(f"   ⏰ Post is OLD (older than 3 days), skipping...")
                 else:
@@ -557,6 +571,11 @@ class DailyPostChecker:
         self._save_tracked_posts(cleaned_tracked)
         self.logger.info(f"💾 Saved {len(cleaned_tracked)} posts to tracking database")
 
+        # Save URLs to markdown file
+        output_file = None
+        if new_posts_for_processing:
+            output_file = self._save_urls_to_markdown(new_posts_for_processing)
+
         # Final Summary
         self.logger.info("=" * 80)
         self.logger.info("📊 FINAL SESSION SUMMARY")
@@ -564,23 +583,30 @@ class DailyPostChecker:
         self.logger.info(f"🌐 Platforms checked: {len(platform_urls)}")
         self.logger.info(f"📝 Total posts found: {total_posts_checked}")
         self.logger.info(f"🆕 New posts discovered: {new_posts_found}")
-        self.logger.info(f"✅ Successfully processed: {processed_posts}")
         self.logger.info(f"💾 Total tracked posts: {len(cleaned_tracked)}")
         self.logger.info(f"🕐 Session completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        if processed_posts > 0:
-            self.logger.info(f"🎉 SUCCESS: Processed {processed_posts} new posts!")
+        if new_posts_found > 0:
+            self.logger.info(f"🎉 SUCCESS: Found {new_posts_found} new posts!")
+            if output_file:
+                self.logger.info(f"📄 URLs saved to: {output_file}")
+                self.logger.info("💡 Review the URLs and manually process the ones you want.")
         else:
-            self.logger.info("✨ No new posts to process today")
+            self.logger.info("✨ No new posts found today")
 
         self.logger.info("=" * 80)
+
+        return output_file
 
 def main():
     """Main entry point"""
     checker = DailyPostChecker()
 
     try:
-        checker.check_for_new_posts()
+        output_file = checker.check_for_new_posts()
+        # Print output file path to stdout for shell script to capture
+        if output_file:
+            print(output_file)
     except KeyboardInterrupt:
         checker.logger.info("Process interrupted by user")
     except Exception as e:

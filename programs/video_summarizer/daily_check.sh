@@ -26,7 +26,16 @@ fi
 
 # Run the daily checker
 echo "🚀 Running daily post checker..."
-python3 "$PYTHON_SCRIPT"
+OUTPUT_FILE=$(python3 "$PYTHON_SCRIPT")
+
+echo ""
+if [ -n "$OUTPUT_FILE" ]; then
+    echo "📄 New URLs found and saved to: $OUTPUT_FILE"
+    echo "💡 Review the URLs and manually process the ones you want using:"
+    echo "   ./scripts/summarize_article.sh [URL]"
+else
+    echo "✨ No new posts found today"
+fi
 
 echo ""
 echo "✅ Daily check complete - $(date)"
