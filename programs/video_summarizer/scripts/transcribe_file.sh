@@ -6,7 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_SCRIPT="$SCRIPT_DIR/transcribe_file.py"
+PYTHON_SCRIPT="$SCRIPT_DIR/../processors/file_transcriber.py"
 
 echo "🎵 File Transcription Tool - $(date)"
 echo "==============================================="
@@ -53,7 +53,7 @@ if [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 # Run the transcription
-echo "🚀 Starting transcription..."
+echo "🚀 Starting transcription (using refactored processor)..."
 python3 "$PYTHON_SCRIPT" "$@"
 
 echo ""
