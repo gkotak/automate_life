@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
+from bs4 import BeautifulSoup
 
 # Add parent directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -43,6 +44,7 @@ class ArticleSummarizer(BaseProcessor):
         self.auth_manager = AuthenticationManager(self.base_dir, self.session)
         self.transcript_processor = TranscriptProcessor(self.base_dir, self.session)
         self.claude_cmd = Config.find_claude_cli()
+        self.html_dir = self.output_dir / "article_summaries"
 
     def process_article(self, url: str) -> str:
         """
@@ -415,24 +417,31 @@ CRITICAL:
             'TITLE': metadata['title'],
             'URL': metadata['url'],
             'DOMAIN': self._extract_domain(metadata['url']),
-            'ANALYSIS_DATE': datetime.now().strftime("%B %d, %Y at %I:%M %p"),
+            'EXTRACTED_AT': datetime.now().strftime("%B %d, %Y at %I:%M %p"),
             'HAS_VIDEO': 'Yes' if content_type.has_embedded_video else 'No',
             'HAS_AUDIO': 'Yes' if content_type.has_embedded_audio else 'No',
             'SUMMARY_CONTENT': ai_summary.get('summary', 'No summary available'),
-            'KEY_INSIGHTS': self._format_key_insights(ai_summary.get('key_insights', [])),
-            'MEDIA_TIMESTAMPS': self._format_media_timestamps(ai_summary.get('media_timestamps', [])),
-            'MEDIA_EMBED': self._generate_media_embed_html(metadata),
+            'INSIGHTS_SECTION': self._format_insights_section(ai_summary.get('key_insights', [])),
+            'MEDIA_EMBED_SECTION': self._generate_media_embed_html(metadata),
+            'TIMESTAMPS_SECTION': self._format_media_timestamps(ai_summary.get('media_timestamps', [])),
+            'SUMMARY_SECTIONS': '',  # Additional summary sections placeholder
+            'GENERATION_DATE': datetime.now().strftime("%B %d, %Y at %I:%M %p"),
         }
 
-    def _format_key_insights(self, insights: List[Dict]) -> str:
-        """Format key insights as HTML"""
+    def _format_insights_section(self, insights: List[Dict]) -> str:
+        """Format key insights as HTML section"""
         if not insights:
-            return "<p>No key insights extracted</p>"
+            return ""
 
-        html = "<ul>"
+        html = '''
+    <div class="summary-section">
+        <h2>🔍 Key Insights</h2>
+        <ul>'''
         for insight in insights:
             html += f"<li>{insight.get('insight', '')}</li>"
-        html += "</ul>"
+        html += '''
+        </ul>
+    </div>'''
         return html
 
     def _format_media_timestamps(self, timestamps: List[Dict]) -> str:
@@ -528,10 +537,16 @@ CRITICAL:
     def _sanitize_filename(self, title: str) -> str:
         """Sanitize title for use as filename"""
         import re
+        # Replace em dashes and en dashes with regular hyphens
+        sanitized = title.replace('–', '-').replace('—', '-').replace('−', '-')
         # Remove or replace invalid characters
-        sanitized = re.sub(r'[<>:"/\\|?*]', '', title)
+        sanitized = re.sub(r'[<>:"/\\|?*]', '', sanitized)
         # Replace spaces and multiple spaces with underscores
         sanitized = re.sub(r'\s+', '_', sanitized)
+        # Remove any remaining problematic Unicode characters and keep only ASCII
+        sanitized = ''.join(char if ord(char) < 128 else '_' for char in sanitized)
+        # Clean up multiple underscores
+        sanitized = re.sub(r'_{2,}', '_', sanitized)
         # Limit length
         return sanitized[:100] if len(sanitized) > 100 else sanitized
 
@@ -630,8 +645,194 @@ CRITICAL:
 
     def _update_index_file(self, filename: str, metadata: Dict, ai_summary: Dict):
         """Update the index file with new entry"""
-        # Implementation for updating index file
-        pass
+        index_path = self.html_dir / "index.html"
+
+        # Collect existing articles data
+        articles_data = []
+
+        if index_path.exists():
+            # Parse existing index to extract articles
+            with open(index_path, 'r') as f:
+                content = f.read()
+            soup = BeautifulSoup(content, 'html.parser')
+            article_list = soup.find('ul', class_='article-list')
+
+            if article_list:
+                for item in article_list.find_all('li', class_='article-item'):
+                    link = item.find('a', class_='article-title')
+                    desc = item.find('p', class_='article-description')
+                    if link and desc:
+                        # Extract URL from article HTML file for better domain statistics
+                        article_url = ''
+                        try:
+                            article_file = self.html_dir / link.get('href')
+                            if article_file.exists():
+                                with open(article_file, 'r') as af:
+                                    article_content = af.read()
+                                    # Look for URL in metadata section
+                                    url_pattern = r'<li><strong>URL:</strong> <a href="([^"]+)"'
+                                    import re
+                                    url_match = re.search(url_pattern, article_content)
+                                    if url_match:
+                                        article_url = url_match.group(1)
+                        except:
+                            pass
+
+                        articles_data.append({
+                            'filename': link.get('href'),
+                            'title': self._clean_title_indicators(link.get_text()),
+                            'description': desc.get_text(),
+                            'url': article_url if article_url else metadata.get('url', '')
+                        })
+
+        # Check if article already exists and update or add
+        existing_article = None
+        for i, article in enumerate(articles_data):
+            if article['filename'] == filename:
+                existing_article = i
+                break
+
+        if existing_article is not None:
+            # Update existing article
+            articles_data[existing_article].update({
+                'title': metadata.get('title', ''),
+                'description': f"Updated on {datetime.now().strftime('%B %d, %Y')}",
+                'url': metadata.get('url', '')
+            })
+            # Move to front (most recent)
+            article = articles_data.pop(existing_article)
+            articles_data.insert(0, article)
+        else:
+            # Add new article at the beginning
+            articles_data.insert(0, {
+                'filename': filename,
+                'title': metadata.get('title', ''),
+                'description': f"Generated on {datetime.now().strftime('%B %d, %Y')}",
+                'url': metadata.get('url', '')
+            })
+
+        # Generate statistics
+        stats = self._collect_index_statistics(articles_data)
+
+        # Generate articles list HTML
+        articles_list_html = self._generate_articles_list_html(articles_data)
+
+        # Load index template
+        index_template = self._load_template("index.html")
+
+        # Prepare template variables
+        template_vars = {
+            'TOTAL_ARTICLES': str(stats['total_articles']),
+            'VIDEO_ARTICLES': str(stats['video_articles']),
+            'AUDIO_ARTICLES': str(stats['audio_articles']),
+            'DOMAINS_COUNT': str(stats['domains_count']),
+            'ARTICLES_LIST': articles_list_html,
+            'LAST_UPDATED': stats['last_updated']
+        }
+
+        # Replace template variables
+        index_content = index_template
+        for var, value in template_vars.items():
+            index_content = index_content.replace(f'{{{{{var}}}}}', value)
+
+        # Write updated index
+        with open(index_path, 'w') as f:
+            f.write(index_content)
+
+    def _clean_title_indicators(self, title: str) -> str:
+        """Remove repeated indicator text from title"""
+        import re
+
+        # Remove repeated patterns of indicators
+        indicators = ['📹 VIDEO', '🎧 AUDIO', '🔄 UPDATED']
+        for indicator in indicators:
+            # Remove the indicator text itself (not the spans)
+            title = title.replace(indicator, '')
+
+        # Remove any multiple spaces
+        title = re.sub(r'\s+', ' ', title).strip()
+
+        return title
+
+    def _collect_index_statistics(self, articles_data: list) -> Dict:
+        """Collect statistics about the article collection"""
+        from urllib.parse import urlparse
+
+        stats = {
+            'total_articles': len(articles_data),
+            'video_articles': 0,
+            'audio_articles': 0,
+            'domains': set(),
+            'last_updated': datetime.now().strftime('%B %d, %Y at %I:%M %p')
+        }
+
+        for article in articles_data:
+            # Check if article has video or audio indicators
+            article_path = self.html_dir / article['filename']
+            if article_path.exists():
+                try:
+                    with open(article_path, 'r') as f:
+                        content = f.read()
+                        # More specific detection to avoid CSS false positives
+                        if 'Video Content:</strong> Yes' in content:
+                            stats['video_articles'] += 1
+                        if 'Audio Content:</strong> Yes' in content:
+                            stats['audio_articles'] += 1
+                except:
+                    pass
+
+            # Extract domain from URL if available
+            if 'url' in article and article['url']:
+                try:
+                    domain = urlparse(article['url']).netloc
+                    if domain:
+                        stats['domains'].add(domain)
+                except:
+                    pass
+
+        stats['domains_count'] = len(stats['domains'])
+        return stats
+
+    def _generate_articles_list_html(self, articles_data: list) -> str:
+        """Generate HTML for articles list"""
+        articles_html = ""
+
+        for article in articles_data:
+            filename = article['filename']
+            title = article['title']
+            description = article['description']
+            is_updated = 'Updated on' in description
+
+            # Check if article has video or audio
+            has_video = False
+            has_audio = False
+            article_path = self.html_dir / filename
+            if article_path.exists():
+                try:
+                    with open(article_path, 'r') as f:
+                        content = f.read()
+                        # More specific detection to avoid CSS false positives
+                        has_video = 'Video Content:</strong> Yes' in content
+                        has_audio = 'Audio Content:</strong> Yes' in content
+                except:
+                    pass
+
+            # Generate indicators
+            indicators = ""
+            if has_video:
+                indicators += '<span class="video-indicator">📹 VIDEO</span>'
+            if has_audio:
+                indicators += '<span class="audio-indicator">🎧 AUDIO</span>'
+            if is_updated:
+                indicators += '<span class="updated-indicator">🔄 UPDATED</span>'
+
+            articles_html += f'''
+        <li class="article-item">
+            <a href="{filename}" class="article-title">{title}{indicators}</a>
+            <p class="article-description">{description}</p>
+        </li>'''
+
+        return articles_html
 
     def _commit_to_git(self, filename: str):
         """Commit changes to git"""
