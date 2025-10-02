@@ -82,13 +82,12 @@ python3 scripts/post_manager.py list --source=stratechery --format=urls
 ./scripts/quick_process.sh bulk 5
 ```
 
-### 3. Legacy Migration Tool (`scripts/migrate_legacy_urls.py`)
+### 3. Legacy Migration Tool ~~(`scripts/migrate_legacy_urls.py`)~~
 
-**One-time migration utility:**
-```bash
-# Migrate old markdown files to JSON (already completed)
-python3 scripts/migrate_legacy_urls.py --cleanup
-```
+**✅ COMPLETED - Migration tool has been removed after successful completion:**
+- All legacy markdown files (`found_urls_*.md`) were successfully migrated to JSON format
+- The migration tool has been removed as it's no longer needed
+- All URLs now use normalized base URLs to prevent duplicates
 
 ## 📊 Enhanced Data Structure
 
