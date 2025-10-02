@@ -291,37 +291,13 @@
         <ul>
             <li><strong>URL:</strong> <a href="https://www.lennysnewsletter.com/p/why-ai-evals-are-the-hottest-new-skill" target="_blank">https://www.lennysnewsletter.com/p/why-ai-evals-are-the-hottest-new-skill</a></li>
             <li><strong>Domain:</strong> www.lennysnewsletter.com</li>
-            <li><strong>Analyzed:</strong> October 01, 2025 at 10:47 AM</li>
+            <li><strong>Analyzed:</strong> October 02, 2025 at 02:11 PM</li>
             <li><strong>Video Content:</strong> Yes</li>
             <li><strong>Audio Content:</strong> Yes</li>
         </ul>
     </div>
 
-    <div class="summary-section"><h3>💡 Key Insights</h3><ul><li class="insight-with-timestamp">
-                                Building evals is the highest ROI activity for AI product development
-                                <span class="insight-timestamp" onclick="jumpToTime(3)" title="Jump to 0:03">🎬 0:03</span>
-                            </li><li class="insight-with-timestamp">
-                                The most common misconception is believing AI can automatically evaluate itself
-                                <span class="insight-timestamp" onclick="jumpToTime(41)" title="Jump to 0:41">🎬 0:41</span>
-                            </li><li class="insight-with-timestamp">
-                                Manual error analysis should come before automated testing
-                                <span class="insight-timestamp" onclick="jumpToTime(1441)" title="Jump to 24:01">🎬 24:01</span>
-                            </li><li class="insight-with-timestamp">
-                                Use a 'benevolent dictator' approach with one domain expert leading the eval process
-                                <span class="insight-timestamp" onclick="jumpToTime(1544)" title="Jump to 25:44">🎬 25:44</span>
-                            </li><li class="insight-with-timestamp">
-                                LLM judges should always use binary pass/fail scoring rather than numerical scales
-                                <span class="insight-timestamp" onclick="jumpToTime(1611)" title="Jump to 26:51">🎬 26:51</span>
-                            </li><li class="insight-with-timestamp">
-                                Most people don't realize how powerful looking at actual user data can be
-                                <span class="insight-timestamp" onclick="jumpToTime(5109)" title="Jump to 85:09">🎬 85:09</span>
-                            </li><li class="insight-with-timestamp">
-                                The goal is actionable product improvement, not perfect evaluation
-                                <span class="insight-timestamp" onclick="jumpToTime(5221)" title="Jump to 87:01">🎬 87:01</span>
-                            </li><li class="insight-with-timestamp">
-                                Most AI products need only 4-7 LLM judge evaluators, not comprehensive test suites
-                                <span class="insight-timestamp" onclick="jumpToTime(3919)" title="Jump to 65:19">🎬 65:19</span>
-                            </li></ul></div>
+    
 
     
     <div class="video-container">
@@ -340,145 +316,16 @@
 
     <div class="summary-section">
         <h2>Summary</h2>
-        <div><h2>🚀 Why AI Evals Are the Hottest New Skill for Product Builders</h2>
-
-<p>This comprehensive discussion with Hamel Husain and Shreya Shankar, creators of the #1 AI evals course on Maven, reveals why evaluations have become the most critical skill for building successful AI products. They teach over 2,000 PMs and engineers across 500 companies, including major AI labs like OpenAI and Anthropic.</p>
-
-<h3>🎯 What Are AI Evals? <span class="section-timestamp" onclick="jumpToTime(330)" title="Jump to 5:30">⏰ 5:30</span></h3>
-
-<p>Evals are systematic methods for measuring and improving AI applications. At their core, they're data analytics applied to LLM applications - providing structured ways to understand what's happening and iterate with confidence. Unlike traditional software where you can predict behavior, LLMs are stochastic systems with much larger surface areas for potential issues.</p>
-
-<h3>🔍 The Error Analysis Process <span class="section-timestamp" onclick="jumpToTime(720)" title="Jump to 12:00">⏰ 12:00</span></h3>
-
-<p>The foundation of effective evals is manual error analysis - looking at real user traces and writing notes about what's going wrong. This process involves:</p>
-
-<ul>
-<li><strong>Open Coding:</strong> Writing informal notes about the first problem you see in each trace</li>
-<li><strong>Theoretical Saturation:</strong> Continuing until you stop discovering new types of problems (typically 100+ traces)</li>
-<li><strong>Axial Coding:</strong> Using AI to categorize and synthesize your notes into actionable failure modes</li>
-<li><strong>Prioritization:</strong> Counting and ranking issues to focus on the most impactful problems</li>
-</ul>
-
-<h3>🏗️ Live Example: Real Estate Assistant <span class="section-timestamp" onclick="jumpToTime(660)" title="Jump to 11:00">⏰ 11:00</span></h3>
-
-<p>Hamel demonstrates the process using real data from Nurture Boss, an AI assistant for property managers. The analysis reveals various failure modes:</p>
-
-<ul>
-<li>Poor handoff decisions when customers need human assistance</li>
-<li>Conversational flow issues with text messaging</li>
-<li>Hallucinating features that don't exist (like virtual tours)</li>
-<li>Formatting errors and protocol violations</li>
-</ul>
-
-<h3>⚖️ The Benevolent Dictator Approach <span class="section-timestamp" onclick="jumpToTime(1540)" title="Jump to 25:40">⏰ 25:40</span></h3>
-
-<p>To avoid committee paralysis, appoint one domain expert as the "benevolent dictator" for error analysis. This person should have the necessary context to judge whether AI responses make sense for the business case. Often this is the product manager, but it should always be someone with domain expertise.</p>
-
-<h3>🤖 LLM as Judge Evaluators <span class="section-timestamp" onclick="jumpToTime(2890)" title="Jump to 48:10">⏰ 48:10</span></h3>
-
-<p>After identifying failure modes through manual analysis, you can build automated evaluators:</p>
-
-<ul>
-<li><strong>Code-based evals:</strong> Simple Python functions for straightforward checks (formatting, length, etc.)</li>
-<li><strong>LLM as judge:</strong> Using another LLM to evaluate complex, subjective criteria</li>
-<li><strong>Binary scoring:</strong> Always use pass/fail rather than numerical scales</li>
-<li><strong>Validation required:</strong> Test your judge against human labels before deploying</li>
-</ul>
-
-<h3>💭 Addressing the Evals Debate <span class="section-timestamp" onclick="jumpToTime(4260)" title="Jump to 71:00">⏰ 71:00</span></h3>
-
-<p>The controversy around evals often stems from misconceptions and bad experiences. People get burned by poorly implemented LLM judges or have narrow definitions of what evals encompass. The reality is that successful AI products are built on some form of systematic evaluation - even if teams don't explicitly call it "evals."</p>
-
-<h3>💡 Getting Started: Tips and Best Practices <span class="section-timestamp" onclick="jumpToTime(5220)" title="Jump to 87:00">⏰ 87:00</span></h3>
-
-<ul>
-<li>Don't be scared of looking at your data - it's the highest ROI activity</li>
-<li>Use AI to help organize your thoughts and categorize findings</li>
-<li>Build custom tools to make data review as frictionless as possible</li>
-<li>Focus on 4-7 key evaluators rather than trying to test everything</li>
-<li>Expect about a week of upfront work, then 30 minutes weekly maintenance</li>
-</ul></div>
+        <div><p></p></div>
     </div>
 
-    <div class="video-timestamps"><h3>🎬 Interactive Video Highlights</h3><p><em>Click timestamps to jump to that part of the video:</em></p><ul>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(0)">
-                            <strong>0:00</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(0)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Opening hook: Hamel and Shreya establish that building great AI products requires being really good at evals, describing it as the highest ROI activity and immediately addictive for practitioners.</span>
-                        <div class="transcript-quote">"To build great AI products, you need to be really good at building evals. It's the highest ROI activity you can engage in. This process is a lot of fun. Everyone that does this immediately gets addicted to it"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(350)">
-                            <strong>5:50</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(350)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Defining evals: Hamel explains that evals are systematic ways to measure and improve AI applications, essentially data analytics applied to LLM applications in a structured way.</span>
-                        <div class="transcript-quote">"Evals is a way to systematically measure and improve an AI application. And it really doesn't have to be scary or unapproachable at all. It really is at its core data analytics on your LLM application"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(665)">
-                            <strong>11:05</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(665)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Real-world example introduction: Hamel begins demonstrating the eval process using actual data from Nurture Boss, an AI assistant for property managers, showing how to analyze real user traces.</span>
-                        <div class="transcript-quote">"So, this is a company that I worked with. It's called Nurture Boss and it is a AI assistant for property managers who are managing apartments"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(1081)">
-                            <strong>18:01</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(1081)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Error analysis methodology: The hosts explain how to systematically look at user traces, write notes about problems, and why product managers need to be involved rather than just developers.</span>
-                        <div class="transcript-quote">"So, you got to put your product hat on, which is why we're talking to you because product people have to be in the room. Um, and they have to be involved in sort of doing this"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(1540)">
-                            <strong>25:40</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(1540)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Benevolent dictator concept: Hamel introduces the idea of appointing one trusted domain expert to lead the eval process rather than getting bogged down in committee decisions.</span>
-                        <div class="transcript-quote">"benevolent dictator is just a catchy term for the fact that when you're doing this open coding, a lot of teams get bogged down in having a committee do this"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(3135)">
-                            <strong>52:15</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(3135)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">LLM as judge demonstration: The hosts show how to create binary evaluators for specific failure modes, emphasizing the importance of validating judges against human judgment before deployment.</span>
-                        <div class="transcript-quote">"So what we have is a LM as a judge prompt for this one specific failure. Like Shrea said, you would want to do one specific failure and you want to make it binary"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(4257)">
-                            <strong>70:57</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(4257)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Addressing eval controversies: Shreya explains why there's drama around evals, discussing how people get burned by bad implementations and develop overly rigid definitions of what evals should be.</span>
-                        <div class="transcript-quote">"people have been burned by evals in the past. People have done evals badly, then they didn't trust it anymore and then they're like, 'Oh, I'm anti- evals.'"</div>
-                    </li>
-                    <li class="timestamp-item">
-                        <span class="timestamp-link" onclick="jumpToTime(5647)">
-                            <strong>94:07</strong>
-                        </span>
-                        <button class="play-button" onclick="jumpToTime(5647)">▶ Play</button>
-                        <br>
-                        <span class="timestamp-description">Course details and practical implementation: The hosts detail their comprehensive Maven course, including the 60-page book, AI-powered student assistant, and active Discord community for ongoing support.</span>
-                        <div class="transcript-quote">"So, my favorite perk is there's a60page book that's meticulously written that we've created that walks through the entire process in detail of how to do evalu"</div>
-                    </li></ul></div>
+    
 
     
 
     <div class="source-link">
         <p><a href="https://www.lennysnewsletter.com/p/why-ai-evals-are-the-hottest-new-skill" target="_blank">🔗 Read Original Article</a></p>
-        <p><em>Summary generated on October 01, 2025</em></p>
+        <p><em>Summary generated on October 02, 2025</em></p>
     </div>
 
     <script>
