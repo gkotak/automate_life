@@ -132,10 +132,17 @@ class ContentTypeDetector:
         """
         audio_urls = []
 
+        # Check for Stratechery-specific audio player first
+        stratechery_audio = self._detect_stratechery_audio(soup)
+        if stratechery_audio:
+            audio_urls.extend(stratechery_audio)
+
         # Look for audio elements
         audio_elements = soup.find_all('audio')
         for audio in audio_elements:
             src = audio.get('src', '')
+
+            # Check direct src attribute first
             if src:
                 audio_data = {
                     'url': src,
@@ -144,6 +151,24 @@ class ContentTypeDetector:
                 }
                 audio_urls.append(audio_data)
                 self.logger.info(f"✅ [AUDIO FOUND] {src} - Context: embedded_audio")
+            else:
+                # Check for nested <source> tags (Stratechery pattern)
+                source_elements = audio.find_all('source')
+                for source in source_elements:
+                    source_src = source.get('src', '')
+                    if source_src:
+                        # Determine platform based on URL
+                        platform = 'stratechery' if 'stratechery.passport.online' in source_src else 'html_audio'
+
+                        audio_data = {
+                            'url': source_src,
+                            'platform': platform,
+                            'context': 'embedded_audio_source',
+                            'type': source.get('type', '')
+                        }
+                        audio_urls.append(audio_data)
+                        self.logger.info(f"✅ [AUDIO FOUND] {platform} - Source: {source_src[:100]}... - Context: embedded_audio_source")
+                        break  # Use first valid source
 
         # Look for podcast/audio iframes
         iframes = soup.find_all('iframe')
@@ -170,6 +195,55 @@ class ContentTypeDetector:
                     }
                     audio_urls.append(audio_data)
                     self.logger.info(f"✅ [AUDIO FOUND] {platform_name} - Context: embedded_iframe")
+                    break
+
+        return audio_urls
+
+    def _detect_stratechery_audio(self, soup: BeautifulSoup) -> List[Dict]:
+        """
+        Detect Stratechery-specific audio players
+
+        Args:
+            soup: BeautifulSoup object
+
+        Returns:
+            List of audio dictionaries with metadata
+        """
+        audio_urls = []
+
+        # Look for Stratechery's "Listen to this post" audio player
+        listen_indicators = [
+            "Listen to this post:",
+            "Listen to Podcast",
+            "🎧 Listen to Podcast"
+        ]
+
+        for indicator in listen_indicators:
+            if indicator in soup.get_text():
+                # Found Stratechery audio indicator
+                audio_data = {
+                    'url': 'stratechery_audio_player',
+                    'platform': 'stratechery',
+                    'context': 'embedded_audio_player',
+                    'indicator': indicator
+                }
+                audio_urls.append(audio_data)
+                self.logger.info(f"✅ [AUDIO FOUND] Stratechery audio player - Indicator: {indicator}")
+                break
+
+        # Also look for audio controls/players in the HTML structure
+        audio_controls = soup.find_all(['div', 'span'], class_=re.compile(r'(audio|player|podcast)', re.I))
+        for control in audio_controls:
+            if any(keyword in control.get_text().lower() for keyword in ['listen', 'play', 'pause', 'audio']):
+                if not any(existing['platform'] == 'stratechery' for existing in audio_urls):
+                    audio_data = {
+                        'url': 'stratechery_audio_control',
+                        'platform': 'stratechery',
+                        'context': 'embedded_audio_control',
+                        'element': str(control)[:200]  # First 200 chars for debugging
+                    }
+                    audio_urls.append(audio_data)
+                    self.logger.info(f"✅ [AUDIO FOUND] Stratechery audio control element")
                     break
 
         return audio_urls

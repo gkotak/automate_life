@@ -503,8 +503,43 @@ CRITICAL:
 
     def _generate_audio_embed_html(self, metadata: Dict) -> str:
         """Generate audio embed HTML"""
-        # Future implementation for audio embeds
-        return ""
+        audio_urls = metadata['media_info']['audio_urls']
+        if not audio_urls:
+            return ""
+
+        audio_data = audio_urls[0]  # Use first audio
+        audio_url = audio_data['url']
+        platform = audio_data.get('platform', 'unknown')
+
+        if platform == 'stratechery':
+            return f'''
+<div class="audio-container">
+    <h2>🎧 Listen to the Podcast</h2>
+    <div class="speed-notice">
+        ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
+    </div>
+    <div class="audio-embed">
+        <audio controls controlsList="nodownload" style="width: 100%; max-width: 600px;">
+            <source src="{audio_url}" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+    <p class="audio-note">
+        <strong>Note:</strong> This is the Stratechery podcast version of the article.
+        Audio duration: Approximately 13-15 minutes.
+    </p>
+</div>'''
+        else:
+            return f'''
+<div class="audio-container">
+    <h2>🎧 Listen to Audio</h2>
+    <div class="audio-embed">
+        <audio controls style="width: 100%; max-width: 600px;">
+            <source src="{audio_url}" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+</div>'''
 
     # Utility methods (keeping existing implementations)
     def _get_soup(self, content):
