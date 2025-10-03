@@ -145,15 +145,15 @@ class ArticleSummarizer(BaseProcessor):
 
         # Handle different content types
         if content_type.has_embedded_video:
-            metadata.update(self._process_video_content(content_type.video_urls))
+            metadata.update(self._process_video_content(content_type.video_urls, soup))
         elif content_type.has_embedded_audio:
-            metadata.update(self._process_audio_content(content_type.audio_urls))
+            metadata.update(self._process_audio_content(content_type.audio_urls, soup))
         else:
             metadata.update(self._process_text_content(soup))
 
         return metadata
 
-    def _process_video_content(self, video_urls: List[Dict]) -> Dict:
+    def _process_video_content(self, video_urls: List[Dict], soup) -> Dict:
         """Process content with embedded videos (main videos only)"""
 
         # Additional deduplication safeguard at processing level
@@ -190,19 +190,49 @@ class ArticleSummarizer(BaseProcessor):
             else:
                 self.logger.info(f"      ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
 
+        # Always extract article text content
+        self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
+        article_text = self._extract_article_text_content(soup)
+        if article_text:
+            word_count = len(article_text.split())
+            self.logger.info(f"   📄 [ARTICLE TEXT] Extracted {word_count} words of article content")
+
+            # Limit text size for prompt efficiency
+            if word_count > Config.MAX_ARTICLE_WORDS:
+                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
+                self.logger.info(f"   📄 [ARTICLE TEXT] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
+        else:
+            self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
+
         return {
             'media_info': {'youtube_urls': video_urls},
-            'transcripts': transcripts
+            'transcripts': transcripts,
+            'article_text': article_text or 'Content not available'
         }
 
-    def _process_audio_content(self, audio_urls: List[Dict]) -> Dict:
+    def _process_audio_content(self, audio_urls: List[Dict], soup) -> Dict:
         """Process content with embedded audio"""
         self.logger.info("   Found embedded audio content...")
+
+        # Always extract article text content
+        self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
+        article_text = self._extract_article_text_content(soup)
+        if article_text:
+            word_count = len(article_text.split())
+            self.logger.info(f"   📄 [ARTICLE TEXT] Extracted {word_count} words of article content")
+
+            # Limit text size for prompt efficiency
+            if word_count > Config.MAX_ARTICLE_WORDS:
+                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
+                self.logger.info(f"   📄 [ARTICLE TEXT] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
+        else:
+            self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
 
         # For now, just store audio metadata
         # Future: Add audio transcript extraction
         return {
-            'media_info': {'audio_urls': audio_urls}
+            'media_info': {'audio_urls': audio_urls},
+            'article_text': article_text or 'Content not available'
         }
 
     def _process_text_content(self, soup) -> Dict:
@@ -284,6 +314,9 @@ VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transc
 {formatted_transcript[:Config.MAX_TRANSCRIPT_CHARS]}{'...' if len(formatted_transcript) > Config.MAX_TRANSCRIPT_CHARS else ''}
 """
 
+        # Get article text content
+        article_text = metadata.get('article_text', 'Content not available')
+
         # Build context based on whether we have transcript data
         if has_transcript_data:
             context = f"""
@@ -294,6 +327,11 @@ Please focus on extracting video timestamps with the following format:
 - Aim for 5-8 key timestamps that represent the most valuable content
 - Include timestamps for: key insights, important discussions, actionable advice, demonstrations
 {transcript_content}
+
+ARTICLE TEXT CONTENT:
+{article_text}
+
+Please analyze both the article text and the video transcript to provide comprehensive insights.
 """
         else:
             context = f"""
@@ -304,6 +342,9 @@ DO NOT include any timestamps or time-based references in your response.
 - Extract actionable advice from the article content
 - Identify main themes and discussion points referenced in the article
 - Base your analysis only on the article text, not on video content
+
+ARTICLE TEXT CONTENT:
+{article_text}
 """
 
         return context
@@ -311,6 +352,7 @@ DO NOT include any timestamps or time-based references in your response.
     def _build_audio_context(self, metadata: Dict) -> str:
         """Build context string for audio content"""
         audio_urls = metadata['media_info']['audio_urls']
+        article_text = metadata.get('article_text', 'Content not available')
 
         return f"""
 IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
@@ -321,6 +363,11 @@ This appears to be a podcast episode. Please:
 - Focus on the most valuable content and main themes
 - DO NOT include any timestamps or time-based references since no transcript is available
 Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
+
+ARTICLE TEXT CONTENT:
+{article_text}
+
+Please analyze the article text to provide comprehensive insights about the audio content.
 """
 
     def _build_text_context(self, metadata: Dict) -> str:
