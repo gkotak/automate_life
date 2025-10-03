@@ -154,15 +154,34 @@ class ArticleSummarizer(BaseProcessor):
         return metadata
 
     def _process_video_content(self, video_urls: List[Dict]) -> Dict:
-        """Process content with embedded videos"""
-        self.logger.info("   Found embedded videos, extracting transcripts...")
+        """Process content with embedded videos (main videos only)"""
+
+        # Additional deduplication safeguard at processing level
+        unique_videos = {}
+        for video in video_urls:
+            video_id = video.get('video_id')
+            if video_id and video_id not in unique_videos:
+                unique_videos[video_id] = video
+
+        unique_video_list = list(unique_videos.values())
+
+        self.logger.info(f"   Found {len(video_urls)} video references, processing {len(unique_video_list)} unique main videos...")
+
+        if len(unique_video_list) > 3:
+            self.logger.info(f"   📝 [VIDEO LIMIT] Limiting to top 3 videos to avoid processing overhead")
+            unique_video_list = unique_video_list[:3]
+
+        # Log the videos being processed with their relevance scores
+        for i, video in enumerate(unique_video_list, 1):
+            score = video.get('relevance_score', 'N/A')
+            context = video.get('context', 'unknown')
+            video_id = video.get('video_id', 'N/A')
+            self.logger.info(f"      📹 Main Video {i}: ID={video_id} | Score={score} | Context={context}")
 
         transcripts = {}
-        for video in video_urls:
+        for video in unique_video_list:
             video_id = video['video_id']
-            self.logger.info(f"      🎥 [HIGH PRIORITY] Main Video URL: {video['url']}")
-            self.logger.info(f"      🎥 [HIGH PRIORITY] Embed URL: {video['embed_url']}")
-            self.logger.info(f"      Extracting transcript for: {video_id}")
+            self.logger.info(f"      🎥 [EXTRACTING] Video: {video_id}")
 
             transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
             if transcript_data and transcript_data.get('success'):
@@ -249,25 +268,42 @@ class ArticleSummarizer(BaseProcessor):
         video_urls = metadata['media_info']['youtube_urls']
         transcripts = metadata.get('transcripts', {})
 
-        context = f"""
+        # Check if we have any successful transcripts
+        has_transcript_data = False
+        transcript_content = ""
+
+        if transcripts:
+            for video_id, transcript_data in transcripts.items():
+                if transcript_data.get('success'):
+                    formatted_transcript = self._format_transcript_for_analysis(transcript_data)
+                    if formatted_transcript:
+                        has_transcript_data = True
+                        transcript_content += f"""
+
+VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
+{formatted_transcript[:Config.MAX_TRANSCRIPT_CHARS]}{'...' if len(formatted_transcript) > Config.MAX_TRANSCRIPT_CHARS else ''}
+"""
+
+        # Build context based on whether we have transcript data
+        if has_transcript_data:
+            context = f"""
 IMPORTANT: This article contains video content. Video URLs found: {video_urls}
 Please focus on extracting video timestamps with the following format:
 - Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
 - Provide detailed descriptions of what happens at each timestamp
 - Aim for 5-8 key timestamps that represent the most valuable content
 - Include timestamps for: key insights, important discussions, actionable advice, demonstrations
+{transcript_content}
 """
-
-        # Add transcript data if available
-        if transcripts:
-            for video_id, transcript_data in transcripts.items():
-                if transcript_data.get('success'):
-                    formatted_transcript = self._format_transcript_for_analysis(transcript_data)
-                    if formatted_transcript:
-                        context += f"""
-
-VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
-{formatted_transcript[:Config.MAX_TRANSCRIPT_CHARS]}{'...' if len(formatted_transcript) > Config.MAX_TRANSCRIPT_CHARS else ''}
+        else:
+            context = f"""
+IMPORTANT: This article contains video content. Video URLs found: {video_urls}
+Note: No video transcripts are available, so please focus on the article content itself.
+DO NOT include any timestamps or time-based references in your response.
+- Focus on key insights and takeaways mentioned in the article text
+- Extract actionable advice from the article content
+- Identify main themes and discussion points referenced in the article
+- Base your analysis only on the article text, not on video content
 """
 
         return context
@@ -354,6 +390,18 @@ CRITICAL:
     def _call_claude_api(self, prompt: str) -> str:
         """Call Claude Code API for AI-powered analysis"""
         try:
+            # Log prompt details for debugging
+            prompt_length = len(prompt)
+            prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
+            self.logger.info(f"   🤖 [CLAUDE API] Sending prompt ({prompt_length} chars)")
+            self.logger.debug(f"   📝 [PROMPT PREVIEW] {prompt_preview}")
+
+            # Save full prompt to debug file for inspection
+            debug_file = self.base_dir / "programs" / "video_summarizer" / "logs" / "debug_prompt.txt"
+            with open(debug_file, 'w', encoding='utf-8') as f:
+                f.write(prompt)
+            self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
+
             result = subprocess.run([
                 self.claude_cmd,
                 "--print",
