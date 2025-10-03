@@ -154,41 +154,34 @@ class ArticleSummarizer(BaseProcessor):
         return metadata
 
     def _process_video_content(self, video_urls: List[Dict], soup) -> Dict:
-        """Process content with embedded videos (main videos only)"""
+        """Process content with single validated video"""
 
-        # Additional deduplication safeguard at processing level
-        unique_videos = {}
-        for video in video_urls:
-            video_id = video.get('video_id')
-            if video_id and video_id not in unique_videos:
-                unique_videos[video_id] = video
+        # Should only receive 1 validated video from detection logic
+        if not video_urls:
+            self.logger.info("   No validated videos to process")
+            return {'media_info': {'youtube_urls': []}, 'transcripts': {}}
 
-        unique_video_list = list(unique_videos.values())
+        if len(video_urls) > 1:
+            self.logger.warning(f"   ⚠️ [UNEXPECTED] Received {len(video_urls)} videos, expected 1. Using first video only.")
 
-        self.logger.info(f"   Found {len(video_urls)} video references, processing {len(unique_video_list)} unique main videos...")
+        # Process only the first (and should be only) video
+        video = video_urls[0]
+        video_id = video.get('video_id', 'N/A')
+        score = video.get('relevance_score', 'N/A')
+        context = video.get('context', 'unknown')
 
-        if len(unique_video_list) > 3:
-            self.logger.info(f"   📝 [VIDEO LIMIT] Limiting to top 3 videos to avoid processing overhead")
-            unique_video_list = unique_video_list[:3]
+        self.logger.info(f"   Processing single validated video: ID={video_id} | Score={score} | Context={context}")
 
-        # Log the videos being processed with their relevance scores
-        for i, video in enumerate(unique_video_list, 1):
-            score = video.get('relevance_score', 'N/A')
-            context = video.get('context', 'unknown')
-            video_id = video.get('video_id', 'N/A')
-            self.logger.info(f"      📹 Main Video {i}: ID={video_id} | Score={score} | Context={context}")
-
+        # Extract transcript for the single video
         transcripts = {}
-        for video in unique_video_list:
-            video_id = video['video_id']
-            self.logger.info(f"      🎥 [EXTRACTING] Video: {video_id}")
+        self.logger.info(f"      🎥 [EXTRACTING] Video: {video_id}")
 
-            transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
-            if transcript_data and transcript_data.get('success'):
-                transcripts[video_id] = transcript_data
-                self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
-            else:
-                self.logger.info(f"      ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
+        transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
+        if transcript_data and transcript_data.get('success'):
+            transcripts[video_id] = transcript_data
+            self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
+        else:
+            self.logger.info(f"      ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
 
         # Always extract article text content
         self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")

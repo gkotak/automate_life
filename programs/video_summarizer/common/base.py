@@ -66,9 +66,11 @@ class BaseProcessor:
             load_dotenv(env_default)
 
     def _setup_logging(self):
-        """Setup logging to both console and file"""
-        timestamp = datetime.now().strftime('%Y%m%d')
-        log_file = self.logs_dir / f"{self.session_name}_{timestamp}.log"
+        """Setup logging to both console and file with rotation"""
+        log_file = self.logs_dir / f"{self.session_name}.log"
+
+        # Rotate log if it's too large (10MB limit)
+        self._rotate_log_if_needed(log_file, max_size_mb=10)
 
         logger = logging.getLogger(f'{self.session_name}_logger')
         logger.setLevel(logging.INFO)
@@ -91,6 +93,33 @@ class BaseProcessor:
         logger.addHandler(console_handler)
 
         return logger
+
+    def _rotate_log_if_needed(self, log_file, max_size_mb=10):
+        """Rotate log file if it exceeds the maximum size"""
+        if not log_file.exists():
+            return
+
+        # Check file size in MB
+        file_size_mb = log_file.stat().st_size / (1024 * 1024)
+
+        if file_size_mb > max_size_mb:
+            # Read last 25% of the file to preserve recent logs
+            with open(log_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+
+            # Keep the last 25% of lines
+            keep_lines = int(len(lines) * 0.25)
+            if keep_lines < 100:  # Always keep at least 100 lines
+                keep_lines = min(100, len(lines))
+
+            recent_lines = lines[-keep_lines:] if keep_lines > 0 else []
+
+            # Write truncated content back
+            with open(log_file, 'w', encoding='utf-8') as f:
+                f.write(f"# Log rotated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - keeping last {keep_lines} entries\n")
+                f.writelines(recent_lines)
+
+            print(f"📋 Log rotated: kept last {keep_lines} entries (was {file_size_mb:.1f}MB)")
 
     def _create_session(self):
         """Create and configure HTTP session with authentication"""

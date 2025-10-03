@@ -104,8 +104,8 @@ class ContentTypeDetector:
         # 1. HIGHEST PRIORITY: iframe embeds in main content
         iframe_videos = self._detect_iframe_videos_in_main_content(soup)
         if iframe_videos:
-            self.logger.info(f"🎯 [IFRAME PRIORITY] Found {len(iframe_videos)} iframe video(s) - using as main content")
-            return iframe_videos[:2]  # Max 2 iframe videos
+            self.logger.info(f"🎯 [IFRAME PRIORITY] Found {len(iframe_videos)} iframe video(s) - using first one as main content")
+            return iframe_videos[:1]  # Max 1 iframe video
 
         # 2. FALLBACK: Video links in main body content only
         self.logger.info("🔍 [FALLBACK] No iframe videos found, searching for video links in main content...")
@@ -115,17 +115,17 @@ class ContentTypeDetector:
             self.logger.info("ℹ️ [NO VIDEOS] No video content found in main body")
             return []
 
-        # 3. VALIDATION: Check first 2 videos against YouTube + audio matching
-        validated_videos = []
-        for i, video in enumerate(main_body_videos[:2], 1):
+        # 3. VALIDATION: Check up to 3 videos, return first match only
+        for i, video in enumerate(main_body_videos[:3], 1):
             self.logger.info(f"🔎 [VALIDATING] Video {i}: {video['video_id']}")
             if self._validate_video_against_content(video, soup):
-                validated_videos.append(video)
-                self.logger.info(f"✅ [VALIDATED] Video {i}: {video['video_id']} - matches content")
+                self.logger.info(f"✅ [VALIDATED] Video {i}: {video['video_id']} - matches content, using as main video")
+                return [video]  # Return first validated video only
             else:
                 self.logger.info(f"❌ [REJECTED] Video {i}: {video['video_id']} - doesn't match content")
 
-        return validated_videos
+        self.logger.info("❌ [NO MATCH] No videos validated against content")
+        return []
 
     def _detect_iframe_videos_in_main_content(self, soup: BeautifulSoup) -> List[Dict]:
         """Detect iframe video embeds within main content areas only"""
