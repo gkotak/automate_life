@@ -275,8 +275,13 @@ class ArticleSummarizer(BaseProcessor):
                 summary = parsed_json['summary']
                 if not any(tag in summary for tag in ['<p>', '<div>', '<h1>', '<h2>', '<h3>']):
                     parsed_json['summary'] = self._format_summary_as_html(summary)
+            self.logger.info("   ✅ [JSON] Successfully parsed Claude response")
             return parsed_json
         else:
+            # Log JSON parsing failure for debugging
+            self.logger.warning("   ⚠️ [JSON] Failed to parse Claude response as JSON")
+            self.logger.warning(f"   📝 [JSON] Response preview: {response[:200]}...")
+
             # Fallback formatting
             formatted_summary = self._format_summary_as_html(response)
             return {
@@ -450,7 +455,17 @@ CRITICAL:
             ], capture_output=True, text=True, timeout=300, cwd=self.base_dir)
 
             if result.returncode == 0:
-                return result.stdout.strip()
+                response = result.stdout.strip()
+
+                # Save response for debugging
+                response_file = self.base_dir / "programs" / "video_summarizer" / "logs" / "debug_response.txt"
+                with open(response_file, 'w', encoding='utf-8') as f:
+                    f.write(f"=== CLAUDE RESPONSE ({len(response)} chars) ===\n")
+                    f.write(response)
+                    f.write(f"\n=== END RESPONSE ===\n")
+
+                self.logger.info(f"   💾 [DEBUG] Response saved to: {response_file}")
+                return response
             else:
                 self.logger.error(f"   ❌ Claude API failed with return code {result.returncode}: {result.stderr}")
                 return f"Error calling Claude API: {result.stderr}"
@@ -467,19 +482,23 @@ CRITICAL:
         import re
 
         json_patterns = [
-            r'```json\s*(\{.*?\})\s*```',
-            r'```\s*(\{.*?\})\s*```',
-            r'(\{.*?\})'
+            (r'```json\s*(\{.*?\})\s*```', 'json code block'),
+            (r'```\s*(\{.*?\})\s*```', 'generic code block'),
+            (r'(\{.*?\})', 'raw JSON')
         ]
 
-        for pattern in json_patterns:
+        for pattern, pattern_name in json_patterns:
             match = re.search(pattern, response, re.DOTALL)
             if match:
                 try:
-                    return json.loads(match.group(1))
-                except json.JSONDecodeError:
+                    json_content = match.group(1)
+                    self.logger.debug(f"   🔍 [JSON] Trying {pattern_name} - found {len(json_content)} chars")
+                    return json.loads(json_content)
+                except json.JSONDecodeError as e:
+                    self.logger.debug(f"   ❌ [JSON] {pattern_name} failed: {e}")
                     continue
 
+        self.logger.warning(f"   ⚠️ [JSON] No valid JSON found in {len(response)} char response")
         return None
 
     def _generate_html_content(self, metadata: Dict, ai_summary: Dict) -> str:

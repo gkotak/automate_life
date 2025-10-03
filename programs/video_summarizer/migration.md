@@ -3,7 +3,6 @@
 ## Project Goal
 
 Convert the existing video summarizer program into a standalone web app with the following requirements:
-- **Nothing runs locally** - fully cloud-hosted solution
 - **Interactive HTML output** - users can delete articles, search, manage content
 - **Scalable architecture** - handles growing content and user base
 
