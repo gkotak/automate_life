@@ -478,11 +478,24 @@ CRITICAL:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            result = subprocess.run([
+            # Use Popen with communicate() for better handling of large stdin
+            process = subprocess.Popen([
                 self.claude_cmd,
                 "--print",
                 "--output-format", "text"
-            ], input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300, cwd=self.base_dir)
+            ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+               text=True, encoding='utf-8', cwd=self.base_dir)
+
+            try:
+                stdout, stderr = process.communicate(input=prompt, timeout=300)
+                result = type('obj', (object,), {
+                    'returncode': process.returncode,
+                    'stdout': stdout,
+                    'stderr': stderr
+                })()
+            except subprocess.TimeoutExpired:
+                process.kill()
+                raise RuntimeError(f"Claude CLI timed out after 300 seconds")
 
             # Save response for debugging (always, even if empty)
             response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
