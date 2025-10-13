@@ -66,15 +66,13 @@ class AuthenticationManager:
         return credentials
 
     def _load_chrome_cookies(self):
-        """Load cookies from Chrome browser using direct SQLite access (faster and more reliable)"""
+        """Load only Substack session cookies from Chrome for fast authentication"""
         try:
             import sqlite3
             import shutil
             import tempfile
-            from http.cookiejar import Cookie
-            from datetime import datetime, timedelta
 
-            self.logger.info("🍪 [CHROME COOKIES] Loading cookies from Chrome browser...")
+            self.logger.info("🍪 [CHROME COOKIES] Loading Substack session cookies from Chrome...")
 
             # Chrome cookie database path on macOS
             chrome_cookie_db = Path.home() / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Cookies"
@@ -94,21 +92,20 @@ class AuthenticationManager:
                 conn = sqlite3.connect(tmp_db_path)
                 cursor = conn.cursor()
 
-                # Query cookies for key domains
-                key_domains = ['substack.com', '.substack.com', 'medium.com', '.medium.com', 'patreon.com', '.patreon.com']
-                domain_filter = ' OR '.join([f"host_key LIKE '%{domain}%'" for domain in key_domains])
-
-                query = f"""
+                # Query ONLY Substack session cookies (much faster than loading all)
+                # Focus on the key authentication cookies: substack.sid, substack.lli, etc.
+                query = """
                     SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly
                     FROM cookies
-                    WHERE {domain_filter}
+                    WHERE (host_key LIKE '%substack.com%' OR host_key LIKE '%.substack.com%')
+                    AND (name LIKE '%sid%' OR name LIKE '%session%' OR name LIKE '%auth%' OR name LIKE '%token%' OR name = 'substack.lli')
                 """
 
                 cursor.execute(query)
                 rows = cursor.fetchall()
 
                 cookie_count = 0
-                domains_loaded = set()
+                cookie_names = []
 
                 for row in rows:
                     host_key, name, value, path, expires_utc, is_secure, is_httponly = row
@@ -132,12 +129,14 @@ class AuthenticationManager:
 
                     self.session.cookies.set_cookie(cookie)
                     cookie_count += 1
-                    domains_loaded.add(host_key)
+                    cookie_names.append(name)
 
                 conn.close()
 
-                self.logger.info(f"✅ [CHROME COOKIES] Loaded {cookie_count} cookies from Chrome")
-                self.logger.info(f"🌐 [CHROME COOKIES] Domains: {', '.join(sorted(domains_loaded))}")
+                if cookie_count > 0:
+                    self.logger.info(f"✅ [CHROME COOKIES] Loaded {cookie_count} Substack session cookie(s): {', '.join(cookie_names)}")
+                else:
+                    self.logger.info(f"⚠️ [CHROME COOKIES] No Substack session cookies found - you may need to log in to Substack in Chrome")
 
             finally:
                 # Clean up temp file
