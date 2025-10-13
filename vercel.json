@@ -1,6 +1,0 @@
-{
-  "buildCommand": "cd programs/article_summarizer/web-app && npm run build",
-  "outputDirectory": "programs/article_summarizer/web-app/.next",
-  "installCommand": "cd programs/article_summarizer/web-app && npm install",
-  "framework": "nextjs"
-}
