@@ -50,7 +50,8 @@ class ArticleSummarizer(BaseProcessor):
 
         # Initialize Supabase client
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_SERVICE_KEY')  # Use service key for server-side operations
+        # Try service key first (for server-side operations), fall back to anon key
+        supabase_key = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_ANON_KEY')
         self.supabase: Optional[Client] = None
 
         if supabase_url and supabase_key:
@@ -60,7 +61,12 @@ class ArticleSummarizer(BaseProcessor):
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to initialize Supabase: {e}")
         else:
-            self.logger.warning("⚠️ Supabase credentials not found - database insertion will be skipped")
+            missing = []
+            if not supabase_url:
+                missing.append('SUPABASE_URL')
+            if not supabase_key:
+                missing.append('SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY')
+            self.logger.warning(f"⚠️ Supabase credentials not found - database insertion will be skipped (missing: {', '.join(missing)})")
 
     def process_article(self, url: str) -> str:
         """
