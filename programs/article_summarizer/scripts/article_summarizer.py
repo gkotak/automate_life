@@ -481,25 +481,38 @@ CRITICAL:
             result = subprocess.run([
                 self.claude_cmd,
                 "--print",
-                "--output-format", "text",
-                prompt
-            ], capture_output=True, text=True, timeout=300, cwd=self.base_dir)
+                "--output-format", "text"
+            ], input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300, cwd=self.base_dir)
 
-            if result.returncode == 0:
-                response = result.stdout.strip()
+            # Save response for debugging (always, even if empty)
+            response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
+            stderr_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_stderr.txt"
 
-                # Save response for debugging
-                response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
-                with open(response_file, 'w', encoding='utf-8') as f:
-                    f.write(f"=== CLAUDE RESPONSE ({len(response)} chars) ===\n")
-                    f.write(response)
-                    f.write(f"\n=== END RESPONSE ===\n")
+            response = result.stdout.strip()
+            stderr = result.stderr.strip()
 
-                self.logger.info(f"   💾 [DEBUG] Response saved to: {response_file}")
-                return response
-            else:
-                self.logger.error(f"   ❌ Claude API failed with return code {result.returncode}: {result.stderr}")
-                return f"Error calling Claude API: {result.stderr}"
+            with open(response_file, 'w', encoding='utf-8') as f:
+                f.write(f"=== CLAUDE RESPONSE ({len(response)} chars) ===\n")
+                f.write(response)
+                f.write(f"\n=== END RESPONSE ===\n")
+
+            with open(stderr_file, 'w', encoding='utf-8') as f:
+                f.write(f"=== STDERR (return code: {result.returncode}) ===\n")
+                f.write(stderr)
+                f.write(f"\n=== END STDERR ===\n")
+
+            self.logger.info(f"   💾 [DEBUG] Response saved to: {response_file}")
+            self.logger.info(f"   💾 [DEBUG] Stderr saved to: {stderr_file}")
+
+            if result.returncode != 0:
+                self.logger.error(f"   ❌ Claude API failed with return code {result.returncode}")
+                self.logger.error(f"   ❌ Stderr: {stderr[:500]}")
+                return f"Error calling Claude API: {stderr}"
+
+            if not response:
+                self.logger.warning(f"   ⚠️ Claude API returned empty response (stderr: {stderr[:200]})")
+
+            return response
 
         except subprocess.TimeoutExpired:
             self.logger.error("   ❌ Claude API call timed out after 120 seconds")
