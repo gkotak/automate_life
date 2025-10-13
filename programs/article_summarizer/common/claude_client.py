@@ -49,13 +49,15 @@ class ClaudeClient:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Call Claude CLI with prompt as argument - simple and reliable
-            cmd = [self.claude_cmd, "--print", "--output-format", "text", prompt]
-            self.logger.info(f"   🔧 [DEBUG] Running command: {self.claude_cmd} --print --output-format text [prompt]")
-            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
+            # Call Claude CLI with prompt via stdin using input parameter
+            # This is simpler and more reliable than file redirection or arguments
+            cmd = [self.claude_cmd, "--print", "--output-format", "text"]
+            self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
+            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars, passing via stdin")
 
             result = subprocess.run(
                 cmd,
+                input=prompt,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
