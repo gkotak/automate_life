@@ -48,10 +48,9 @@ class ArticleSummarizer(BaseProcessor):
         self.claude_cmd = Config.find_claude_cli()
         self.html_dir = self.output_dir / "article_summaries"
 
-        # Initialize Supabase client
+        # Initialize Supabase client with anon key
         supabase_url = os.getenv('SUPABASE_URL')
-        # Try service key first (for server-side operations), fall back to anon key
-        supabase_key = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_ANON_KEY')
+        supabase_key = os.getenv('SUPABASE_ANON_KEY')
         self.supabase: Optional[Client] = None
 
         if supabase_url and supabase_key:
@@ -65,7 +64,7 @@ class ArticleSummarizer(BaseProcessor):
             if not supabase_url:
                 missing.append('SUPABASE_URL')
             if not supabase_key:
-                missing.append('SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY')
+                missing.append('SUPABASE_ANON_KEY')
             self.logger.warning(f"⚠️ Supabase credentials not found - database insertion will be skipped (missing: {', '.join(missing)})")
 
     def process_article(self, url: str) -> str:
