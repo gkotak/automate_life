@@ -6,7 +6,6 @@ Handles all interactions with Claude CLI
 
 import subprocess
 import logging
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -50,35 +49,19 @@ class ClaudeClient:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Call Claude CLI via temp file instead of stdin to avoid buffering issues
-            # NOTE: Using stdin with large prompts can cause the CLI to hang or return empty output
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as temp_file:
-                temp_file.write(prompt)
-                temp_file_path = temp_file.name
+            # Call Claude CLI with prompt as argument - simple and reliable
+            cmd = [self.claude_cmd, "--print", "--output-format", "text", prompt]
+            self.logger.info(f"   🔧 [DEBUG] Running command: {self.claude_cmd} --print --output-format text [prompt]")
+            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
 
-            try:
-                cmd = [self.claude_cmd, "--print", "--output-format", "text"]
-                self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
-                self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars, using temp file: {temp_file_path}")
-
-                # Run Claude CLI with input from temp file
-                with open(temp_file_path, 'r', encoding='utf-8') as input_file:
-                    result = subprocess.run(
-                        cmd,
-                        stdin=input_file,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        encoding='utf-8',
-                        timeout=300
-                    )
-            finally:
-                # Clean up temp file
-                import os
-                try:
-                    os.unlink(temp_file_path)
-                except:
-                    pass
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                timeout=300
+            )
 
             # Save response and stderr for debugging
             response_file = self.logs_dir / "debug_response.txt"
