@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """
-Article Summarizer
+Article Summarizer - Database-Only Version
 
-Refactored from video_article_summarizer.py to provide cleaner separation of concerns:
+Processes articles and saves structured data to Supabase database.
+No static HTML files are generated - all rendering is done by the Next.js web app.
+
+Features:
 - Content type detection (video/audio/text-only)
-- Authentication handling
-- AI-powered content analysis
-- HTML generation
+- Authentication handling for paywalled content
+- AI-powered content analysis using Claude
+- Saves structured data (summaries, insights, transcripts) to Supabase
+- Returns article ID for viewing in web app
 
 Usage:
     python3 article_summarizer.py "https://example.com/article"
+
+View results:
+    http://localhost:3000/article/{id}
 """
 
 import sys
 import json
-import subprocess
 import os
 from pathlib import Path
 from datetime import datetime
@@ -49,7 +55,6 @@ class ArticleSummarizer(BaseProcessor):
         self.transcript_processor = TranscriptProcessor(self.base_dir, self.session)
         claude_cmd = Config.find_claude_cli()
         self.claude_client = ClaudeClient(claude_cmd, self.base_dir, self.logger)
-        self.html_dir = self.output_dir / "article_summaries"
 
         # Initialize file transcriber for audio/video without transcripts
         try:
@@ -104,33 +109,12 @@ class ArticleSummarizer(BaseProcessor):
             self.logger.info("2. Analyzing content with AI...")
             ai_summary = self._generate_summary_with_ai(url, metadata)
 
-            # Step 4: Generate HTML
-            self.logger.info("3. Generating HTML...")
-            html_content = self._generate_html_content(metadata, ai_summary)
+            # Step 4: Save to Supabase database
+            self.logger.info("3. Saving to Supabase database...")
+            article_id = self._save_to_database(metadata, ai_summary)
 
-            # Step 5: Save file
-            output_file = self.output_dir / "article_summaries" / filename
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-
-            self.logger.info(f"   Created: {output_file}")
-
-            # Step 6: Save to Supabase database
-            self.logger.info("4. Saving to Supabase database...")
-            self._save_to_database(metadata, ai_summary, html_content)
-
-            # Step 7: Update index
-            self.logger.info("5. Updating index...")
-            self._update_index_file(filename, metadata, ai_summary)
-
-            # Step 8: Commit to git
-            self.logger.info("6. Committing to git...")
-            self._commit_to_git(filename)
-
-            self.logger.info(f"✅ Processing complete: {filename}")
-            return str(output_file)
+            self.logger.info(f"✅ Processing complete! View at: http://localhost:3000/article/{article_id}")
+            return article_id
 
         except Exception as e:
             self.logger.error(f"❌ Processing failed: {e}")
@@ -532,13 +516,18 @@ Return your response in this JSON format:
 }}
 
 CRITICAL TIMESTAMP RULES:
+- Each timestamp section should cover AT LEAST 30 SECONDS of continuous content
+- Each description should include COMPLETE SENTENCES and full thoughts - never break mid-sentence
+- Group related ideas that span 30-60 seconds into a single timestamp entry with comprehensive description
+- Provide detailed summaries that capture the full context of what's discussed in that 30+ second window
 - Use null for timestamp_seconds and time_formatted if you cannot find the EXACT content in the provided transcript
 - NEVER guess or estimate timestamps - if you can't find it in the transcript, use null
 - For quotes: search the transcript for the exact quote text and use that timestamp
-- For insights: only add timestamps if you can verify the content appears at that point in the transcript
+- For insights: provide comprehensive descriptions that summarize the complete topic discussed in that 30+ second section
 - Only include timestamps for content you can find in the provided transcript
 - If transcript is truncated, only use timestamps from the visible portion
 - key_insights should be 8-12 items combining key learnings, main points, and actionable takeaways
+- Each insight with a timestamp should describe the complete topic/discussion in that time window, not just a single point
 - quotes should be memorable/important quotes with exact speaker attribution and context
 """
 
@@ -570,156 +559,94 @@ CRITICAL TIMESTAMP RULES:
         self.logger.warning(f"   ⚠️ [JSON] No valid JSON found in {len(response)} char response")
         return None
 
-    def _generate_html_content(self, metadata: Dict, ai_summary: Dict) -> str:
-        """Generate the final HTML content"""
-        template = self._load_template()
+    # HTML generation removed - web-app (Next.js) handles all display via React components
+    # The Python script only processes content and saves to Supabase database
 
-        # Prepare template variables
-        template_vars = self._prepare_template_variables(metadata, ai_summary)
+    def _save_to_database(self, metadata: Dict, ai_summary: Dict):
+        """Save article data to Supabase database"""
+        if not self.supabase:
+            self.logger.warning("   ⚠️ Supabase not initialized - skipping database save")
+            return None
 
-        # Replace placeholders in template
-        html_content = template
-        for key, value in template_vars.items():
-            placeholder = f"{{{{{key}}}}}"
-            html_content = html_content.replace(placeholder, str(value))
+        try:
+            content_type = metadata['content_type']
 
-        return html_content
+            # Extract transcript text if available
+            # Use grouped format for display (30+ second sections)
+            transcript_text = None
+            transcripts = metadata.get('transcripts', {})
+            if transcripts:
+                transcript_parts = []
+                for video_id, transcript_data in transcripts.items():
+                    if transcript_data.get('success'):
+                        formatted = self._format_transcript_for_display(transcript_data)
+                        if formatted:
+                            transcript_parts.append(formatted)
+                if transcript_parts:
+                    transcript_text = "\n\n".join(transcript_parts)
 
-    def _prepare_template_variables(self, metadata: Dict, ai_summary: Dict) -> Dict:
-        """Prepare variables for HTML template"""
-        content_type = metadata['content_type']
+            # Get video ID if available
+            video_id = None
+            if content_type.has_embedded_video and metadata.get('media_info', {}).get('youtube_urls'):
+                video_id = metadata['media_info']['youtube_urls'][0].get('video_id')
 
-        return {
-            'TITLE': metadata['title'],
-            'URL': metadata['url'],
-            'DOMAIN': self._extract_domain(metadata['url']),
-            'EXTRACTED_AT': datetime.now().strftime("%B %d, %Y at %I:%M %p"),
-            'HAS_VIDEO': 'Yes' if content_type.has_embedded_video else 'No',
-            'HAS_AUDIO': 'Yes' if content_type.has_embedded_audio else 'No',
-            'SUMMARY_CONTENT': ai_summary.get('summary', 'No summary available'),
-            'INSIGHTS_SECTION': self._format_insights_section(ai_summary.get('key_insights', []), content_type),
-            'MEDIA_EMBED_SECTION': self._generate_media_embed_html(metadata),
-            'TIMESTAMPS_SECTION': self._format_media_timestamps(ai_summary.get('media_timestamps', []), content_type),
-            'SUMMARY_SECTIONS': '',  # Additional summary sections placeholder
-            'GENERATION_DATE': datetime.now().strftime("%B %d, %Y at %I:%M %p"),
-        }
+            # Get audio URL if available
+            audio_url = None
+            if content_type.has_embedded_audio and metadata.get('media_info', {}).get('audio_urls'):
+                audio_url = metadata['media_info']['audio_urls'][0].get('url')
 
-    def _format_insights_section(self, insights: List[Dict], content_type) -> str:
-        """Format key insights as HTML section with optional timestamps"""
-        if not insights:
-            return ""
-
-        # Determine which jump function to use based on content type
-        jump_function = "jumpToAudioTime" if content_type.has_embedded_audio else "jumpToTime"
-
-        html = '''
-    <div class="summary-section">
-        <h2>🔍 Key Insights</h2>
-        <ul>'''
-        for insight in insights:
-            insight_text = insight.get('insight', '')
-            timestamp = insight.get('time_formatted')
-            timestamp_seconds = insight.get('timestamp_seconds')
-
-            # Add clickable timestamp if available
-            if timestamp and timestamp_seconds is not None:
-                click_handler = f"{jump_function}({timestamp_seconds})"
-                html += f'<li><span class="timestamp" onclick="{click_handler}" title="Jump to {timestamp}">⏰ {timestamp}</span> {insight_text}</li>'
+            # Determine content source
+            if content_type.has_embedded_video and content_type.has_embedded_audio:
+                content_source = 'mixed'
+            elif content_type.has_embedded_video:
+                content_source = 'video'
+            elif content_type.has_embedded_audio:
+                content_source = 'audio'
             else:
-                html += f"<li>{insight_text}</li>"
+                content_source = 'article'
 
-        html += '''
-        </ul>
-    </div>'''
-        return html
+            # Build article record
+            article_data = {
+                'title': metadata['title'],
+                'url': metadata['url'],
+                'summary_text': ai_summary.get('summary', ''),
+                'transcript_text': transcript_text,
+                'original_article_text': metadata.get('article_text'),
+                'content_source': content_source,
+                'video_id': video_id,
+                'audio_url': audio_url,
+                'platform': metadata.get('platform'),
+                'tags': [],
 
-    def _format_media_timestamps(self, timestamps: List[Dict], content_type) -> str:
-        """Format media timestamps as HTML"""
-        if not timestamps:
-            return ""
+                # Structured data
+                'key_insights': ai_summary.get('key_insights', []),
+                'quotes': ai_summary.get('quotes', []),
 
-        # Determine which jump function to use based on content type
-        jump_function = "jumpToAudioTime" if content_type.has_embedded_audio else "jumpToTime"
+                # Metadata
+                'duration_minutes': ai_summary.get('duration_minutes'),
+                'word_count': ai_summary.get('word_count'),
+                'topics': ai_summary.get('topics', []),
+            }
 
-        html = '<div class="timestamps-section"><h3>🕐 Key Timestamps</h3><ul>'
-        for ts in timestamps:
-            time = ts.get('time', '')
-            description = ts.get('description', '')
+            # Try to update existing article or insert new one
+            result = self.supabase.table('articles').upsert(
+                article_data,
+                on_conflict='url'
+            ).execute()
 
-            if time:
-                # Convert to seconds for JavaScript
-                seconds = self._convert_timestamp_to_seconds(time)
-                html += f'<li><span class="timestamp" onclick="{jump_function}({seconds})" title="Jump to {time}">⏰ {time}</span> {description}</li>'
+            if result.data:
+                article_id = result.data[0]['id']
+                self.logger.info(f"   ✅ Saved to database (article ID: {article_id})")
+                return article_id
             else:
-                html += f'<li>{description}</li>'
+                self.logger.warning("   ⚠️ Database save completed but no data returned")
+                return None
 
-        html += '</ul></div>'
-        return html
+        except Exception as e:
+            self.logger.error(f"   ❌ Database save failed: {e}")
+            return None
 
-    def _generate_media_embed_html(self, metadata: Dict) -> str:
-        """Generate media embed HTML based on content type"""
-        content_type = metadata['content_type']
-
-        if content_type.has_embedded_video:
-            return self._generate_video_embed_html(metadata)
-        elif content_type.has_embedded_audio:
-            return self._generate_audio_embed_html(metadata)
-        else:
-            return ""
-
-    def _generate_video_embed_html(self, metadata: Dict) -> str:
-        """Generate video embed HTML"""
-        video_urls = metadata['media_info']['youtube_urls']
-        if not video_urls:
-            return ""
-
-        video_data = video_urls[0]  # Use first video
-        video_id = video_data['video_id']
-
-        return f'''
-<div class="video-container">
-    <h2>🎥 Watch the Video</h2>
-    <div class="speed-notice">
-        ⚡ Video automatically plays at 2x speed for efficient viewing. You can adjust speed in player controls.
-    </div>
-    <div class="video-embed">
-        <iframe
-            src="https://www.youtube.com/embed/{video_id}?enablejsapi=1&playsinline=1"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowfullscreen>
-        </iframe>
-    </div>
-</div>'''
-
-    def _generate_audio_embed_html(self, metadata: Dict) -> str:
-        """Generate standardized audio embed HTML (platform-agnostic)"""
-        audio_urls = metadata['media_info']['audio_urls']
-        if not audio_urls:
-            return ""
-
-        audio_data = audio_urls[0]  # Use first audio
-        audio_url = audio_data['url']
-        audio_type = audio_data.get('type', 'audio/mpeg')
-
-        # Standardized audio player for all platforms
-        return f'''
-<div class="audio-container">
-    <h2>🎧 Listen to Audio</h2>
-    <div class="speed-notice">
-        ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
-    </div>
-    <div class="audio-embed">
-        <audio controls controlsList="nodownload" style="width: 100%; max-width: 600px;">
-            <source src="{audio_url}" type="{audio_type}">
-            Your browser does not support the audio element.
-        </audio>
-    </div>
-    <p class="audio-note">
-        <strong>Note:</strong> Audio content embedded from original article.
-    </p>
-</div>'''
-
-    # Utility methods (keeping existing implementations)
+    # Utility methods
     def _get_soup(self, content):
         """Create BeautifulSoup object from content"""
         from bs4 import BeautifulSoup
@@ -866,7 +793,7 @@ CRITICAL TIMESTAMP RULES:
         return ""
 
     def _format_transcript_for_analysis(self, transcript_data: Dict) -> str:
-        """Format transcript for AI analysis"""
+        """Format transcript for AI analysis (line-by-line for Claude)"""
         if not transcript_data or not transcript_data.get('success'):
             return ""
 
@@ -887,6 +814,62 @@ CRITICAL TIMESTAMP RULES:
 
         return "\n".join(formatted_text)
 
+    def _format_transcript_for_display(self, transcript_data: Dict) -> str:
+        """Format transcript for display (grouped into 30+ second sections)"""
+        if not transcript_data or not transcript_data.get('success'):
+            return ""
+
+        transcript = transcript_data.get('transcript', [])
+        formatted_sections = []
+
+        # Group transcript entries into 30+ second sections
+        current_section_start = None
+        current_section_text = []
+        min_section_duration = 30  # minimum 30 seconds per section
+
+        for entry in transcript:
+            start_time = entry.get('start', 0)
+            text = entry.get('text', '').strip()
+
+            if not text:
+                continue
+
+            # Start a new section if this is the first entry
+            if current_section_start is None:
+                current_section_start = start_time
+                current_section_text = [text]
+            else:
+                # Check if we should start a new section
+                section_duration = start_time - current_section_start
+
+                # Start new section if: we've exceeded min duration AND at sentence boundary
+                is_sentence_boundary = current_section_text[-1].rstrip().endswith(('.', '!', '?'))
+
+                if section_duration >= min_section_duration and is_sentence_boundary:
+                    # Save current section
+                    minutes = int(current_section_start // 60)
+                    seconds = int(current_section_start % 60)
+                    timestamp = f"[{minutes}:{seconds:02d}]"
+                    section_text = " ".join(current_section_text)
+                    formatted_sections.append(f"{timestamp} {section_text}")
+
+                    # Start new section
+                    current_section_start = start_time
+                    current_section_text = [text]
+                else:
+                    # Continue current section
+                    current_section_text.append(text)
+
+        # Add the final section
+        if current_section_start is not None and current_section_text:
+            minutes = int(current_section_start // 60)
+            seconds = int(current_section_start % 60)
+            timestamp = f"[{minutes}:{seconds:02d}]"
+            section_text = " ".join(current_section_text)
+            formatted_sections.append(f"{timestamp} {section_text}")
+
+        return "\n\n".join(formatted_sections)
+
     def _convert_timestamp_to_seconds(self, timestamp: str) -> int:
         """Convert MM:SS or H:MM:SS timestamp to seconds"""
         parts = timestamp.split(':')
@@ -895,15 +878,6 @@ CRITICAL TIMESTAMP RULES:
         elif len(parts) == 3:  # H:MM:SS
             return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
         return 0
-
-    def _load_template(self, template_name: str = "article_summary.html") -> str:
-        """Load HTML template"""
-        template_path = self.base_dir / "programs" / "article_summarizer" / "scripts" / "templates" / template_name
-        try:
-            with open(template_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Template not found: {template_path}")
 
     def _create_metadata_for_prompt(self, metadata: Dict) -> Dict:
         """Create simplified metadata for AI prompt"""
@@ -933,297 +907,6 @@ CRITICAL TIMESTAMP RULES:
 
         return html
 
-    def _update_index_file(self, filename: str, metadata: Dict, ai_summary: Dict):
-        """Update the index file with new entry"""
-        index_path = self.html_dir / "index.html"
-
-        # Collect existing articles data
-        articles_data = []
-
-        if index_path.exists():
-            # Parse existing index to extract articles
-            with open(index_path, 'r') as f:
-                content = f.read()
-            soup = BeautifulSoup(content, 'html.parser')
-            article_list = soup.find('ul', class_='article-list')
-
-            if article_list:
-                for item in article_list.find_all('li', class_='article-item'):
-                    link = item.find('a', class_='article-title')
-                    desc = item.find('p', class_='article-description')
-                    if link and desc:
-                        # Extract URL from article HTML file for better domain statistics
-                        article_url = ''
-                        try:
-                            article_file = self.html_dir / link.get('href')
-                            if article_file.exists():
-                                with open(article_file, 'r') as af:
-                                    article_content = af.read()
-                                    # Look for URL in metadata section
-                                    url_pattern = r'<li><strong>URL:</strong> <a href="([^"]+)"'
-                                    import re
-                                    url_match = re.search(url_pattern, article_content)
-                                    if url_match:
-                                        article_url = url_match.group(1)
-                        except:
-                            pass
-
-                        articles_data.append({
-                            'filename': link.get('href'),
-                            'title': self._clean_title_indicators(link.get_text()),
-                            'description': desc.get_text(),
-                            'url': article_url if article_url else metadata.get('url', '')
-                        })
-
-        # Check if article already exists and update or add
-        existing_article = None
-        for i, article in enumerate(articles_data):
-            if article['filename'] == filename:
-                existing_article = i
-                break
-
-        if existing_article is not None:
-            # Update existing article
-            articles_data[existing_article].update({
-                'title': metadata.get('title', ''),
-                'description': f"Updated on {datetime.now().strftime('%B %d, %Y')}",
-                'url': metadata.get('url', '')
-            })
-            # Move to front (most recent)
-            article = articles_data.pop(existing_article)
-            articles_data.insert(0, article)
-        else:
-            # Add new article at the beginning
-            articles_data.insert(0, {
-                'filename': filename,
-                'title': metadata.get('title', ''),
-                'description': f"Generated on {datetime.now().strftime('%B %d, %Y')}",
-                'url': metadata.get('url', '')
-            })
-
-        # Generate statistics
-        stats = self._collect_index_statistics(articles_data)
-
-        # Generate articles list HTML
-        articles_list_html = self._generate_articles_list_html(articles_data)
-
-        # Load index template
-        index_template = self._load_template("index.html")
-
-        # Prepare template variables
-        template_vars = {
-            'TOTAL_ARTICLES': str(stats['total_articles']),
-            'VIDEO_ARTICLES': str(stats['video_articles']),
-            'AUDIO_ARTICLES': str(stats['audio_articles']),
-            'DOMAINS_COUNT': str(stats['domains_count']),
-            'ARTICLES_LIST': articles_list_html,
-            'LAST_UPDATED': stats['last_updated']
-        }
-
-        # Replace template variables
-        index_content = index_template
-        for var, value in template_vars.items():
-            index_content = index_content.replace(f'{{{{{var}}}}}', value)
-
-        # Write updated index
-        with open(index_path, 'w') as f:
-            f.write(index_content)
-
-    def _clean_title_indicators(self, title: str) -> str:
-        """Remove repeated indicator text from title"""
-        import re
-
-        # Remove repeated patterns of indicators
-        indicators = ['📹 VIDEO', '🎧 AUDIO', '🔄 UPDATED']
-        for indicator in indicators:
-            # Remove the indicator text itself (not the spans)
-            title = title.replace(indicator, '')
-
-        # Remove any multiple spaces
-        title = re.sub(r'\s+', ' ', title).strip()
-
-        return title
-
-    def _collect_index_statistics(self, articles_data: list) -> Dict:
-        """Collect statistics about the article collection"""
-        from urllib.parse import urlparse
-
-        stats = {
-            'total_articles': len(articles_data),
-            'video_articles': 0,
-            'audio_articles': 0,
-            'domains': set(),
-            'last_updated': datetime.now().strftime('%B %d, %Y at %I:%M %p')
-        }
-
-        for article in articles_data:
-            # Check if article has video or audio indicators
-            article_path = self.html_dir / article['filename']
-            if article_path.exists():
-                try:
-                    with open(article_path, 'r') as f:
-                        content = f.read()
-                        # More specific detection to avoid CSS false positives
-                        if 'Video Content:</strong> Yes' in content:
-                            stats['video_articles'] += 1
-                        if 'Audio Content:</strong> Yes' in content:
-                            stats['audio_articles'] += 1
-                except:
-                    pass
-
-            # Extract domain from URL if available
-            if 'url' in article and article['url']:
-                try:
-                    domain = urlparse(article['url']).netloc
-                    if domain:
-                        stats['domains'].add(domain)
-                except:
-                    pass
-
-        stats['domains_count'] = len(stats['domains'])
-        return stats
-
-    def _generate_articles_list_html(self, articles_data: list) -> str:
-        """Generate HTML for articles list"""
-        articles_html = ""
-
-        for article in articles_data:
-            filename = article['filename']
-            title = article['title']
-            description = article['description']
-            is_updated = 'Updated on' in description
-
-            # Check if article has video or audio
-            has_video = False
-            has_audio = False
-            article_path = self.html_dir / filename
-            if article_path.exists():
-                try:
-                    with open(article_path, 'r') as f:
-                        content = f.read()
-                        # More specific detection to avoid CSS false positives
-                        has_video = 'Video Content:</strong> Yes' in content
-                        has_audio = 'Audio Content:</strong> Yes' in content
-                except:
-                    pass
-
-            # Generate indicators
-            indicators = ""
-            if has_video:
-                indicators += '<span class="video-indicator">📹 VIDEO</span>'
-            if has_audio:
-                indicators += '<span class="audio-indicator">🎧 AUDIO</span>'
-            if is_updated:
-                indicators += '<span class="updated-indicator">🔄 UPDATED</span>'
-
-            articles_html += f'''
-        <li class="article-item">
-            <a href="{filename}" class="article-title">{title}{indicators}</a>
-            <p class="article-description">{description}</p>
-        </li>'''
-
-        return articles_html
-
-    def _save_to_database(self, metadata: Dict, ai_summary: Dict, html_content: str):
-        """Save article data to Supabase database"""
-        if not self.supabase:
-            self.logger.warning("   ⚠️ Supabase not initialized - skipping database save")
-            return
-
-        try:
-            content_type = metadata['content_type']
-
-            # Extract transcript text if available
-            transcript_text = None
-            transcripts = metadata.get('transcripts', {})
-            if transcripts:
-                transcript_parts = []
-                for video_id, transcript_data in transcripts.items():
-                    if transcript_data.get('success'):
-                        formatted = self._format_transcript_for_analysis(transcript_data)
-                        if formatted:
-                            transcript_parts.append(formatted)
-                if transcript_parts:
-                    transcript_text = "\n\n".join(transcript_parts)
-
-            # Get video ID if available
-            video_id = None
-            if content_type.has_embedded_video and metadata.get('media_info', {}).get('youtube_urls'):
-                video_id = metadata['media_info']['youtube_urls'][0].get('video_id')
-
-            # Get audio URL if available
-            audio_url = None
-            if content_type.has_embedded_audio and metadata.get('media_info', {}).get('audio_urls'):
-                audio_url = metadata['media_info']['audio_urls'][0].get('url')
-
-            # Determine content source
-            if content_type.has_embedded_video and content_type.has_embedded_audio:
-                content_source = 'mixed'
-            elif content_type.has_embedded_video:
-                content_source = 'video'
-            elif content_type.has_embedded_audio:
-                content_source = 'audio'
-            else:
-                content_source = 'article'
-
-            # Build article record
-            article_data = {
-                'title': metadata['title'],
-                'url': metadata['url'],
-                'summary_html': html_content,
-                'summary_text': ai_summary.get('summary', ''),
-                'transcript_text': transcript_text,
-                'original_article_text': metadata.get('article_text'),
-                'content_source': content_source,
-                'video_id': video_id,
-                'audio_url': audio_url,
-                'platform': metadata.get('platform'),
-                'tags': [],  # Could extract from AI summary topics
-
-                # Structured data
-                'key_insights': ai_summary.get('key_insights', []),
-                'quotes': ai_summary.get('quotes', []),
-
-                # Metadata
-                'duration_minutes': ai_summary.get('duration_minutes'),
-                'word_count': ai_summary.get('word_count'),
-                'topics': ai_summary.get('topics', []),
-            }
-
-            # Try to update existing article or insert new one
-            result = self.supabase.table('articles').upsert(
-                article_data,
-                on_conflict='url'
-            ).execute()
-
-            if result.data:
-                article_id = result.data[0]['id']
-                self.logger.info(f"   ✅ Saved to database (article ID: {article_id})")
-            else:
-                self.logger.warning("   ⚠️ Database save completed but no data returned")
-
-        except Exception as e:
-            self.logger.error(f"   ❌ Database save failed: {e}")
-            # Don't fail the entire process if database save fails
-
-    def _commit_to_git(self, filename: str):
-        """Commit changes to git"""
-        try:
-            subprocess.run(['git', 'add', '.'], cwd=self.base_dir, check=True)
-
-            commit_msg = f"""Add article summary: {filename}
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"""
-
-            subprocess.run(['git', 'commit', '-m', commit_msg], cwd=self.base_dir, check=True)
-            subprocess.run(['git', 'push'], cwd=self.base_dir, check=True)
-
-            self.logger.info("✅ Successfully committed and pushed to GitHub")
-
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"❌ Git operation failed: {e}")
 
 
 def main():
@@ -1236,8 +919,9 @@ def main():
 
     try:
         summarizer = ArticleSummarizer()
-        output_file = summarizer.process_article(url)
-        print(f"Success! Generated: {Path(output_file).name}")
+        article_id = summarizer.process_article(url)
+        print(f"Success! Article ID: {article_id}")
+        print(f"View at: http://localhost:3000/article/{article_id}")
 
     except Exception as e:
         print(f"Error processing article: {e}")

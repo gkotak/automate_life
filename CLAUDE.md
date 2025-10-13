@@ -9,11 +9,11 @@ This is a Claude Code configuration repository that automates content analysis a
 ## Key Commands
 
 ### Article Summarizer
-- `/article_summarizer` - Processes articles and generates interactive summaries
+- `/article_summarizer` - Processes articles and saves summaries to Supabase database
   - Extracts video/audio content from URLs
   - Generates AI-powered summaries with timestamps
-  - Creates HTML pages with embedded media and clickable timestamps
-  - Supports 2x speed playback for efficient content consumption
+  - Saves structured data to Supabase for dynamic rendering
+  - View articles at http://localhost:3000 via Next.js web app
 
 ## Architecture Overview
 
@@ -23,22 +23,24 @@ This is a Claude Code configuration repository that automates content analysis a
 - Intelligent article content extraction with media detection
 - YouTube transcript extraction and analysis
 - AI-powered content summarization using Claude Code CLI
-- Interactive HTML generation with embedded media players
+- Saves all data to Supabase database (no static files)
 - Smart authentication for protected content (Substack, Medium, etc.)
-- Modern web interface for searching and managing summaries
+- Next.js web app for viewing and managing summaries (http://localhost:3000)
 
 **File Organization**:
 ```
 programs/article_summarizer/
 ├── scripts/                    # Core processing scripts
-├── output/                     # Generated summaries and tracking
-│   ├── article_summaries/      # HTML summary files
-│   └── processed_posts.json    # Processing history
 ├── logs/                       # Processing logs
-├── templates/                  # HTML templates
-├── web-app/                    # Next.js web interface
-└── migration/                  # Database migration scripts
+├── web-app/                    # Next.js web interface (runs on port 3000)
+├── common/                     # Shared utilities
+└── processors/                 # Content processors
 ```
+
+**Check New Posts** (`programs/check_new_posts/`)
+- Scans RSS feeds and newsletter sites for new content
+- Tracks discovered posts in shared database
+- Integration with article_summarizer for processing
 
 **Configuration**:
 ```
@@ -52,23 +54,25 @@ programs/article_summarizer/
 1. **Content Extraction**: Analyze URL and detect video/audio/text content
 2. **Media Processing**: Extract YouTube transcripts, identify main audio content
 3. **AI Analysis**: Generate structured summary with timestamps using Claude
-4. **HTML Generation**: Create interactive page with embedded media
-5. **Version Control**: Auto-commit and push to GitHub
+4. **Database Storage**: Save all data to Supabase (structured JSON data)
+5. **Web App**: View articles dynamically at http://localhost:3000/article/{id}
 
 ### Content Standards
 
-**Summary Output**: Structured HTML with key insights, timestamps, and embedded media
-**Media Integration**: 2x speed playback, clickable timestamps, interactive navigation
+**Summary Output**: Structured JSON data saved to Supabase database
+**Media Integration**: Web app provides 2x speed playback, clickable timestamps, interactive navigation
 **Authentication**: Smart detection and handling of paywalled content
+**Storage**: Database-first approach - no static HTML files generated
 
 ## Development Notes
 
 - All processing uses Claude Code CLI for AI analysis
 - System prioritizes main content over related/promotional material
 - Timestamps are validated against actual transcript data
-- HTML templates support both video and audio content with appropriate players
+- Database stores structured JSON (key_insights, quotes, transcripts, etc.)
+- Web app dynamically renders from Supabase - no static files
 - Authentication framework supports multiple platforms (Substack, Medium, Patreon, etc.)
-- Output files are organized in dedicated output directory for clean structure
+- To view summaries: `cd programs/article_summarizer/web-app && npm run dev`
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

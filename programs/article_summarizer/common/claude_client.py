@@ -49,36 +49,42 @@ class ClaudeClient:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Call Claude CLI via pipe (echo/cat method)
-            # Direct stdin fails with large prompts, but piping through cat/echo works
-            # This is a workaround for a Claude CLI stdin handling issue
-            import tempfile
-            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8')
-            temp_file.write(prompt)
-            temp_file.close()
+            # Use Anthropic Python SDK directly instead of CLI
+            # Claude CLI has issues with large prompts via stdin
+            self.logger.info(f"   🔧 [DEBUG] Using Anthropic Python SDK")
+            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
 
-            try:
-                # Use cat to pipe the prompt - this works where direct stdin doesn't
-                shell_cmd = f"cat {temp_file.name} | {self.claude_cmd} --print --output-format text"
-                self.logger.info(f"   🔧 [DEBUG] Running command: cat [temp] | {self.claude_cmd} --print --output-format text")
-                self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars, using cat pipe")
+            import anthropic
+            import os
+            from dotenv import load_dotenv
 
-                result = subprocess.run(
-                    shell_cmd,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding='utf-8',
-                    timeout=300
-                )
-            finally:
-                # Clean up temp file
-                import os
-                try:
-                    os.unlink(temp_file.name)
-                except:
-                    pass
+            # Load environment variables from root .env.local
+            env_file = self.base_dir / '.env.local'
+            load_dotenv(env_file)
+
+            # Get API key from environment
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+
+            client = anthropic.Anthropic(api_key=api_key)
+
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=8000,
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+
+            response = message.content[0].text
+
+            result = type('Result', (), {
+                'returncode': 0,
+                'stdout': response,
+                'stderr': ''
+            })()
 
             # Log result details
             self.logger.info(f"   🔧 [DEBUG] Return code: {result.returncode}")

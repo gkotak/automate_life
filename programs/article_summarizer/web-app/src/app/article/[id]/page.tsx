@@ -129,6 +129,42 @@ export default function ArticlePage() {
     }
   }, [article])
 
+  // Set up Audio player with 2x speed and timestamp jumping
+  useEffect(() => {
+    if (article && article.content_source === 'audio' && article.audio_url) {
+      // Function to jump to specific time in audio
+      const jumpToAudioTime = (seconds: number) => {
+        const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement
+        if (audioPlayer) {
+          audioPlayer.currentTime = seconds
+          audioPlayer.play()
+          // Ensure 2x speed after seeking
+          setTimeout(() => {
+            audioPlayer.playbackRate = 2.0
+          }, 100)
+          console.log(`Jumped to ${seconds}s at 2x speed in audio`)
+        } else {
+          console.warn('Audio player not found')
+        }
+      }
+
+      // Add jumpToAudioTime to global scope for transcript tab
+      ;(window as any).jumpToAudioTime = jumpToAudioTime
+      setJumpToTimeFunc(() => jumpToAudioTime)
+
+      // Store audio element reference for easy access
+      const audioElement = document.getElementById('audio-player') as HTMLAudioElement
+      if (audioElement) {
+        ;(window as any).audioPlayer = audioElement
+      }
+
+      return () => {
+        delete (window as any).audioPlayer
+        delete (window as any).jumpToAudioTime
+      }
+    }
+  }, [article])
+
   const fetchArticle = async (id: number) => {
     try {
       setLoading(true)
