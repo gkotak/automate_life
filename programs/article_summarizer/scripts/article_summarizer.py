@@ -15,10 +15,12 @@ Usage:
 import sys
 import json
 import subprocess
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 from bs4 import BeautifulSoup
+from supabase import create_client, Client
 
 # Add parent directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -45,6 +47,20 @@ class ArticleSummarizer(BaseProcessor):
         self.transcript_processor = TranscriptProcessor(self.base_dir, self.session)
         self.claude_cmd = Config.find_claude_cli()
         self.html_dir = self.output_dir / "article_summaries"
+
+        # Initialize Supabase client
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_SERVICE_KEY')  # Use service key for server-side operations
+        self.supabase: Optional[Client] = None
+
+        if supabase_url and supabase_key:
+            try:
+                self.supabase = create_client(supabase_url, supabase_key)
+                self.logger.info("✅ Supabase client initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize Supabase: {e}")
+        else:
+            self.logger.warning("⚠️ Supabase credentials not found - database insertion will be skipped")
 
     def process_article(self, url: str) -> str:
         """
@@ -85,12 +101,16 @@ class ArticleSummarizer(BaseProcessor):
 
             self.logger.info(f"   Created: {output_file}")
 
-            # Step 6: Update index
-            self.logger.info("4. Updating index...")
+            # Step 6: Save to Supabase database
+            self.logger.info("4. Saving to Supabase database...")
+            self._save_to_database(metadata, ai_summary, html_content)
+
+            # Step 7: Update index
+            self.logger.info("5. Updating index...")
             self._update_index_file(filename, metadata, ai_summary)
 
-            # Step 7: Commit to git
-            self.logger.info("5. Committing to git...")
+            # Step 8: Commit to git
+            self.logger.info("6. Committing to git...")
             self._commit_to_git(filename)
 
             self.logger.info(f"✅ Processing complete: {filename}")
@@ -416,19 +436,30 @@ Return your response in this JSON format:
 {{
     "summary": "HTML formatted summary content (no timestamps in summary if no transcript data)",
     "key_insights": [
-        {{"insight": "insight text found in transcript", "timestamp": "MM:SS", "transcript_quote": "exact quote from transcript"}},
-        {{"insight": "insight text NOT found in transcript", "timestamp": "", "transcript_quote": ""}},
-        ...
+        {{"insight": "insight text", "timestamp_seconds": 300, "time_formatted": "5:00"}},
+        {{"insight": "insight text without timestamp", "timestamp_seconds": null, "time_formatted": null}}
     ],
-    "media_timestamps": [
-        {{"time": "MM:SS", "description": "detailed description of what happens at this time", "type": "{media_type_indicator}", "transcript_quote": "exact quote from transcript"}}
-    ]
+    "main_points": [
+        {{"point": "Main point text", "details": "Optional additional details or explanation"}}
+    ],
+    "quotes": [
+        {{"quote": "Exact quote text", "speaker": "Speaker name", "timestamp_seconds": 120, "context": "Context for the quote"}}
+    ],
+    "takeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"],
+    "duration_minutes": 45,
+    "word_count": 5000,
+    "topics": ["AI", "Product", "Engineering"],
+    "sentiment": "positive",
+    "complexity_level": "intermediate"
 }}
 
 CRITICAL:
-- Use empty string "" for timestamp if no transcript match exists
-- Only include media_timestamps entries for content you can find in the provided transcript
+- Use null for timestamp_seconds and time_formatted if no transcript match exists
+- Only include timestamps for content you can find in the provided transcript
 - Include ALL insights (with or without timestamps) but NEVER guess timestamps
+- main_points should be 5-8 key points from the content
+- quotes should be memorable/important quotes with speaker attribution
+- takeaways should be 3-5 actionable takeaways
 - If transcript is truncated, only use timestamps from the visible portion
 """
 
@@ -442,7 +473,7 @@ CRITICAL:
             self.logger.debug(f"   📝 [PROMPT PREVIEW] {prompt_preview}")
 
             # Save full prompt to debug file for inspection
-            debug_file = self.base_dir / "programs" / "video_summarizer" / "logs" / "debug_prompt.txt"
+            debug_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_prompt.txt"
             with open(debug_file, 'w', encoding='utf-8') as f:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
@@ -458,7 +489,7 @@ CRITICAL:
                 response = result.stdout.strip()
 
                 # Save response for debugging
-                response_file = self.base_dir / "programs" / "video_summarizer" / "logs" / "debug_response.txt"
+                response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
                 with open(response_file, 'w', encoding='utf-8') as f:
                     f.write(f"=== CLAUDE RESPONSE ({len(response)} chars) ===\n")
                     f.write(response)
@@ -738,7 +769,7 @@ CRITICAL:
 
     def _load_template(self, template_name: str = "article_summary.html") -> str:
         """Load HTML template"""
-        template_path = self.base_dir / "programs" / "video_summarizer" / "scripts" / "templates" / template_name
+        template_path = self.base_dir / "programs" / "article_summarizer" / "scripts" / "templates" / template_name
         try:
             with open(template_path, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -963,6 +994,86 @@ CRITICAL:
         </li>'''
 
         return articles_html
+
+    def _save_to_database(self, metadata: Dict, ai_summary: Dict, html_content: str):
+        """Save article data to Supabase database"""
+        if not self.supabase:
+            self.logger.warning("   ⚠️ Supabase not initialized - skipping database save")
+            return
+
+        try:
+            content_type = metadata['content_type']
+
+            # Extract transcript text if available
+            transcript_text = None
+            transcripts = metadata.get('transcripts', {})
+            if transcripts:
+                transcript_parts = []
+                for video_id, transcript_data in transcripts.items():
+                    if transcript_data.get('success'):
+                        formatted = self._format_transcript_for_analysis(transcript_data)
+                        if formatted:
+                            transcript_parts.append(formatted)
+                if transcript_parts:
+                    transcript_text = "\n\n".join(transcript_parts)
+
+            # Get video ID if available
+            video_id = None
+            if content_type.has_embedded_video and metadata.get('media_info', {}).get('youtube_urls'):
+                video_id = metadata['media_info']['youtube_urls'][0].get('video_id')
+
+            # Determine content source
+            if content_type.has_embedded_video and content_type.has_embedded_audio:
+                content_source = 'mixed'
+            elif content_type.has_embedded_video:
+                content_source = 'video'
+            elif content_type.has_embedded_audio:
+                content_source = 'audio'
+            else:
+                content_source = 'article'
+
+            # Build article record
+            article_data = {
+                'title': metadata['title'],
+                'url': metadata['url'],
+                'summary_html': html_content,
+                'summary_text': ai_summary.get('summary', ''),
+                'transcript_text': transcript_text,
+                'original_article_text': metadata.get('article_text'),
+                'content_source': content_source,
+                'video_id': video_id,
+                'platform': metadata.get('platform'),
+                'tags': [],  # Could extract from AI summary topics
+
+                # Structured data
+                'key_insights': ai_summary.get('key_insights', []),
+                'main_points': ai_summary.get('main_points', []),
+                'quotes': ai_summary.get('quotes', []),
+                'takeaways': ai_summary.get('takeaways', []),
+
+                # Metadata
+                'duration_minutes': ai_summary.get('duration_minutes'),
+                'word_count': ai_summary.get('word_count'),
+                'topics': ai_summary.get('topics', []),
+                'sentiment': ai_summary.get('sentiment'),
+                'complexity_level': ai_summary.get('complexity_level'),
+            }
+
+            # Try to update existing article or insert new one
+            result = self.supabase.table('articles').upsert(
+                article_data,
+                on_conflict='url'
+            ).execute()
+
+            if result.data:
+                article_id = result.data[0]['id']
+                self.logger.info(f"   ✅ Saved to database (article ID: {article_id})")
+            else:
+                self.logger.warning("   ⚠️ Database save completed but no data returned")
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Database save failed: {e}")
+            # Don't fail the entire process if database save fails
 
     def _commit_to_git(self, filename: str):
         """Commit changes to git"""

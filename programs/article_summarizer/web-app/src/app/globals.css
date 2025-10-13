@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Custom utility for text truncation */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Styles for imported HTML content */
+.prose h1, .prose h2, .prose h3 {
+  color: #2c5aa0;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose h2 {
+  border-left: 4px solid #2c5aa0;
+  padding-left: 15px;
+}
+
+.prose h3 {
+  border-left: 4px solid #2c5aa0;
+  padding-left: 15px;
+}
+
+.prose .metadata {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  border-left: 4px solid #2c5aa0;
+}
+
+.prose .video-container {
+  margin: 30px 0;
+  position: relative;
+}
+
+.prose .video-wrapper {
+  position: relative;
+}
+
+.prose .video-wrapper iframe,
+.prose .video-wrapper div[id*="youtube-player"] {
+  width: 100%;
+  height: 800px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.prose .summary-section {
+  margin: 40px 0;
+}
+
+/* Key insights styling */
+.prose ul li {
+  margin: 16px 0;
+  position: relative;
+  padding-left: 25px;
+}
+
+.prose ul li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 1.2em;
+  color: #2c5aa0;
+  font-weight: bold;
+}
+
+/* Remove default bullet points */
+.prose ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+/* Special styling for insight items */
+.prose li.insight-with-timestamp {
+  background: #f8fafc;
+  border-left: 4px solid #2c5aa0;
+  padding: 15px 20px 15px 50px;
+  margin: 20px 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.prose li.insight-with-timestamp::before {
+  content: "🔑";
+  position: absolute;
+  left: 15px;
+  top: 15px;
+  font-size: 1.3em;
+}
+
+.prose .insight-timestamp {
+  background: #2c5aa0;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  margin-left: 10px;
+  cursor: pointer;
+}
+
+.prose .insight-timestamp:hover {
+  background: #1a365d;
+}

@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Claude Code configuration repository that automates content analysis and summarization. The primary focus is the video summarizer tool which processes articles, extracts video/audio content, and generates comprehensive summaries with interactive features.
+This is a Claude Code configuration repository that automates content analysis and summarization. The primary focus is the article summarizer tool which processes articles, extracts video/audio content, and generates comprehensive summaries with interactive features.
 
 ## Key Commands
 
-### Video Summarizer
-- `/video_article_summarizer` - Processes articles and generates interactive summaries
+### Article Summarizer
+- `/article_summarizer` - Processes articles and generates interactive summaries
   - Extracts video/audio content from URLs
   - Generates AI-powered summaries with timestamps
   - Creates HTML pages with embedded media and clickable timestamps
@@ -19,22 +19,25 @@ This is a Claude Code configuration repository that automates content analysis a
 
 ### Core System Components
 
-**Video Summarizer** (`programs/video_summarizer/`)
+**Article Summarizer** (`programs/article_summarizer/`)
 - Intelligent article content extraction with media detection
 - YouTube transcript extraction and analysis
 - AI-powered content summarization using Claude Code CLI
 - Interactive HTML generation with embedded media players
 - Smart authentication for protected content (Substack, Medium, etc.)
+- Modern web interface for searching and managing summaries
 
 **File Organization**:
 ```
-programs/video_summarizer/
+programs/article_summarizer/
 ├── scripts/                    # Core processing scripts
 ├── output/                     # Generated summaries and tracking
 │   ├── article_summaries/      # HTML summary files
 │   └── processed_posts.json    # Processing history
 ├── logs/                       # Processing logs
-└── templates/                  # HTML templates
+├── templates/                  # HTML templates
+├── web-app/                    # Next.js web interface
+└── migration/                  # Database migration scripts
 ```
 
 **Configuration**:

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Article Summaries Index</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+
+        .article-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .article-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .article-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .article-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #2c3e50;
+            text-decoration: none;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .article-title:hover {
+            color: #3498db;
+        }
+
+        .article-description {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .total-count {
+            color: #666;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+
+        .video-indicator {
+            background: #e74c3c;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .audio-indicator {
+            background: #4a90e2;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .updated-indicator {
+            background: #f39c12;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Article Summaries</h1>
+
+    <div class="stats">
+        <h3>📊 Collection Statistics</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number">13</div>
+                <div class="stat-label">Total Articles</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">8</div>
+                <div class="stat-label">With Video</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">10</div>
+                <div class="stat-label">With Audio</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">5</div>
+                <div class="stat-label">Unique Domains</div>
+            </div>
+        </div>
+    </div>
+
+    <p class="total-count">Total articles: 13</p>
+
+    <ul class="article-list">
+        
+        <li class="article-item">
+            <a href="Sora_the_App,_Sonnet_4.5_and_the_Question_of_Models_as_Processors_-_Stratechery_by_Ben_Thompson.html" class="article-title">Sora the App, Sonnet 4.5 and the Question of Models as Processors – Stratechery by Ben Thompson<span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on October 03, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="An_Interview_with_Ben_Bajarin_About_AI_Infrastructure_-_Stratechery_by_Ben_Thompson.html" class="article-title">An Interview with Ben Bajarin About AI Infrastructure – Stratechery by Ben Thompson<span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on October 03, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Why_AI_evals_are_the_hottest_new_skill_for_product_builders_Hamel_Husain_&_Shreya_Shankar_(creators_.html" class="article-title">Why AI evals are the hottest new skill for product builders | Hamel Husain & Shreya Shankar (creators of the #1 eval course)<span class="video-indicator">📹 VIDEO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on October 03, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="An_Interview_with_Ben_Bajarin_About_AI_Infrastructure_Stratechery_by_Ben_Thompson.html" class="article-title">An Interview with Ben Bajarin About AI Infrastructure – Stratechery by Ben Thompson<span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on October 02, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Why_AI_evals_are_the_hottest_new_skill_for_product_builders_Hamel_Husain_Shreya_Shankar_creators_of_.html" class="article-title">Why AI evals are the hottest new skill for product builders | Hamel Husain & Shreya Shankar (creators of the #1 eval course)<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on October 02, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Search_example_public_on_Substack.html" class="article-title">Search "example-public" on Substack<span class="audio-indicator">🎧 AUDIO</span></a>
+            <p class="article-description">Generated on October 01, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Why_experts_writing_AI_evals_is_creating_the_fastest_growing_companies_in_history_Brendan_Foody_CEO_.html" class="article-title">Why experts writing AI evals is creating the fastest-growing companies in history | Brendan Foody (CEO of Mercor)<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 30, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="OpenAI_Instant_Checkout_AI_and_Long_Tail_E_Commerce_Is_AI_Different_Stratechery_by_Ben_Thompson.html" class="article-title">OpenAI Instant Checkout, AI and Long Tail E-Commerce, Is AI Different? – Stratechery by Ben Thompson<span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 30, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Introducing_the_GAIN_framework_for_feedback_An_evidence_based_approach_to_giving_feedback_that_peopl.html" class="article-title">Introducing the GAIN framework for feedback: An evidence-based approach to giving feedback that people love, appreciate, and act on<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 30, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="From_managing_people_to_managing_AI_How_the_same_leadership_skills_apply_in_the_age_of_AI_Julie_Zhuo.html" class="article-title">From managing people to managing AI: How the same leadership skills apply in the age of AI | Julie Zhuo<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span></a>
+            <p class="article-description">Generated on September 30, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="A_4_step_framework_for_building_delightful_products_Nesrine_Changuel_Spotify_Google_Skype.html" class="article-title">A 4-step framework for building delightful products | Nesrine Changuel (Spotify, Google, Skype)<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 30, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Obsidian_AI_How_to_Do_It_The_Right_Way_YouTube.html" class="article-title">Obsidian + AI: How to Do It The Right Way - YouTube<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 30, 2025</p>
+        </li>
+        <li class="article-item">
+            <a href="Turn_call_centers_into_revenue_drivers_N47.html" class="article-title">Turn call centers into revenue drivers — N47<span class="video-indicator">📹 VIDEO</span><span class="audio-indicator">🎧 AUDIO</span><span class="updated-indicator">🔄 UPDATED</span></a>
+            <p class="article-description">Updated on September 29, 2025</p>
+        </li>
+    </ul>
+
+    <div class="footer">
+        <p>🤖 Generated with hybrid Python + Claude Code approach</p>
+        <p>Last updated: October 03, 2025 at 05:25 PM</p>
+    </div>
+</body>
+</html>

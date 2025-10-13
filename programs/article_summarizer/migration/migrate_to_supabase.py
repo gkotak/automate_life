@@ -128,17 +128,20 @@ class ContentExtractor:
 
     def _extract_summary(self, soup: BeautifulSoup) -> Tuple[str, str]:
         """Extract Claude's summary in both text and HTML format"""
-        # Look for summary sections
-        summary_sections = soup.find_all(['div', 'section'], class_=re.compile(r'summary|content'))
+        # Remove style and script tags to clean up content
+        for script in soup(["script", "style"]):
+            script.decompose()
 
-        if summary_sections:
-            summary_html = str(summary_sections[0])
-            summary_text = summary_sections[0].get_text().strip()
+        # Look for the main content within body tag (excluding header/footer)
+        body = soup.find('body')
+        if body:
+            # Try to find the main content area (everything inside body)
+            summary_html = ''.join(str(tag) for tag in body.children if str(tag).strip())
+            summary_text = body.get_text().strip()
         else:
-            # Fall back to main content
-            main_content = soup.find('body') or soup
-            summary_html = str(main_content)
-            summary_text = main_content.get_text().strip()
+            # Fallback to entire soup if no body tag
+            summary_html = str(soup)
+            summary_text = soup.get_text().strip()
 
         return summary_text, summary_html
 

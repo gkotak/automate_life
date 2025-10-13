@@ -3,7 +3,7 @@
 Execute the Python script directly to process the article URL:
 
 ```bash
-python3 programs/video_summarizer/scripts/article_summarizer.py "$ARGUMENTS"
+python3 programs/article_summarizer/scripts/article_summarizer.py "$ARGUMENTS"
 ```
 
 This script will automatically:
