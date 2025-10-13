@@ -31,6 +31,7 @@ from common.content_detector import ContentTypeDetector, ContentType
 from common.authentication import AuthenticationManager
 from common.claude_client import ClaudeClient
 from processors.transcript_processor import TranscriptProcessor
+from processors.file_transcriber import FileTranscriber
 
 
 class ArticleSummarizer(BaseProcessor):
@@ -49,6 +50,14 @@ class ArticleSummarizer(BaseProcessor):
         claude_cmd = Config.find_claude_cli()
         self.claude_client = ClaudeClient(claude_cmd, self.base_dir, self.logger)
         self.html_dir = self.output_dir / "article_summaries"
+
+        # Initialize file transcriber for audio/video without transcripts
+        try:
+            self.file_transcriber = FileTranscriber()
+            self.logger.info("✅ File transcriber initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ File transcriber not available: {e}")
+            self.file_transcriber = None
 
         # Initialize Supabase client with anon key
         supabase_url = os.getenv('SUPABASE_URL')
@@ -208,7 +217,22 @@ class ArticleSummarizer(BaseProcessor):
             transcripts[video_id] = transcript_data
             self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
         else:
-            self.logger.info(f"      ✗ No transcript available: {transcript_data.get('error', 'Unknown error')}")
+            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
+            self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
+
+            # Fallback: Try to download and transcribe video audio using Whisper
+            # Construct YouTube audio URL (yt-dlp would normally handle this, but we'll try direct URL)
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
+
+            # Note: This requires yt-dlp or youtube-dl to extract audio URL
+            # For now, we'll skip auto-download and just log the attempt
+            # Future enhancement: integrate yt-dlp to extract audio stream URL
+            self.logger.info(f"      ⚠️ [FALLBACK] Video audio transcription requires yt-dlp integration (not yet implemented)")
+            # transcript_data = self._download_and_transcribe_media(audio_url, "video")
+            # if transcript_data:
+            #     transcripts[video_id] = transcript_data
+            #     self.logger.info(f"      ✓ Video transcription successful via Whisper")
 
         # Always extract article text content
         self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
@@ -234,6 +258,20 @@ class ArticleSummarizer(BaseProcessor):
         """Process content with embedded audio"""
         self.logger.info("   Found embedded audio content...")
 
+        # Try to transcribe audio if available
+        transcripts = {}
+        if audio_urls:
+            for idx, audio in enumerate(audio_urls):
+                audio_url = audio.get('url')
+                if audio_url:
+                    self.logger.info(f"   🎵 [AUDIO {idx+1}] Attempting transcription...")
+                    transcript_data = self._download_and_transcribe_media(audio_url, "audio")
+                    if transcript_data:
+                        transcripts[f"audio_{idx}"] = transcript_data
+                        self.logger.info(f"   ✓ Audio transcription successful")
+                    else:
+                        self.logger.info(f"   ✗ Audio transcription failed")
+
         # Always extract article text content
         self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
         article_text = self._extract_article_text_content(soup)
@@ -248,10 +286,9 @@ class ArticleSummarizer(BaseProcessor):
         else:
             self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
 
-        # For now, just store audio metadata
-        # Future: Add audio transcript extraction
         return {
             'media_info': {'audio_urls': audio_urls},
+            'transcripts': transcripts if transcripts else {},
             'article_text': article_text or 'Content not available'
         }
 
@@ -671,6 +708,73 @@ CRITICAL TIMESTAMP RULES:
         sanitized = re.sub(r'_{2,}', '_', sanitized)
         # Limit length
         return sanitized[:100] if len(sanitized) > 100 else sanitized
+
+    def _download_and_transcribe_media(self, media_url: str, media_type: str = "audio") -> Optional[Dict]:
+        """
+        Download and transcribe audio/video file using Whisper
+
+        Args:
+            media_url: URL of the audio/video file
+            media_type: Type of media (audio or video)
+
+        Returns:
+            Transcript data dict or None if transcription fails
+        """
+        if not self.file_transcriber:
+            self.logger.warning("   ⚠️ File transcriber not available")
+            return None
+
+        try:
+            import tempfile
+            import requests
+
+            self.logger.info(f"   🎵 [WHISPER] Attempting to transcribe {media_type} from URL...")
+
+            # Download media file to temp location
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                temp_path = temp_file.name
+                self.logger.info(f"   📥 [DOWNLOAD] Downloading {media_type} file...")
+
+                response = requests.get(media_url, stream=True, timeout=60)
+                response.raise_for_status()
+
+                # Write to temp file
+                for chunk in response.iter_content(chunk_size=8192):
+                    temp_file.write(chunk)
+
+            self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
+
+            # Transcribe the file
+            transcript_file = self.file_transcriber.transcribe_file(temp_path)
+
+            # Load transcript data
+            with open(transcript_file, 'r', encoding='utf-8') as f:
+                transcript_data = json.load(f)
+
+            # Format for our use
+            formatted_transcript = {
+                'success': True,
+                'text': transcript_data.get('text', ''),
+                'segments': transcript_data.get('segments', []),
+                'language': transcript_data.get('language', 'unknown'),
+                'type': 'whisper_transcription',
+                'source': media_type
+            }
+
+            self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
+
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+
+            return formatted_transcript
+
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
+            return None
 
     def _extract_article_text_content(self, soup) -> str:
         """Extract main article text content"""
