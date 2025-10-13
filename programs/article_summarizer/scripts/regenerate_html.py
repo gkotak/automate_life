@@ -163,7 +163,7 @@ class HTMLRegenerator(BaseProcessor):
         content_type = ContentType(
             has_embedded_video=(article['content_source'] in ['video', 'mixed']),
             has_embedded_audio=(article['content_source'] in ['audio', 'mixed']),
-            youtube_urls=[],
+            video_urls=[],
             audio_urls=[]
         )
 

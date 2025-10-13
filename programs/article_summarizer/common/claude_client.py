@@ -49,21 +49,36 @@ class ClaudeClient:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Call Claude CLI with prompt via stdin using input parameter
-            # This is simpler and more reliable than file redirection or arguments
-            cmd = [self.claude_cmd, "--print", "--output-format", "text"]
-            self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
-            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars, passing via stdin")
+            # Call Claude CLI via pipe (echo/cat method)
+            # Direct stdin fails with large prompts, but piping through cat/echo works
+            # This is a workaround for a Claude CLI stdin handling issue
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8')
+            temp_file.write(prompt)
+            temp_file.close()
 
-            result = subprocess.run(
-                cmd,
-                input=prompt,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding='utf-8',
-                timeout=300
-            )
+            try:
+                # Use cat to pipe the prompt - this works where direct stdin doesn't
+                shell_cmd = f"cat {temp_file.name} | {self.claude_cmd} --print --output-format text"
+                self.logger.info(f"   🔧 [DEBUG] Running command: cat [temp] | {self.claude_cmd} --print --output-format text")
+                self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars, using cat pipe")
+
+                result = subprocess.run(
+                    shell_cmd,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding='utf-8',
+                    timeout=300
+                )
+            finally:
+                # Clean up temp file
+                import os
+                try:
+                    os.unlink(temp_file.name)
+                except:
+                    pass
 
             # Log result details
             self.logger.info(f"   🔧 [DEBUG] Return code: {result.returncode}")
