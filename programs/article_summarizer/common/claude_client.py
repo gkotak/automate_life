@@ -65,6 +65,11 @@ class ClaudeClient:
                 timeout=300
             )
 
+            # Log result details
+            self.logger.info(f"   🔧 [DEBUG] Return code: {result.returncode}")
+            self.logger.info(f"   🔧 [DEBUG] STDOUT length: {len(result.stdout)} chars")
+            self.logger.info(f"   🔧 [DEBUG] STDERR length: {len(result.stderr)} chars")
+
             # Save response and stderr for debugging
             response_file = self.logs_dir / "debug_response.txt"
             stderr_file = self.logs_dir / "debug_stderr.txt"
