@@ -597,17 +597,20 @@ CRITICAL TIMESTAMP RULES:
             'HAS_VIDEO': 'Yes' if content_type.has_embedded_video else 'No',
             'HAS_AUDIO': 'Yes' if content_type.has_embedded_audio else 'No',
             'SUMMARY_CONTENT': ai_summary.get('summary', 'No summary available'),
-            'INSIGHTS_SECTION': self._format_insights_section(ai_summary.get('key_insights', [])),
+            'INSIGHTS_SECTION': self._format_insights_section(ai_summary.get('key_insights', []), content_type),
             'MEDIA_EMBED_SECTION': self._generate_media_embed_html(metadata),
-            'TIMESTAMPS_SECTION': self._format_media_timestamps(ai_summary.get('media_timestamps', [])),
+            'TIMESTAMPS_SECTION': self._format_media_timestamps(ai_summary.get('media_timestamps', []), content_type),
             'SUMMARY_SECTIONS': '',  # Additional summary sections placeholder
             'GENERATION_DATE': datetime.now().strftime("%B %d, %Y at %I:%M %p"),
         }
 
-    def _format_insights_section(self, insights: List[Dict]) -> str:
+    def _format_insights_section(self, insights: List[Dict], content_type) -> str:
         """Format key insights as HTML section with optional timestamps"""
         if not insights:
             return ""
+
+        # Determine which jump function to use based on content type
+        jump_function = "jumpToAudioTime" if content_type.has_embedded_audio else "jumpToTime"
 
         html = '''
     <div class="summary-section">
@@ -620,8 +623,7 @@ CRITICAL TIMESTAMP RULES:
 
             # Add clickable timestamp if available
             if timestamp and timestamp_seconds is not None:
-                # Determine if video or audio for jump function
-                click_handler = f"jumpToTime({timestamp_seconds})"
+                click_handler = f"{jump_function}({timestamp_seconds})"
                 html += f'<li><span class="timestamp" onclick="{click_handler}" title="Jump to {timestamp}">⏰ {timestamp}</span> {insight_text}</li>'
             else:
                 html += f"<li>{insight_text}</li>"
@@ -631,22 +633,23 @@ CRITICAL TIMESTAMP RULES:
     </div>'''
         return html
 
-    def _format_media_timestamps(self, timestamps: List[Dict]) -> str:
+    def _format_media_timestamps(self, timestamps: List[Dict], content_type) -> str:
         """Format media timestamps as HTML"""
         if not timestamps:
             return ""
+
+        # Determine which jump function to use based on content type
+        jump_function = "jumpToAudioTime" if content_type.has_embedded_audio else "jumpToTime"
 
         html = '<div class="timestamps-section"><h3>🕐 Key Timestamps</h3><ul>'
         for ts in timestamps:
             time = ts.get('time', '')
             description = ts.get('description', '')
-            media_type = ts.get('type', 'content')
 
             if time:
                 # Convert to seconds for JavaScript
                 seconds = self._convert_timestamp_to_seconds(time)
-                click_handler = f"jumpToTime({seconds})" if media_type == "video" else f"jumpToAudioTime({seconds})"
-                html += f'<li><span class="timestamp" onclick="{click_handler}" title="Jump to {time}">⏰ {time}</span> {description}</li>'
+                html += f'<li><span class="timestamp" onclick="{jump_function}({seconds})" title="Jump to {time}">⏰ {time}</span> {description}</li>'
             else:
                 html += f'<li>{description}</li>'
 
