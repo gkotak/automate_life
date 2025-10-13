@@ -29,6 +29,7 @@ from common.base import BaseProcessor
 from common.config import Config
 from common.content_detector import ContentTypeDetector, ContentType
 from common.authentication import AuthenticationManager
+from common.claude_client import ClaudeClient
 from processors.transcript_processor import TranscriptProcessor
 
 
@@ -45,7 +46,8 @@ class ArticleSummarizer(BaseProcessor):
         self.content_detector = ContentTypeDetector()
         self.auth_manager = AuthenticationManager(self.base_dir, self.session)
         self.transcript_processor = TranscriptProcessor(self.base_dir, self.session)
-        self.claude_cmd = Config.find_claude_cli()
+        claude_cmd = Config.find_claude_cli()
+        self.claude_client = ClaudeClient(claude_cmd, self.base_dir, self.logger)
         self.html_dir = self.output_dir / "article_summaries"
 
         # Initialize Supabase client with anon key
@@ -465,62 +467,7 @@ CRITICAL TIMESTAMP RULES:
 
     def _call_claude_api(self, prompt: str) -> str:
         """Call Claude Code API for AI-powered analysis"""
-        try:
-            # Log prompt details for debugging
-            prompt_length = len(prompt)
-            prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
-            self.logger.info(f"   🤖 [CLAUDE API] Sending prompt ({prompt_length} chars)")
-            self.logger.debug(f"   📝 [PROMPT PREVIEW] {prompt_preview}")
-
-            # Save full prompt to debug file for inspection
-            debug_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_prompt.txt"
-            with open(debug_file, 'w', encoding='utf-8') as f:
-                f.write(prompt)
-            self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
-
-            # Use stdin for simplicity
-            # NOTE: Do NOT use cwd parameter - it causes Claude CLI to return empty output
-            cmd = [self.claude_cmd, "--print", "--output-format", "text"]
-            self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
-            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
-            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300)
-
-            # Save response for debugging (always, even if empty)
-            response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
-            stderr_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_stderr.txt"
-
-            response = result.stdout.strip()
-            stderr = result.stderr.strip()
-
-            with open(response_file, 'w', encoding='utf-8') as f:
-                f.write(f"=== CLAUDE RESPONSE ({len(response)} chars) ===\n")
-                f.write(response)
-                f.write(f"\n=== END RESPONSE ===\n")
-
-            with open(stderr_file, 'w', encoding='utf-8') as f:
-                f.write(f"=== STDERR (return code: {result.returncode}) ===\n")
-                f.write(stderr)
-                f.write(f"\n=== END STDERR ===\n")
-
-            self.logger.info(f"   💾 [DEBUG] Response saved to: {response_file}")
-            self.logger.info(f"   💾 [DEBUG] Stderr saved to: {stderr_file}")
-
-            if result.returncode != 0:
-                self.logger.error(f"   ❌ Claude API failed with return code {result.returncode}")
-                self.logger.error(f"   ❌ Stderr: {stderr[:500]}")
-                return f"Error calling Claude API: {stderr}"
-
-            if not response:
-                self.logger.warning(f"   ⚠️ Claude API returned empty response (stderr: {stderr[:200]})")
-
-            return response
-
-        except subprocess.TimeoutExpired:
-            self.logger.error("   ❌ Claude API call timed out after 120 seconds")
-            return f"Claude API call timed out after 120 seconds"
-        except Exception as e:
-            self.logger.error(f"   ❌ Exception in Claude API call: {str(e)}")
-            return f"Error in Claude API call: {str(e)}"
+        return self.claude_client.call_api(prompt)
 
     def _extract_json_from_response(self, response: str) -> Optional[Dict]:
         """Extract and parse JSON from Claude's response"""
