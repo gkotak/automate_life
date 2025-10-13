@@ -99,7 +99,38 @@ class FileTranscriber(BaseProcessor):
 
             self.logger.info("✅ Transcription completed successfully")
 
-            # Process the transcript data
+            # Process the transcript data - convert OpenAI objects to dicts
+            segments = getattr(transcript, 'segments', [])
+            words = getattr(transcript, 'words', [])
+
+            # Convert segments to serializable format
+            segments_data = []
+            if segments:
+                for segment in segments:
+                    seg_dict = {
+                        'id': getattr(segment, 'id', None),
+                        'start': getattr(segment, 'start', 0),
+                        'end': getattr(segment, 'end', 0),
+                        'text': getattr(segment, 'text', ''),
+                        'tokens': getattr(segment, 'tokens', []),
+                        'temperature': getattr(segment, 'temperature', None),
+                        'avg_logprob': getattr(segment, 'avg_logprob', None),
+                        'compression_ratio': getattr(segment, 'compression_ratio', None),
+                        'no_speech_prob': getattr(segment, 'no_speech_prob', None)
+                    }
+                    segments_data.append(seg_dict)
+
+            # Convert words to serializable format
+            words_data = []
+            if words:
+                for word in words:
+                    word_dict = {
+                        'word': getattr(word, 'word', ''),
+                        'start': getattr(word, 'start', 0),
+                        'end': getattr(word, 'end', 0)
+                    }
+                    words_data.append(word_dict)
+
             transcript_data = {
                 "source_file": str(file_path),
                 "file_size_mb": file_path.stat().st_size / 1024 / 1024,
@@ -107,8 +138,8 @@ class FileTranscriber(BaseProcessor):
                 "language": transcript.language,
                 "duration": getattr(transcript, 'duration', None),
                 "text": transcript.text,
-                "segments": getattr(transcript, 'segments', []),
-                "words": getattr(transcript, 'words', [])
+                "segments": segments_data,
+                "words": words_data
             }
 
             # Save transcript to file
