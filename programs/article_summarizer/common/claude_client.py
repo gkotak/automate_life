@@ -53,15 +53,33 @@ class ClaudeClient:
             # NOTE: Do NOT use cwd parameter - it causes Claude CLI to return empty output
             cmd = [self.claude_cmd, "--print", "--output-format", "text"]
             self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
+            self.logger.info(f"   🔧 [DEBUG] Input type: {type(prompt)}, length: {len(prompt)}")
 
-            result = subprocess.run(
+            # Use Popen for better control over large stdin
+            process = subprocess.Popen(
                 cmd,
-                input=prompt,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                encoding='utf-8',
-                timeout=300
+                encoding='utf-8'
             )
+
+            # Write prompt and close stdin, then wait with timeout
+            try:
+                stdout, stderr = process.communicate(input=prompt, timeout=300)
+                returncode = process.returncode
+            except subprocess.TimeoutExpired:
+                process.kill()
+                raise
+
+            # Create result object similar to subprocess.run
+            class Result:
+                pass
+            result = Result()
+            result.stdout = stdout
+            result.stderr = stderr
+            result.returncode = returncode
 
             # Save response and stderr for debugging
             response_file = self.logs_dir / "debug_response.txt"
