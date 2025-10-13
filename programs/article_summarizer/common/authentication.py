@@ -2,6 +2,7 @@
 Authentication Module
 
 Handles authentication for various platforms and content sources.
+Supports both Chrome session cookies and credential-based authentication.
 """
 
 import logging
@@ -13,6 +14,14 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# Try to import browser_cookie3 for Chrome cookie extraction
+try:
+    import browser_cookie3
+    CHROME_COOKIES_AVAILABLE = True
+except ImportError:
+    CHROME_COOKIES_AVAILABLE = False
+    logger.warning("browser_cookie3 not available - Chrome cookie extraction disabled")
+
 class AuthenticationManager:
     """Manages authentication for different platforms"""
 
@@ -21,6 +30,9 @@ class AuthenticationManager:
         self.session = session
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.credentials = self._load_credentials()
+
+        # Load Chrome cookies into session
+        self._load_chrome_cookies()
 
     def _load_credentials(self) -> Dict:
         """Load credentials from environment and credential files"""
@@ -52,6 +64,88 @@ class AuthenticationManager:
                     self.logger.warning(f"Could not load credentials from {cred_file}: {e}")
 
         return credentials
+
+    def _load_chrome_cookies(self):
+        """Load cookies from Chrome browser using direct SQLite access (faster and more reliable)"""
+        try:
+            import sqlite3
+            import shutil
+            import tempfile
+            from http.cookiejar import Cookie
+            from datetime import datetime, timedelta
+
+            self.logger.info("🍪 [CHROME COOKIES] Loading cookies from Chrome browser...")
+
+            # Chrome cookie database path on macOS
+            chrome_cookie_db = Path.home() / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Cookies"
+
+            if not chrome_cookie_db.exists():
+                self.logger.warning(f"⚠️ [CHROME COOKIES] Chrome cookie database not found at: {chrome_cookie_db}")
+                return
+
+            # Copy database to temp file (Chrome locks the original)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp_file:
+                tmp_db_path = tmp_file.name
+
+            try:
+                shutil.copy2(chrome_cookie_db, tmp_db_path)
+
+                # Connect to copied database
+                conn = sqlite3.connect(tmp_db_path)
+                cursor = conn.cursor()
+
+                # Query cookies for key domains
+                key_domains = ['substack.com', '.substack.com', 'medium.com', '.medium.com', 'patreon.com', '.patreon.com']
+                domain_filter = ' OR '.join([f"host_key LIKE '%{domain}%'" for domain in key_domains])
+
+                query = f"""
+                    SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly
+                    FROM cookies
+                    WHERE {domain_filter}
+                """
+
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+                cookie_count = 0
+                domains_loaded = set()
+
+                for row in rows:
+                    host_key, name, value, path, expires_utc, is_secure, is_httponly = row
+
+                    # Convert Chrome's expiry format (microseconds since 1601) to Unix timestamp
+                    if expires_utc > 0:
+                        # Chrome uses microseconds since Jan 1, 1601
+                        expires = (expires_utc / 1000000) - 11644473600
+                    else:
+                        expires = None
+
+                    # Create cookie
+                    cookie = requests.cookies.create_cookie(
+                        domain=host_key,
+                        name=name,
+                        value=value,
+                        path=path,
+                        secure=bool(is_secure),
+                        expires=expires
+                    )
+
+                    self.session.cookies.set_cookie(cookie)
+                    cookie_count += 1
+                    domains_loaded.add(host_key)
+
+                conn.close()
+
+                self.logger.info(f"✅ [CHROME COOKIES] Loaded {cookie_count} cookies from Chrome")
+                self.logger.info(f"🌐 [CHROME COOKIES] Domains: {', '.join(sorted(domains_loaded))}")
+
+            finally:
+                # Clean up temp file
+                Path(tmp_db_path).unlink(missing_ok=True)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ [CHROME COOKIES] Could not load Chrome cookies: {e}")
+            self.logger.warning("   Will fall back to credential-based authentication if needed")
 
     def detect_platform(self, url: str) -> str:
         """

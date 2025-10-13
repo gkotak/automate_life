@@ -30,36 +30,32 @@ export default function ArticlePage() {
     }
   }, [params.id])
 
-  // Set up YouTube video speed and enhance functionality
+  // Set up YouTube video player with 2x speed
   useEffect(() => {
-    if (article && contentRef.current && activeTab === 'summary') {
+    if (article && article.video_id && contentRef.current) {
       let player: any = null
 
       const setupYouTubePlayer = () => {
-        // Find YouTube iframe
-        const iframe = contentRef.current?.querySelector('iframe[src*="youtube.com"]') as HTMLIFrameElement
-        if (!iframe) return
+        const playerContainer = document.getElementById('youtube-player-container')
+        if (!playerContainer) {
+          console.warn('YouTube player container not found')
+          return
+        }
 
-        // Extract video ID from iframe src
-        const src = iframe.src
-        const videoIdMatch = src.match(/embed\/([^?&]+)/)
-        if (!videoIdMatch) return
+        // Clear existing content
+        playerContainer.innerHTML = ''
 
-        const videoId = videoIdMatch[1]
-
-        // Replace iframe with div for YouTube player
+        // Create player div
         const playerDiv = document.createElement('div')
-        playerDiv.id = `youtube-player-${videoId}`
-        playerDiv.style.width = '100%'
-        playerDiv.style.height = '800px'
-        iframe.parentNode?.replaceChild(playerDiv, iframe)
+        playerDiv.id = 'youtube-player'
+        playerContainer.appendChild(playerDiv)
 
         // Initialize YouTube player
         if (window.YT && window.YT.Player) {
-          player = new window.YT.Player(playerDiv.id, {
-            height: '800',
+          player = new window.YT.Player('youtube-player', {
+            height: '600',
             width: '100%',
-            videoId: videoId,
+            videoId: article.video_id,
             playerVars: {
               autoplay: 0,
               controls: 1,
@@ -71,45 +67,43 @@ export default function ArticlePage() {
               onReady: (event: any) => {
                 // Set to 2x speed when ready
                 event.target.setPlaybackRate(2)
+                console.log('YouTube player ready - set to 2x speed')
               },
               onStateChange: (event: any) => {
-                // Ensure 2x speed is maintained
+                // Ensure 2x speed is maintained when playing
                 if (event.data === window.YT.PlayerState.PLAYING) {
-                  event.target.setPlaybackRate(2)
+                  const currentRate = event.target.getPlaybackRate()
+                  if (currentRate !== 2) {
+                    event.target.setPlaybackRate(2)
+                    console.log('Playback rate corrected to 2x')
+                  }
                 }
               }
             }
           })
+
+          // Store player reference for timestamp jumping
+          ;(window as any).youtubePlayer = player
         }
       }
 
       // Function to jump to specific time in video
       const jumpToTime = (seconds: number) => {
+        const player = (window as any).youtubePlayer
         if (player && player.seekTo) {
-          player.seekTo(seconds)
-          player.setPlaybackRate(2)
+          player.seekTo(seconds, true)
+          player.playVideo()
+          // Ensure 2x speed after seeking
+          setTimeout(() => {
+            player.setPlaybackRate(2)
+          }, 100)
+          console.log(`Jumped to ${seconds}s at 2x speed`)
         }
       }
 
-      // Add jumpToTime to global scope for timestamp buttons
+      // Add jumpToTime to global scope
       ;(window as any).jumpToTime = jumpToTime
-
-      // Store jumpToTime function in component state for new components
       setJumpToTimeFunc(() => jumpToTime)
-
-      // Set up timestamp click handlers
-      const timestampButtons = contentRef.current?.querySelectorAll('.insight-timestamp[onclick]')
-      timestampButtons?.forEach((button: any) => {
-        const originalOnclick = button.getAttribute('onclick')
-        button.removeAttribute('onclick')
-        button.addEventListener('click', () => {
-          // Extract time from onclick attribute
-          const timeMatch = originalOnclick?.match(/jumpToTime\((\d+)\)/)
-          if (timeMatch) {
-            jumpToTime(parseInt(timeMatch[1]))
-          }
-        })
-      })
 
       // Load YouTube API if not already loaded
       if (!window.YT) {
@@ -130,16 +124,17 @@ export default function ArticlePage() {
         if (player && player.destroy) {
           player.destroy()
         }
+        delete (window as any).youtubePlayer
       }
     }
-  }, [article, activeTab])
+  }, [article])
 
   const fetchArticle = async (id: number) => {
     try {
       setLoading(true)
       const { data, error } = await supabase
         .from('articles')
-        .select('*, key_insights, main_points, quotes, takeaways, duration_minutes, word_count, topics')
+        .select('*, key_insights, quotes, duration_minutes, word_count, topics')
         .eq('id', id)
         .single()
 
@@ -268,75 +263,99 @@ export default function ArticlePage() {
               View Original
             </a>
           </div>
+        </div>
+      </div>
 
-          {/* Content Tabs */}
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
+      {/* Video Player - Shared across all tabs */}
+      {article.content_source === 'video' && article.video_id && (
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <div className="space-y-2">
+            <h3 className="text-xl font-semibold text-gray-900">Video</h3>
+            <div id="youtube-player-container" style={{ width: '100%', height: '600px' }}>
+              {/* YouTube player will be injected here */}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content Tabs */}
+      <div className="bg-white rounded-lg shadow-md">
+        <div className="border-b border-gray-200 px-6 pt-4">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('summary')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'summary'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Summary
+            </button>
+            {article.transcript_text && (
               <button
-                onClick={() => setActiveTab('summary')}
+                onClick={() => setActiveTab('transcript')}
                 className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'summary'
+                  activeTab === 'transcript'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                Summary
+                Transcript
               </button>
-              {article.transcript_text && (
-                <button
-                  onClick={() => setActiveTab('transcript')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'transcript'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  Transcript
-                </button>
-              )}
-              {article.original_article_text && (
-                <button
-                  onClick={() => setActiveTab('original')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'original'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  Original Article
-                </button>
-              )}
-            </nav>
-          </div>
+            )}
+          </nav>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        {activeTab === 'summary' && (
-          <div ref={contentRef}>
+        {/* Tab Content */}
+        <div className="p-6" ref={contentRef}>
+          {activeTab === 'summary' && (
             <ArticleSummary
               article={article}
               onTimestampClick={jumpToTimeFunc || undefined}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'transcript' && article.transcript_text && (
-          <div className="prose prose-lg max-w-none">
-            <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed">
-              {article.transcript_text}
-            </pre>
-          </div>
-        )}
+          {activeTab === 'transcript' && article.transcript_text && (
+            <div className="space-y-2">
+              <div className="space-y-2">
+                {article.transcript_text.split('\n').map((line, index) => {
+                  // Parse timestamp format: [MM:SS] or [H:MM:SS]
+                  const timestampMatch = line.match(/^\[(\d+):(\d+)(?::(\d+))?\](.*)$/)
 
-        {activeTab === 'original' && article.original_article_text && (
-          <div className="prose prose-lg max-w-none">
-            <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed">
-              {article.original_article_text}
-            </pre>
-          </div>
-        )}
+                  if (timestampMatch) {
+                    const hours = timestampMatch[3] ? parseInt(timestampMatch[1]) : 0
+                    const minutes = timestampMatch[3] ? parseInt(timestampMatch[2]) : parseInt(timestampMatch[1])
+                    const seconds = timestampMatch[3] ? parseInt(timestampMatch[3]) : parseInt(timestampMatch[2])
+                    const text = timestampMatch[4].trim()
+                    const totalSeconds = hours * 3600 + minutes * 60 + seconds
+                    const timeDisplay = timestampMatch[3]
+                      ? `${timestampMatch[1]}:${timestampMatch[2]}:${timestampMatch[3]}`
+                      : `${timestampMatch[1]}:${timestampMatch[2]}`
+
+                    return (
+                      <div key={index} className="flex gap-3">
+                        <button
+                          onClick={() => jumpToTimeFunc?.(totalSeconds)}
+                          className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm flex-shrink-0 cursor-pointer"
+                        >
+                          [{timeDisplay}]
+                        </button>
+                        <span className="text-gray-700 leading-relaxed">{text}</span>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div key={index} className="text-gray-700 leading-relaxed">
+                      {line}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

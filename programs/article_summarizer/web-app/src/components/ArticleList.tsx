@@ -44,7 +44,7 @@ export default function ArticleList() {
       setLoading(true)
       const { data, error } = await supabase
         .from('articles')
-        .select('*, key_insights, main_points, quotes, takeaways, duration_minutes, word_count, topics')
+        .select('*, key_insights, quotes, duration_minutes, word_count, topics')
         .order('created_at', { ascending: false })
 
       if (error) throw error

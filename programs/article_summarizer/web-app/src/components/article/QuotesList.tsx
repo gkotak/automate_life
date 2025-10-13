@@ -12,8 +12,12 @@ export default function QuotesList({ quotes, onTimestampClick }: QuotesListProps
   }
 
   const handleTimestampClick = (seconds: number | null | undefined) => {
-    if (seconds && onTimestampClick) {
+    console.log('Quote timestamp clicked:', seconds)
+    if (seconds !== null && seconds !== undefined && onTimestampClick) {
+      console.log('Calling onTimestampClick with:', seconds)
       onTimestampClick(seconds)
+    } else {
+      console.warn('Cannot jump to timestamp:', { seconds, hasCallback: !!onTimestampClick })
     }
   }
 
@@ -47,13 +51,13 @@ export default function QuotesList({ quotes, onTimestampClick }: QuotesListProps
                   )}
                 </div>
 
-                {quote.timestamp_seconds && (
+                {quote.timestamp_seconds !== null && quote.timestamp_seconds !== undefined && (
                   <button
-                    onClick={() => handleTimestampClick(quote.timestamp_seconds)}
-                    className="text-xs px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
-                    title="Jump to quote"
+                    onClick={() => handleTimestampClick(quote.timestamp_seconds!)}
+                    className="text-xs px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors cursor-pointer"
+                    title="Jump to this moment in the video"
                   >
-                    {Math.floor(quote.timestamp_seconds / 60)}:{(quote.timestamp_seconds % 60).toString().padStart(2, '0')}
+                    {Math.floor(quote.timestamp_seconds! / 60)}:{String(Math.floor(quote.timestamp_seconds! % 60)).padStart(2, '0')}
                   </button>
                 )}
               </div>

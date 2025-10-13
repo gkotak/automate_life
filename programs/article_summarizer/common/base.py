@@ -20,8 +20,8 @@ class BaseProcessor:
         self.base_dir = self._find_project_root()
 
         # Setup standard directories
-        self.logs_dir = self.base_dir / "programs" / "video_summarizer" / "logs"
-        self.output_dir = self.base_dir / "programs" / "video_summarizer" / "output"
+        self.logs_dir = self.base_dir / "programs" / "article_summarizer" / "logs"
+        self.output_dir = self.base_dir / "programs" / "article_summarizer" / "output"
 
         # Ensure directories exist
         self.logs_dir.mkdir(parents=True, exist_ok=True)
