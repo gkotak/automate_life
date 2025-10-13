@@ -473,31 +473,12 @@ CRITICAL TIMESTAMP RULES:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Use shell redirection with temp file for better handling of large prompts
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as tmp:
-                tmp.write(prompt)
-                tmp_path = tmp.name
-
-            try:
-                # Use shell=True with input redirection
-                cmd = f'{self.claude_cmd} --print --output-format text < "{tmp_path}"'
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    timeout=300,
-                    cwd=self.base_dir
-                )
-            finally:
-                # Clean up temp file
-                import os
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
+            # Use stdin for simplicity
+            result = subprocess.run([
+                self.claude_cmd,
+                "--print",
+                "--output-format", "text"
+            ], input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300, cwd=self.base_dir)
 
             # Save response for debugging (always, even if empty)
             response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
