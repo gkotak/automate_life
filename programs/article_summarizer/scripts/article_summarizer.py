@@ -478,24 +478,31 @@ CRITICAL:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Use Popen with communicate() for better handling of large stdin
-            process = subprocess.Popen([
-                self.claude_cmd,
-                "--print",
-                "--output-format", "text"
-            ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-               text=True, encoding='utf-8', cwd=self.base_dir)
+            # Use shell redirection with temp file for better handling of large prompts
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as tmp:
+                tmp.write(prompt)
+                tmp_path = tmp.name
 
             try:
-                stdout, stderr = process.communicate(input=prompt, timeout=300)
-                result = type('obj', (object,), {
-                    'returncode': process.returncode,
-                    'stdout': stdout,
-                    'stderr': stderr
-                })()
-            except subprocess.TimeoutExpired:
-                process.kill()
-                raise RuntimeError(f"Claude CLI timed out after 300 seconds")
+                # Use shell=True with input redirection
+                cmd = f'{self.claude_cmd} --print --output-format text < "{tmp_path}"'
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    timeout=300,
+                    cwd=self.base_dir
+                )
+            finally:
+                # Clean up temp file
+                import os
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
 
             # Save response for debugging (always, even if empty)
             response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
