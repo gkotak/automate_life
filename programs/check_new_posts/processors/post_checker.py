@@ -31,9 +31,9 @@ class PostChecker(BaseProcessor):
         super().__init__("post_checker")
 
         # Setup specific directories for this processor
-        self.links_file = self.base_dir / "programs" / "video_summarizer" / "newsletter_podcast_links.md"
-        self.tracking_file = self.base_dir / "programs" / "video_summarizer" / "output" / "processed_posts.json"
-        self.summarizer_script = self.base_dir / "programs" / "video_summarizer" / "scripts" / "summarize_article.sh"
+        self.links_file = self.base_dir / "programs" / "check_new_posts" / "newsletter_podcast_links.md"
+        self.tracking_file = self.base_dir / "programs" / "article_summarizer" / "output" / "processed_posts.json"
+        self.summarizer_script = self.base_dir / "programs" / "article_summarizer" / "scripts" / "summarize_article.sh"
 
     def _load_tracked_posts(self):
         """Load previously processed posts from tracking file"""

@@ -278,6 +278,34 @@ export default function ArticlePage() {
         </div>
       )}
 
+      {/* Audio Player - Shared across all tabs */}
+      {article.content_source === 'audio' && article.audio_url && (
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <div className="space-y-2">
+            <h3 className="text-xl font-semibold text-gray-900">🎧 Listen to Audio</h3>
+            <p className="text-sm text-gray-600">
+              ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
+            </p>
+            <audio
+              id="audio-player"
+              controls
+              controlsList="nodownload"
+              style={{ width: '100%', maxWidth: '600px' }}
+              onLoadedMetadata={(e) => {
+                const audioEl = e.target as HTMLAudioElement
+                audioEl.playbackRate = 2.0
+              }}
+            >
+              <source src={article.audio_url} type="audio/mpeg" />
+              Your browser does not support the audio element.
+            </audio>
+            <p className="text-xs text-gray-500">
+              <strong>Note:</strong> Audio content embedded from original article.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Content Tabs */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="border-b border-gray-200 px-6 pt-4">

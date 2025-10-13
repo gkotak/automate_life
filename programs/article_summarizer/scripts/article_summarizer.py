@@ -424,8 +424,8 @@ Article text content: {article_text}
 Analyze this article: {url}
 
 Create a comprehensive summary with the following structure:
-1. Write a clear, structured summary (max 1000 words) in HTML format with embedded timestamps for each major subsection
-2. Extract 5-8 key insights as bullet points
+1. Write a clear, structured summary (2-4 paragraphs) in HTML format as paragraphs (NOT bullets)
+2. Extract 8-12 key insights combining main points, insights, and actionable takeaways
 3. If video/audio content exists, identify specific timestamps with detailed descriptions
 
 {media_context}
@@ -434,33 +434,28 @@ Article metadata: {json.dumps(self._create_metadata_for_prompt(metadata), indent
 
 Return your response in this JSON format:
 {{
-    "summary": "HTML formatted summary content (no timestamps in summary if no transcript data)",
+    "summary": "HTML formatted summary in paragraph form (2-4 paragraphs, NOT bullets). Use <p> tags for paragraphs.",
     "key_insights": [
-        {{"insight": "insight text", "timestamp_seconds": 300, "time_formatted": "5:00"}},
-        {{"insight": "insight text without timestamp", "timestamp_seconds": null, "time_formatted": null}}
-    ],
-    "main_points": [
-        {{"point": "Main point text", "details": "Optional additional details or explanation"}}
+        {{"insight": "Key insight, main point, or actionable takeaway", "timestamp_seconds": 300, "time_formatted": "5:00"}},
+        {{"insight": "Another insight without timestamp", "timestamp_seconds": null, "time_formatted": null}}
     ],
     "quotes": [
-        {{"quote": "Exact quote text", "speaker": "Speaker name", "timestamp_seconds": 120, "context": "Context for the quote"}}
+        {{"quote": "Exact quote text", "speaker": "Speaker name", "timestamp_seconds": 120, "time_formatted": "2:00", "context": "Context for the quote"}}
     ],
-    "takeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"],
     "duration_minutes": 45,
     "word_count": 5000,
-    "topics": ["AI", "Product", "Engineering"],
-    "sentiment": "positive",
-    "complexity_level": "intermediate"
+    "topics": ["AI", "Product", "Engineering"]
 }}
 
-CRITICAL:
-- Use null for timestamp_seconds and time_formatted if no transcript match exists
+CRITICAL TIMESTAMP RULES:
+- Use null for timestamp_seconds and time_formatted if you cannot find the EXACT content in the provided transcript
+- NEVER guess or estimate timestamps - if you can't find it in the transcript, use null
+- For quotes: search the transcript for the exact quote text and use that timestamp
+- For insights: only add timestamps if you can verify the content appears at that point in the transcript
 - Only include timestamps for content you can find in the provided transcript
-- Include ALL insights (with or without timestamps) but NEVER guess timestamps
-- main_points should be 5-8 key points from the content
-- quotes should be memorable/important quotes with speaker attribution
-- takeaways should be 3-5 actionable takeaways
 - If transcript is truncated, only use timestamps from the visible portion
+- key_insights should be 8-12 items combining key learnings, main points, and actionable takeaways
+- quotes should be memorable/important quotes with exact speaker attribution and context
 """
 
     def _call_claude_api(self, prompt: str) -> str:
@@ -1055,6 +1050,11 @@ CRITICAL:
             if content_type.has_embedded_video and metadata.get('media_info', {}).get('youtube_urls'):
                 video_id = metadata['media_info']['youtube_urls'][0].get('video_id')
 
+            # Get audio URL if available
+            audio_url = None
+            if content_type.has_embedded_audio and metadata.get('media_info', {}).get('audio_urls'):
+                audio_url = metadata['media_info']['audio_urls'][0].get('url')
+
             # Determine content source
             if content_type.has_embedded_video and content_type.has_embedded_audio:
                 content_source = 'mixed'
@@ -1075,21 +1075,18 @@ CRITICAL:
                 'original_article_text': metadata.get('article_text'),
                 'content_source': content_source,
                 'video_id': video_id,
+                'audio_url': audio_url,
                 'platform': metadata.get('platform'),
                 'tags': [],  # Could extract from AI summary topics
 
                 # Structured data
                 'key_insights': ai_summary.get('key_insights', []),
-                'main_points': ai_summary.get('main_points', []),
                 'quotes': ai_summary.get('quotes', []),
-                'takeaways': ai_summary.get('takeaways', []),
 
                 # Metadata
                 'duration_minutes': ai_summary.get('duration_minutes'),
                 'word_count': ai_summary.get('word_count'),
                 'topics': ai_summary.get('topics', []),
-                'sentiment': ai_summary.get('sentiment'),
-                'complexity_level': ai_summary.get('complexity_level'),
             }
 
             # Try to update existing article or insert new one

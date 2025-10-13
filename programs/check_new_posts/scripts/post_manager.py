@@ -21,7 +21,7 @@ from common.config import Config
 class PostManager(BaseProcessor):
     def __init__(self):
         super().__init__("post_manager")
-        self.posts_file = self.base_dir / "programs" / "video_summarizer" / "output" / "processed_posts.json"
+        self.posts_file = self.base_dir / "programs" / "article_summarizer" / "output" / "processed_posts.json"
 
         # Enhanced status options
         self.valid_statuses = [
@@ -162,7 +162,7 @@ class PostManager(BaseProcessor):
         Returns:
             List of successfully processed post IDs
         """
-        script_path = self.base_dir / "programs" / "video_summarizer" / "scripts" / "summarize_article.sh"
+        script_path = self.base_dir / "programs" / "article_summarizer" / "scripts" / "summarize_article.sh"
 
         if not script_path.exists():
             raise FileNotFoundError(f"summarize_article.sh not found at {script_path}")
