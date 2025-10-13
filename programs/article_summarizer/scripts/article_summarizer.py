@@ -726,11 +726,9 @@ CRITICAL TIMESTAMP RULES:
             self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
 
             # Transcribe the file
-            transcript_file = self.file_transcriber.transcribe_file(temp_path)
-
-            # Load transcript data
-            with open(transcript_file, 'r', encoding='utf-8') as f:
-                transcript_data = json.load(f)
+            result = self.file_transcriber.transcribe_file(temp_path)
+            transcript_data = result['transcript_data']
+            transcript_json_file = result['output_file']
 
             # Format for our use - convert to same format as YouTube transcripts
             segments = transcript_data.get('segments', [])
@@ -754,12 +752,14 @@ CRITICAL TIMESTAMP RULES:
 
             self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
 
-            # Clean up temp file
+            # Clean up temp files
             import os
             try:
-                os.unlink(temp_path)
-            except:
-                pass
+                os.unlink(temp_path)  # Delete downloaded audio file
+                os.unlink(transcript_json_file)  # Delete transcript JSON file
+                self.logger.info(f"   🧹 Cleaned up temp files")
+            except Exception as cleanup_error:
+                self.logger.warning(f"   ⚠️ Could not clean up temp files: {cleanup_error}")
 
             return formatted_transcript
 

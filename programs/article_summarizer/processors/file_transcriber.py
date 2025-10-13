@@ -20,8 +20,8 @@ class FileTranscriber(BaseProcessor):
     def __init__(self):
         super().__init__("file_transcriber")
 
-        # Setup specific directories for this processor
-        self.transcriptions_dir = self.base_dir / "programs" / "video_summarizer" / "transcriptions"
+        # Setup specific directories for this processor - use logs dir for temp files
+        self.transcriptions_dir = self.base_dir / "programs" / "article_summarizer" / "logs" / "transcriptions"
         self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize OpenAI client
@@ -142,7 +142,7 @@ class FileTranscriber(BaseProcessor):
                 "words": words_data
             }
 
-            # Save transcript to file
+            # Save transcript to file (temporarily for logging)
             output_file = self._save_transcript(transcript_data, file_path)
 
             # Log summary using base class method
@@ -154,7 +154,11 @@ class FileTranscriber(BaseProcessor):
                 output_file=str(output_file)
             )
 
-            return output_file
+            # Return both the data and file path so caller can delete after use
+            return {
+                'transcript_data': transcript_data,
+                'output_file': output_file
+            }
 
         except Exception as e:
             self.logger.error(f"❌ Transcription failed: {e}")
