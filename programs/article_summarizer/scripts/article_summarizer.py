@@ -479,10 +479,11 @@ CRITICAL TIMESTAMP RULES:
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
             # Use stdin for simplicity
+            # NOTE: Do NOT use cwd parameter - it causes Claude CLI to return empty output
             cmd = [self.claude_cmd, "--print", "--output-format", "text"]
             self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
             self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
-            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300, cwd=self.base_dir)
+            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300)
 
             # Save response for debugging (always, even if empty)
             response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
