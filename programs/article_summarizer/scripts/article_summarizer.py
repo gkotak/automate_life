@@ -414,16 +414,54 @@ ARTICLE TEXT CONTENT:
     def _build_audio_context(self, metadata: Dict) -> str:
         """Build context string for audio content"""
         audio_urls = metadata['media_info']['audio_urls']
+        transcripts = metadata.get('transcripts', {})
+
+        # Check if we have any successful transcripts
+        has_transcript_data = False
+        transcript_content = ""
+
+        if transcripts:
+            for audio_id, transcript_data in transcripts.items():
+                if transcript_data.get('success'):
+                    formatted_transcript = self._format_transcript_for_analysis(transcript_data)
+                    if formatted_transcript:
+                        has_transcript_data = True
+                        transcript_content += f"""
+
+AUDIO TRANSCRIPT for {audio_id} ({transcript_data.get('type', 'unknown')} transcript):
+{formatted_transcript[:Config.MAX_TRANSCRIPT_CHARS]}{'...' if len(formatted_transcript) > Config.MAX_TRANSCRIPT_CHARS else ''}
+"""
+
+        # Get article text content
         article_text = metadata.get('article_text', 'Content not available')
 
-        return f"""
+        # Build context based on whether we have transcript data
+        if has_transcript_data:
+            context = f"""
 IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
-This appears to be a podcast episode. Please:
-- Identify key discussion points and insights from the conversation
-- Extract actionable advice or key takeaways
+Please focus on extracting audio timestamps with the following format:
+- Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
+- Provide detailed descriptions of what is discussed at each timestamp
+- Aim for 5-8 key timestamps that represent the most valuable content
+- Include timestamps for: key insights, important discussions, actionable advice, main themes
+Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
+{transcript_content}
+
+ARTICLE TEXT CONTENT:
+{article_text}
+
+Please analyze both the article text and the audio transcript to provide comprehensive insights.
+"""
+        else:
+            context = f"""
+IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
+Note: No audio transcripts are available, so please focus on the article content itself.
+DO NOT include any timestamps or time-based references in your response.
+- Focus on key insights and takeaways mentioned in the article text
+- Extract actionable advice from the article content
+- Identify main themes and discussion points referenced in the article
 - Note the participants/speakers if mentioned in the content
-- Focus on the most valuable content and main themes
-- DO NOT include any timestamps or time-based references since no transcript is available
+- Base your analysis only on the article text, not on audio content
 Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
 
 ARTICLE TEXT CONTENT:
@@ -431,6 +469,8 @@ ARTICLE TEXT CONTENT:
 
 Please analyze the article text to provide comprehensive insights about the audio content.
 """
+
+        return context
 
     def _build_text_context(self, metadata: Dict) -> str:
         """Build context string for text-only content"""
@@ -565,7 +605,7 @@ CRITICAL TIMESTAMP RULES:
         }
 
     def _format_insights_section(self, insights: List[Dict]) -> str:
-        """Format key insights as HTML section"""
+        """Format key insights as HTML section with optional timestamps"""
         if not insights:
             return ""
 
@@ -574,7 +614,18 @@ CRITICAL TIMESTAMP RULES:
         <h2>🔍 Key Insights</h2>
         <ul>'''
         for insight in insights:
-            html += f"<li>{insight.get('insight', '')}</li>"
+            insight_text = insight.get('insight', '')
+            timestamp = insight.get('time_formatted')
+            timestamp_seconds = insight.get('timestamp_seconds')
+
+            # Add clickable timestamp if available
+            if timestamp and timestamp_seconds is not None:
+                # Determine if video or audio for jump function
+                click_handler = f"jumpToTime({timestamp_seconds})"
+                html += f'<li><span class="timestamp" onclick="{click_handler}" title="Jump to {timestamp}">⏰ {timestamp}</span> {insight_text}</li>'
+            else:
+                html += f"<li>{insight_text}</li>"
+
         html += '''
         </ul>
     </div>'''
@@ -751,14 +802,24 @@ CRITICAL TIMESTAMP RULES:
             with open(transcript_file, 'r', encoding='utf-8') as f:
                 transcript_data = json.load(f)
 
-            # Format for our use
+            # Format for our use - convert to same format as YouTube transcripts
+            segments = transcript_data.get('segments', [])
+            transcript_list = []
+            for segment in segments:
+                transcript_list.append({
+                    'start': segment.get('start', 0),
+                    'text': segment.get('text', ''),
+                    'duration': segment.get('end', 0) - segment.get('start', 0)
+                })
+
             formatted_transcript = {
                 'success': True,
+                'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
                 'text': transcript_data.get('text', ''),
-                'segments': transcript_data.get('segments', []),
                 'language': transcript_data.get('language', 'unknown'),
                 'type': 'whisper_transcription',
-                'source': media_type
+                'source': media_type,
+                'total_entries': len(transcript_list)
             }
 
             self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
