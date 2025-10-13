@@ -479,11 +479,10 @@ CRITICAL TIMESTAMP RULES:
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
             # Use stdin for simplicity
-            result = subprocess.run([
-                self.claude_cmd,
-                "--print",
-                "--output-format", "text"
-            ], input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300, cwd=self.base_dir)
+            cmd = [self.claude_cmd, "--print", "--output-format", "text"]
+            self.logger.info(f"   🔧 [DEBUG] Running command: {' '.join(cmd)}")
+            self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
+            result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding='utf-8', timeout=300, cwd=self.base_dir)
 
             # Save response for debugging (always, even if empty)
             response_file = self.base_dir / "programs" / "article_summarizer" / "logs" / "debug_response.txt"
