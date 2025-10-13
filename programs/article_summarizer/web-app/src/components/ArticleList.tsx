@@ -62,28 +62,20 @@ export default function ArticleList() {
     try {
       console.log(`🗑️ Attempting to delete article with ID: ${id}`)
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('articles')
         .delete()
         .eq('id', id)
-
-      console.log('Delete response:', { data, error })
 
       if (error) {
         console.error('Supabase delete error:', error)
         throw error
       }
 
-      if (data && data.length > 0) {
-        console.log(`✅ Successfully deleted article: ${data[0].title || 'Unknown'}`)
-        setArticles(articles.filter(article => article.id !== id))
-        addNotification('success', 'Article deleted successfully!')
-      } else {
-        console.warn('⚠️ Delete operation completed but no data returned. This might indicate the record was not found or already deleted.')
-        // Still remove from local state in case it was a soft delete or async operation
-        setArticles(articles.filter(article => article.id !== id))
-        addNotification('warning', 'Article delete completed (no confirmation data returned)')
-      }
+      // Delete successful - remove from local state
+      console.log(`✅ Successfully deleted article with id: ${id}`)
+      setArticles(articles.filter(article => article.id !== id))
+      addNotification('success', 'Article deleted successfully!')
     } catch (error) {
       console.error('Error deleting article:', error)
       console.error('Error details:', {
