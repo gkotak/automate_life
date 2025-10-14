@@ -72,31 +72,16 @@ export default function ImageGallery({ images }: ImageGalleryProps) {
           Article Images ({cleanedImages.length})
         </h3>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="flex flex-wrap gap-4">
           {cleanedImages.map((imageUrl, index) => (
-            <button
+            <img
               key={index}
               onClick={() => openLightbox(index)}
-              className="relative group overflow-hidden rounded-lg border border-gray-200 hover:border-blue-500 transition-all duration-200 bg-gray-50 h-48"
-              aria-label={`View image ${index + 1}`}
-            >
-              <img
-                src={imageUrl}
-                alt={`Article image ${index + 1}`}
-                className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
-                loading="lazy"
-                onError={(e) => {
-                  // If image fails to load, show a placeholder or retry with original URL
-                  const img = e.target as HTMLImageElement
-                  if (img.src !== images[index]) {
-                    img.src = images[index] // Try original URL with params
-                  }
-                }}
-              />
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity duration-200 flex items-center justify-center">
-                <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-              </div>
-            </button>
+              src={imageUrl}
+              alt={`Article image ${index + 1}`}
+              className="w-48 h-auto cursor-pointer hover:opacity-80"
+              loading="lazy"
+            />
           ))}
         </div>
       </div>
