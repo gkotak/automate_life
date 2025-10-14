@@ -27,6 +27,17 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables from root .env.local first, then web-app .env.local
+root_env = Path(__file__).parent.parent.parent.parent / '.env.local'
+webapp_env = Path(__file__).parent.parent / 'web-app' / '.env.local'
+
+if root_env.exists():
+    load_dotenv(root_env)
+elif webapp_env.exists():
+    load_dotenv(webapp_env)
 
 # Add parent directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -82,6 +93,19 @@ class ArticleSummarizer(BaseProcessor):
             if not supabase_key:
                 missing.append('SUPABASE_ANON_KEY')
             self.logger.warning(f"⚠️ Supabase credentials not found - database insertion will be skipped (missing: {', '.join(missing)})")
+
+        # Initialize OpenAI client for embeddings
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        self.openai_client: Optional[OpenAI] = None
+
+        if openai_api_key:
+            try:
+                self.openai_client = OpenAI(api_key=openai_api_key)
+                self.logger.info("✅ OpenAI client initialized for embeddings")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize OpenAI client: {e}")
+        else:
+            self.logger.warning("⚠️ OPENAI_API_KEY not found - embeddings will not be generated")
 
     def process_article(self, url: str) -> str:
         """
@@ -588,6 +612,78 @@ CRITICAL TIMESTAMP RULES:
     # HTML generation removed - web-app (Next.js) handles all display via React components
     # The Python script only processes content and saves to Supabase database
 
+    def _generate_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Generate embedding vector for text using OpenAI API
+
+        Args:
+            text: Text to generate embedding for
+
+        Returns:
+            Embedding vector (384 dimensions) or None if generation fails
+        """
+        if not self.openai_client:
+            return None
+
+        try:
+            # Truncate text to avoid token limits (8191 tokens max for text-embedding-3-small)
+            # Approximately 4 characters per token, so limit to ~32000 characters
+            if len(text) > 32000:
+                text = text[:32000]
+                self.logger.info(f"   📊 [EMBEDDING] Truncated text to 32000 characters for embedding")
+
+            self.logger.info(f"   📊 [EMBEDDING] Generating embedding for {len(text)} characters...")
+
+            response = self.openai_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text,
+                dimensions=384  # Use 384 dimensions for performance
+            )
+
+            embedding = response.data[0].embedding
+            self.logger.info(f"   ✅ [EMBEDDING] Generated {len(embedding)}-dimensional embedding")
+            return embedding
+
+        except Exception as e:
+            self.logger.error(f"   ❌ [EMBEDDING] Failed to generate embedding: {e}")
+            return None
+
+    def _build_embedding_text(self, metadata: Dict, ai_summary: Dict) -> str:
+        """
+        Build comprehensive text for embedding generation
+
+        Combines title, summary, key insights, and topics into a single text
+        that represents the article's content for semantic search.
+        """
+        parts = []
+
+        # Add title (most important)
+        if metadata.get('title'):
+            parts.append(f"Title: {metadata['title']}")
+
+        # Add summary
+        if ai_summary.get('summary'):
+            parts.append(f"Summary: {ai_summary['summary']}")
+
+        # Add key insights
+        key_insights = ai_summary.get('key_insights', [])
+        if key_insights:
+            insights_text = " ".join([insight.get('insight', '') for insight in key_insights])
+            parts.append(f"Key Insights: {insights_text}")
+
+        # Add topics
+        topics = ai_summary.get('topics', [])
+        if topics:
+            parts.append(f"Topics: {', '.join(topics)}")
+
+        # Add quotes
+        quotes = ai_summary.get('quotes', [])
+        if quotes:
+            quotes_text = " ".join([quote.get('quote', '') for quote in quotes])
+            parts.append(f"Notable Quotes: {quotes_text}")
+
+        return "\n\n".join(parts)
+
     def _save_to_database(self, metadata: Dict, ai_summary: Dict):
         """Save article data to Supabase database"""
         if not self.supabase:
@@ -631,6 +727,12 @@ CRITICAL TIMESTAMP RULES:
             else:
                 content_source = 'article'
 
+            # Generate embedding for semantic search
+            embedding = None
+            if self.openai_client:
+                embedding_text = self._build_embedding_text(metadata, ai_summary)
+                embedding = self._generate_embedding(embedding_text)
+
             # Build article record
             article_data = {
                 'title': metadata['title'],
@@ -654,6 +756,10 @@ CRITICAL TIMESTAMP RULES:
                 'word_count': ai_summary.get('word_count'),
                 'topics': ai_summary.get('topics', []),
             }
+
+            # Add embedding if generated
+            if embedding:
+                article_data['embedding'] = embedding
 
             # Try to update existing article or insert new one
             result = self.supabase.table('articles').upsert(
