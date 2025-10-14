@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase, Article } from '@/lib/supabase'
 import { ArrowLeft, ExternalLink, Calendar, Tag, Play, FileText, Headphones } from 'lucide-react'
 import ArticleSummary from '@/components/article/ArticleSummary'
+import ImageGallery from '@/components/article/ImageGallery'
 
 // YouTube API type declarations
 declare global {
@@ -374,10 +375,16 @@ export default function ArticlePage() {
         {/* Tab Content */}
         <div className="p-6" ref={contentRef}>
           {activeTab === 'summary' && (
-            <ArticleSummary
-              article={article}
-              onTimestampClick={jumpToTimeFunc || undefined}
-            />
+            <>
+              <ArticleSummary
+                article={article}
+                onTimestampClick={jumpToTimeFunc || undefined}
+              />
+              {/* Image Gallery - show extracted images */}
+              {article.images && article.images.length > 0 && (
+                <ImageGallery images={article.images} />
+              )}
+            </>
           )}
 
           {activeTab === 'transcript' && article.transcript_text && (

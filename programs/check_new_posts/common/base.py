@@ -21,9 +21,7 @@ class BaseProcessor:
 
         # Setup standard directories for this program
         self.logs_dir = self.base_dir / "programs" / "check_new_posts" / "logs"
-
-        # Use shared output directory from article_summarizer for processed_posts.json
-        self.output_dir = self.base_dir / "programs" / "article_summarizer" / "output"
+        self.output_dir = self.base_dir / "programs" / "check_new_posts" / "output"
 
         # Ensure directories exist
         self.logs_dir.mkdir(parents=True, exist_ok=True)

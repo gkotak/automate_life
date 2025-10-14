@@ -31,8 +31,9 @@ class ContentType:
 class ContentTypeDetector:
     """Detects whether content has embedded video, audio, or is text-only"""
 
-    def __init__(self):
+    def __init__(self, session: requests.Session = None):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.session = session if session else requests.Session()
 
     def detect_content_type(self, soup: BeautifulSoup, url: str) -> ContentType:
         """
@@ -254,7 +255,7 @@ class ContentTypeDetector:
         try:
             # Get YouTube page content
             youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-            response = requests.get(youtube_url, timeout=10)
+            response = self.session.get(youtube_url, timeout=10)
             youtube_soup = BeautifulSoup(response.content, 'html.parser')
 
             # Extract video title from YouTube page

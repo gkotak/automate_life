@@ -37,6 +37,7 @@ export type Article = {
   // Structured data fields
   key_insights: Insight[] | null
   quotes: Quote[] | null
+  images: string[] | null  // Array of image URLs
   duration_minutes: number | null
   word_count: number | null
   topics: string[] | null

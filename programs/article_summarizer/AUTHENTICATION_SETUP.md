@@ -117,9 +117,53 @@ Check the logs for authentication status:
 3. Copy relevant cookies (usually `sessionid`, `auth_token`, etc.)
 4. Add to `.env` file in the format: `name1=value1; name2=value2`
 
+## Browser Automation for Complex Sites
+
+Some sites like Seeking Alpha use aggressive anti-bot measures that require browser automation:
+
+### Setup Playwright
+
+1. **Install Playwright:**
+   ```bash
+   pip install playwright
+   playwright install chromium
+   ```
+
+2. **Configure domains for browser automation:**
+   ```bash
+   # In .env or .env.local
+   BROWSER_FETCH_DOMAINS=seekingalpha.com,othersite.com
+   PLAYWRIGHT_HEADLESS=true
+   PLAYWRIGHT_TIMEOUT=30000
+   PLAYWRIGHT_SCREENSHOT_ON_ERROR=false
+   ```
+
+### How It Works
+
+1. **Automatic Detection**: The system automatically detects bot blocking:
+   - Cloudflare challenges
+   - Captcha requirements
+   - Access denied messages
+   - Domains in `BROWSER_FETCH_DOMAINS`
+
+2. **Browser Fallback**: When detected, switches to Playwright:
+   - Launches real Chrome browser
+   - Injects your Chrome cookies (automatic authentication)
+   - Executes JavaScript
+   - Bypasses bot detection
+
+3. **Performance**: Browser fetch is ~3-5 seconds slower, so it's only used when necessary
+
+### Configuration Options
+
+- `BROWSER_FETCH_DOMAINS`: Comma-separated list of domains that always use browser
+- `PLAYWRIGHT_HEADLESS`: `true` for invisible browser, `false` to see what's happening
+- `PLAYWRIGHT_TIMEOUT`: Maximum wait time in milliseconds (default: 30000)
+- `PLAYWRIGHT_SCREENSHOT_ON_ERROR`: Save screenshot when errors occur (for debugging)
+
 ## Adding New Platforms
 
-To add authentication for a new platform, edit the `_authenticate_for_domain` method in `video_article_summarizer.py`:
+To add authentication for a new platform, edit the `_authenticate_for_domain` method in `authentication.py`:
 
 ```python
 elif 'newplatform.com' in domain:

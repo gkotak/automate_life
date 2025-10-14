@@ -31,6 +31,10 @@ class AuthenticationManager:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.credentials = self._load_credentials()
 
+        # Initialize browser fetcher for complex authentication
+        from .browser_fetcher import BrowserFetcher
+        self.browser_fetcher = BrowserFetcher(self.logger)
+
         # Load Chrome cookies into session
         self._load_chrome_cookies()
 
@@ -66,82 +70,72 @@ class AuthenticationManager:
         return credentials
 
     def _load_chrome_cookies(self):
-        """Load only Substack session cookies from Chrome for fast authentication"""
+        """Load authentication session cookies from Chrome for common content platforms"""
         try:
-            import sqlite3
-            import shutil
-            import tempfile
+            from pycookiecheat import chrome_cookies
+            import urllib.parse
 
-            self.logger.info("🍪 [CHROME COOKIES] Loading Substack session cookies from Chrome...")
+            self.logger.info("🍪 [CHROME COOKIES] Loading authentication cookies from Chrome...")
 
-            # Chrome cookie database path on macOS
-            chrome_cookie_db = Path.home() / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Cookies"
+            # List of domains to extract cookies from
+            domains = [
+                'seekingalpha.com',
+                '.seekingalpha.com',
+                'substack.com',
+                '.substack.com',
+                'medium.com',
+                '.medium.com',
+                'patreon.com',
+                '.patreon.com',
+                'tegus.com',
+                '.tegus.com'
+            ]
 
-            if not chrome_cookie_db.exists():
-                self.logger.warning(f"⚠️ [CHROME COOKIES] Chrome cookie database not found at: {chrome_cookie_db}")
-                return
+            cookie_count = 0
+            cookies_by_domain = {}
 
-            # Copy database to temp file (Chrome locks the original)
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp_file:
-                tmp_db_path = tmp_file.name
+            # Extract cookies for each domain
+            for domain in domains:
+                try:
+                    # Use pycookiecheat to decrypt Chrome cookies
+                    url = f"https://{domain.lstrip('.')}"
+                    domain_cookies = chrome_cookies(url)
 
-            try:
-                shutil.copy2(chrome_cookie_db, tmp_db_path)
+                    if domain_cookies:
+                        for name, value in domain_cookies.items():
+                            # Create cookie for the session
+                            cookie = requests.cookies.create_cookie(
+                                domain=domain,
+                                name=name,
+                                value=value,
+                                path='/',
+                                secure=True
+                            )
 
-                # Connect to copied database
-                conn = sqlite3.connect(tmp_db_path)
-                cursor = conn.cursor()
+                            self.session.cookies.set_cookie(cookie)
+                            cookie_count += 1
 
-                # Query ONLY Substack session cookies (much faster than loading all)
-                # Focus on the key authentication cookies: substack.sid, substack.lli, etc.
-                query = """
-                    SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly
-                    FROM cookies
-                    WHERE (host_key LIKE '%substack.com%' OR host_key LIKE '%.substack.com%')
-                    AND (name LIKE '%sid%' OR name LIKE '%session%' OR name LIKE '%auth%' OR name LIKE '%token%' OR name = 'substack.lli')
-                """
+                            # Track cookies by domain for logging
+                            domain_key = domain.split('.')[-2] if '.' in domain else domain
+                            if domain_key not in cookies_by_domain:
+                                cookies_by_domain[domain_key] = []
+                            cookies_by_domain[domain_key].append(name)
 
-                cursor.execute(query)
-                rows = cursor.fetchall()
+                except Exception as e:
+                    # Skip domains that have no cookies
+                    if "No cookies found" not in str(e):
+                        self.logger.debug(f"Could not load cookies for {domain}: {e}")
+                    continue
 
-                cookie_count = 0
-                cookie_names = []
+            if cookie_count > 0:
+                domains_summary = ', '.join([f"{domain} ({len(cookies)})" for domain, cookies in cookies_by_domain.items()])
+                self.logger.info(f"✅ [CHROME COOKIES] Loaded {cookie_count} authentication cookie(s) from: {domains_summary}")
+            else:
+                self.logger.info(f"⚠️ [CHROME COOKIES] No authentication cookies found - you may need to log in to content sites in Chrome")
 
-                for row in rows:
-                    host_key, name, value, path, expires_utc, is_secure, is_httponly = row
-
-                    # Convert Chrome's expiry format (microseconds since 1601) to Unix timestamp
-                    if expires_utc > 0:
-                        # Chrome uses microseconds since Jan 1, 1601
-                        expires = (expires_utc / 1000000) - 11644473600
-                    else:
-                        expires = None
-
-                    # Create cookie
-                    cookie = requests.cookies.create_cookie(
-                        domain=host_key,
-                        name=name,
-                        value=value,
-                        path=path,
-                        secure=bool(is_secure),
-                        expires=expires
-                    )
-
-                    self.session.cookies.set_cookie(cookie)
-                    cookie_count += 1
-                    cookie_names.append(name)
-
-                conn.close()
-
-                if cookie_count > 0:
-                    self.logger.info(f"✅ [CHROME COOKIES] Loaded {cookie_count} Substack session cookie(s): {', '.join(cookie_names)}")
-                else:
-                    self.logger.info(f"⚠️ [CHROME COOKIES] No Substack session cookies found - you may need to log in to Substack in Chrome")
-
-            finally:
-                # Clean up temp file
-                Path(tmp_db_path).unlink(missing_ok=True)
-
+        except ImportError:
+            self.logger.warning("⚠️ [CHROME COOKIES] pycookiecheat not installed - cannot decrypt Chrome cookies")
+            self.logger.warning("   Install with: pip install pycookiecheat")
         except Exception as e:
             self.logger.warning(f"⚠️ [CHROME COOKIES] Could not load Chrome cookies: {e}")
             self.logger.warning("   Will fall back to credential-based authentication if needed")
@@ -187,17 +181,24 @@ class AuthenticationManager:
         """
         # First check if URL already contains authentication tokens
         if self._has_access_token(url):
-            self.logger.info(f"✅ [AUTH SKIP] URL already contains authentication token")
+            self.logger.info(f"✅ [AUTH STATUS] URL contains authentication token")
             return False, "url_contains_auth_token"
 
-        self.logger.info(f"🔍 [AUTH CHECK] Testing access to '{platform}' content without authentication...")
+        self.logger.info(f"🔍 [AUTH CHECK] Testing access to '{platform}' content...")
 
         try:
-            # Test access without authentication
+            # Test access (which includes any loaded Chrome cookies)
             response = self.session.get(url, timeout=30)
             soup = BeautifulSoup(response.content, 'html.parser')
             content_length = len(response.text)
             has_structure = bool(soup.find(['article', 'main', 'div']))
+
+            # Check for logged-in user indicators first
+            logged_in_user = self._detect_logged_in_user(soup, response.text)
+            if logged_in_user:
+                self.logger.info(f"✅ [AUTH STATUS] Already authenticated via browser session as: {logged_in_user}")
+                self.logger.info(f"✅ [AUTH STATUS] Content accessible (length: {content_length})")
+                return False, f"authenticated_via_session: {logged_in_user}"
 
             self.logger.info(f"🔓 [CONTENT CHECK] Content appears accessible (length: {content_length}, has structure: {has_structure})")
 
@@ -215,7 +216,7 @@ class AuthenticationManager:
                     return True, f"paywall_detected: {indicator}"
 
             # If content is accessible, no auth needed
-            self.logger.info(f"✅ [AUTH SKIP] Content is publicly accessible for '{platform}' - no authentication needed")
+            self.logger.info(f"✅ [AUTH STATUS] Content is publicly accessible for '{platform}'")
             return False, "publicly_accessible"
 
         except Exception as e:
@@ -249,6 +250,59 @@ class AuthenticationManager:
             return self._authenticate_medium(platform_credentials)
         else:
             return self._authenticate_generic(platform_credentials)
+
+    def _detect_logged_in_user(self, soup: BeautifulSoup, html_text: str) -> Optional[str]:
+        """
+        Detect if user is logged in and extract username/email
+
+        Args:
+            soup: BeautifulSoup object
+            html_text: Raw HTML text
+
+        Returns:
+            Username/email if logged in, None otherwise
+        """
+        import re
+
+        # Pattern 1: Look for common username/email patterns in data attributes or text
+        username_patterns = [
+            r'"username":\s*"([^"]+)"',
+            r'"email":\s*"([^"@]+@[^"]+)"',
+            r'"user":\s*"([^"]+)"',
+            r'data-user[^>]*=\s*"([^"]+)"',
+            r'data-username[^>]*=\s*"([^"]+)"',
+        ]
+
+        for pattern in username_patterns:
+            match = re.search(pattern, html_text)
+            if match:
+                return match.group(1)
+
+        # Pattern 2: Look for account/profile links or buttons
+        account_selectors = [
+            '[data-testid="account-menu"]',
+            '[class*="account"]',
+            '[class*="profile"]',
+            '[class*="user-menu"]',
+            'a[href*="/account"]',
+            'a[href*="/profile"]',
+        ]
+
+        for selector in account_selectors:
+            element = soup.select_one(selector)
+            if element:
+                # Try to extract username from text or attributes
+                text = element.get_text(strip=True)
+                if text and len(text) > 2 and len(text) < 50:
+                    return text
+
+                # Check data attributes
+                for attr in ['data-user', 'data-username', 'data-email', 'title', 'aria-label']:
+                    value = element.get(attr)
+                    if value and len(value) > 2 and len(value) < 50:
+                        return value
+
+        return None
 
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL"""
@@ -338,3 +392,51 @@ class AuthenticationManager:
         """Generic authentication attempt"""
         # Generic authentication implementation
         return False, "Generic authentication not yet implemented"
+
+    def fetch_with_browser(self, url: str) -> Tuple[bool, Optional[str], str]:
+        """
+        Fetch content using browser automation (Playwright)
+
+        This method is used as a fallback when:
+        - Standard requests fail due to anti-bot measures
+        - Cloudflare or similar protection is detected
+        - JavaScript is required to load content
+
+        Args:
+            url: The URL to fetch
+
+        Returns:
+            Tuple of (success, html_content, message)
+        """
+        if not self.browser_fetcher.is_available():
+            return False, None, "Playwright not available - install with: pip install playwright && playwright install chromium"
+
+        self.logger.info(f"🌐 [BROWSER AUTH] Using Playwright to fetch: {url}")
+
+        # Convert session cookies to dictionary for Playwright
+        cookies_dict = {}
+        for cookie in self.session.cookies:
+            cookies_dict[cookie.name] = cookie.value
+
+        # Fetch using Playwright with injected cookies
+        success, html_content, message = self.browser_fetcher.fetch_with_playwright(url, self.session.cookies)
+
+        if success:
+            self.logger.info(f"✅ [BROWSER AUTH] Successfully fetched content via browser")
+        else:
+            self.logger.error(f"❌ [BROWSER AUTH] Browser fetch failed: {message}")
+
+        return success, html_content, message
+
+    def should_use_browser_fetch(self, url: str, response: Optional[requests.Response] = None) -> bool:
+        """
+        Determine if browser fetch should be used
+
+        Args:
+            url: The URL to check
+            response: Optional response from standard request
+
+        Returns:
+            True if browser fetch should be used
+        """
+        return self.browser_fetcher.should_use_browser_fetch(url, response)

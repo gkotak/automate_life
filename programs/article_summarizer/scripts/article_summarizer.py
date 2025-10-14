@@ -50,8 +50,8 @@ class ArticleSummarizer(BaseProcessor):
 
     def __init__(self):
         super().__init__("ArticleSummarizer")
-        self.content_detector = ContentTypeDetector()
         self.auth_manager = AuthenticationManager(self.base_dir, self.session)
+        self.content_detector = ContentTypeDetector(self.session)
         self.transcript_processor = TranscriptProcessor(self.base_dir, self.session)
         claude_cmd = Config.find_claude_cli()
         self.claude_client = ClaudeClient(claude_cmd, self.base_dir, self.logger)
@@ -134,6 +134,20 @@ class ArticleSummarizer(BaseProcessor):
         response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
         soup = self._get_soup(response.content)
 
+        # Check if we should use browser fetch for this URL/response
+        should_use_browser = self.auth_manager.should_use_browser_fetch(url, response)
+
+        if should_use_browser:
+            self.logger.info("🌐 [BROWSER FALLBACK] Anti-bot measures detected, switching to browser fetch...")
+            browser_success, html_content, browser_message = self.auth_manager.fetch_with_browser(url)
+
+            if browser_success:
+                soup = self._get_soup(html_content)
+                self.logger.info("✅ [BROWSER FALLBACK] Successfully retrieved content via browser")
+            else:
+                self.logger.warning(f"⚠️ [BROWSER FALLBACK] Browser fetch failed: {browser_message}")
+                self.logger.warning("⚠️ [BROWSER FALLBACK] Continuing with standard request content...")
+
         # Detect platform and handle authentication
         platform = self.auth_manager.detect_platform(url)
         auth_required, auth_reason = self.auth_manager.check_authentication_required(url, platform)
@@ -165,15 +179,15 @@ class ArticleSummarizer(BaseProcessor):
 
         # Handle different content types
         if content_type.has_embedded_video:
-            metadata.update(self._process_video_content(content_type.video_urls, soup))
+            metadata.update(self._process_video_content(content_type.video_urls, soup, url))
         elif content_type.has_embedded_audio:
-            metadata.update(self._process_audio_content(content_type.audio_urls, soup))
+            metadata.update(self._process_audio_content(content_type.audio_urls, soup, url))
         else:
-            metadata.update(self._process_text_content(soup))
+            metadata.update(self._process_text_content(soup, url))
 
         return metadata
 
-    def _process_video_content(self, video_urls: List[Dict], soup) -> Dict:
+    def _process_video_content(self, video_urls: List[Dict], soup, base_url: str) -> Dict:
         """Process content with single validated video"""
 
         # Should only receive 1 validated video from detection logic
@@ -232,13 +246,17 @@ class ArticleSummarizer(BaseProcessor):
         else:
             self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
 
+        # Extract images from article
+        images = self._extract_article_images(soup, base_url)
+
         return {
             'media_info': {'youtube_urls': video_urls},
             'transcripts': transcripts,
-            'article_text': article_text or 'Content not available'
+            'article_text': article_text or 'Content not available',
+            'images': images
         }
 
-    def _process_audio_content(self, audio_urls: List[Dict], soup) -> Dict:
+    def _process_audio_content(self, audio_urls: List[Dict], soup, base_url: str) -> Dict:
         """Process content with embedded audio"""
         self.logger.info("   Found embedded audio content...")
 
@@ -270,13 +288,17 @@ class ArticleSummarizer(BaseProcessor):
         else:
             self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
 
+        # Extract images from article
+        images = self._extract_article_images(soup, base_url)
+
         return {
             'media_info': {'audio_urls': audio_urls},
             'transcripts': transcripts if transcripts else {},
-            'article_text': article_text or 'Content not available'
+            'article_text': article_text or 'Content not available',
+            'images': images
         }
 
-    def _process_text_content(self, soup) -> Dict:
+    def _process_text_content(self, soup, base_url: str) -> Dict:
         """Process text-only content"""
         self.logger.info("   No media content found - extracting article text for text-only processing")
 
@@ -292,8 +314,12 @@ class ArticleSummarizer(BaseProcessor):
         else:
             self.logger.info("   ⚠️ [TEXT ARTICLE] No readable article content found")
 
+        # Extract images from article
+        images = self._extract_article_images(soup, base_url)
+
         return {
-            'article_text': article_text or 'Content not available'
+            'article_text': article_text or 'Content not available',
+            'images': images
         }
 
     def _generate_summary_with_ai(self, url: str, metadata: Dict) -> Dict:
@@ -621,6 +647,7 @@ CRITICAL TIMESTAMP RULES:
                 # Structured data
                 'key_insights': ai_summary.get('key_insights', []),
                 'quotes': ai_summary.get('quotes', []),
+                'images': metadata.get('images', []),
 
                 # Metadata
                 'duration_minutes': ai_summary.get('duration_minutes'),
@@ -769,8 +796,10 @@ CRITICAL TIMESTAMP RULES:
 
     def _extract_article_text_content(self, soup) -> str:
         """Extract main article text content"""
-        # Try multiple content selectors
+        # Try multiple content selectors (including Substack-specific)
         content_selectors = [
+            '.available-content',  # Substack main content
+            '.body',  # Substack body
             'article', '.entry-content', '.post-content', '.content',
             '.post-body', 'main', '[role="main"]'
         ]
@@ -791,6 +820,98 @@ CRITICAL TIMESTAMP RULES:
             return body.get_text(strip=True)
 
         return ""
+
+    def _extract_article_images(self, soup, base_url: str) -> list:
+        """Extract image URLs from article content"""
+        from urllib.parse import urljoin, urlparse, urlunparse
+
+        image_urls = []
+
+        # Try to find content container first
+        content_selectors = [
+            '.available-content',  # Substack main content
+            '.body',  # Substack body
+            'article', '.entry-content', '.post-content', '.content',
+            '.post-body', 'main', '[role="main"]'
+        ]
+
+        content_element = None
+        for selector in content_selectors:
+            content_element = soup.select_one(selector)
+            if content_element:
+                break
+
+        # If no content element found, search whole page
+        if not content_element:
+            content_element = soup
+
+        # Find all images in content
+        img_tags = content_element.find_all('img')
+
+        for img in img_tags:
+            src = img.get('src', '')
+
+            # Skip small icons, tracking pixels, and invalid images
+            if not src:
+                continue
+
+            # Skip data URIs, tracking pixels, and very small images
+            if src.startswith('data:'):
+                continue
+            if 'tracking' in src.lower() or 'pixel' in src.lower():
+                continue
+            if 'icon' in src.lower() or 'logo' in src.lower():
+                continue
+
+            # Try to get dimensions to skip small images (likely icons)
+            width = img.get('width', '')
+            height = img.get('height', '')
+            try:
+                if width and int(width) < 100:
+                    continue
+                if height and int(height) < 100:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+            # Make relative URLs absolute
+            if src.startswith('//'):
+                src = 'https:' + src
+            elif src.startswith('/'):
+                # Construct absolute URL from base_url
+                src = urljoin(base_url, src)
+
+            # Check for srcset for higher quality images
+            srcset = img.get('srcset', '')
+            if srcset:
+                # Parse srcset and get the highest resolution version
+                srcset_parts = srcset.split(',')
+                if srcset_parts:
+                    # Take the last one (usually highest resolution)
+                    largest = srcset_parts[-1].strip().split()[0]
+                    if largest:
+                        src = largest
+                        # Make absolute if needed
+                        if src.startswith('//'):
+                            src = 'https:' + src
+                        elif src.startswith('/'):
+                            src = urljoin(base_url, src)
+
+            # Clean up image URLs for full resolution
+            # Seeking Alpha: Remove query parameters to get full-size images
+            if 'seekingalpha.com' in src:
+                parsed = urlparse(src)
+                # Remove query parameters to get original full-size image
+                src = urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+
+            # Add to list if not already present
+            if src and src not in image_urls:
+                image_urls.append(src)
+
+        if image_urls:
+            self.logger.info(f"   📸 [IMAGES] Extracted {len(image_urls)} images from article")
+
+        return image_urls
 
     def _format_transcript_for_analysis(self, transcript_data: Dict) -> str:
         """Format transcript for AI analysis (line-by-line for Claude)"""
