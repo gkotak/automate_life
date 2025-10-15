@@ -25,9 +25,9 @@ Codex now runs automatically via the pre-commit hook (`scripts/run_codex_review.
 1. If the review file exists, read it and summarize the findings for the user with the usual ✅ / ⚠️ / 💡 callouts.
 2. If the file is missing or the user requests a fresh review, rerun `scripts/run_codex_review.sh` (it respects `SKIP_CODEX=1` when a bypass is needed, especially if it take more than 90 seconds.
 3. Highlight any 🔥 blockers that Codex surfaced, since the hook will stop the commit until they are resolved. 
-4. if you feel the blocker is not really a blocker, ask me to review it, and go ahead with skipping codex if i say yes. 
+4. always run the codex review but if it takes too long or if you disagree with any of the blockers ask me
 
-Ask: "Would you like me to proceed with commit despite codex saying it is a blocker"
+Ask: "Would you like me to proceed with commit despite codex saying it is a blocker" OR "Would you like me to proceed with commit despite codex code review not yet completed?"
 
 ## Step 4: Generate Commit Message
 
