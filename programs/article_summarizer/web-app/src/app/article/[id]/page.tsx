@@ -52,10 +52,10 @@ export default function ArticlePage() {
         playerDiv.id = 'youtube-player'
         playerContainer.appendChild(playerDiv)
 
-        // Initialize YouTube player
+        // Initialize YouTube player with responsive sizing
         if (window.YT && window.YT.Player) {
           player = new window.YT.Player('youtube-player', {
-            height: '600',
+            height: '100%',
             width: '100%',
             videoId: article.video_id,
             playerVars: {
@@ -251,53 +251,53 @@ export default function ArticlePage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 max-w-4xl">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <button
           onClick={() => router.push('/')}
-          className="flex items-center text-blue-600 hover:text-blue-700 mb-4"
+          className="flex items-center text-blue-600 hover:text-blue-700 mb-3 sm:mb-4 text-sm sm:text-base"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
           Back to Articles
         </button>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">{article.title}</h1>
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-3 sm:mb-4 leading-tight">{article.title}</h1>
 
           {/* Metadata */}
-          <div className="flex flex-wrap gap-3 mb-4">
+          <div className="flex flex-wrap gap-2 sm:gap-3 mb-3 sm:mb-4">
             {article.content_source && (
-              <span className={`flex items-center px-3 py-1 rounded-full text-sm font-medium ${getContentTypeColor(article.content_source)}`}>
+              <span className={`flex items-center px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getContentTypeColor(article.content_source)}`}>
                 {getContentTypeIcon(article.content_source)}
                 <span className="ml-1 capitalize">{article.content_source}</span>
               </span>
             )}
-            {article.platform && (
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getPlatformColor(article.platform)}`}>
-                {article.platform}
+            {article.source && (
+              <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getPlatformColor(article.source)}`}>
+                {article.source}
               </span>
             )}
             {article.tags?.map((tag, index) => (
-              <span key={index} className="flex items-center px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+              <span key={index} className="flex items-center px-2 sm:px-3 py-0.5 sm:py-1 bg-gray-100 text-gray-700 rounded-full text-xs sm:text-sm">
                 <Tag className="h-3 w-3 mr-1" />
                 {tag}
               </span>
             ))}
           </div>
 
-          <div className="flex items-center justify-between text-sm text-gray-500 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 text-xs sm:text-sm text-gray-500 mb-4 sm:mb-6">
             <div className="flex items-center">
-              <Calendar className="h-4 w-4 mr-1" />
-              {formatDate(article.created_at)}
+              <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
+              <span className="truncate">{formatDate(article.created_at)}</span>
             </div>
             <a
               href={article.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center text-blue-600 hover:text-blue-700"
+              className="flex items-center text-blue-600 hover:text-blue-700 w-fit"
             >
-              <ExternalLink className="h-4 w-4 mr-1" />
+              <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
               View Original
             </a>
           </div>
@@ -306,11 +306,13 @@ export default function ArticlePage() {
 
       {/* Video Player - Shared across all tabs */}
       {article.content_source === 'video' && article.video_id && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="space-y-2">
-            <h3 className="text-xl font-semibold text-gray-900">Video</h3>
-            <div id="youtube-player-container" style={{ width: '100%', height: '600px' }}>
-              {/* YouTube player will be injected here */}
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Video</h3>
+            <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+              <div id="youtube-player-container" className="absolute top-0 left-0 w-full h-full">
+                {/* YouTube player will be injected here */}
+              </div>
             </div>
           </div>
         </div>
@@ -318,17 +320,17 @@ export default function ArticlePage() {
 
       {/* Audio Player - Shared across all tabs */}
       {article.content_source === 'audio' && article.audio_url && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <div className="space-y-2">
-            <h3 className="text-xl font-semibold text-gray-900">🎧 Listen to Audio</h3>
-            <p className="text-sm text-gray-600">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6 sm:mb-8">
+          <div className="space-y-2 sm:space-y-3">
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-900">🎧 Listen to Audio</h3>
+            <p className="text-xs sm:text-sm text-gray-600">
               ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
             </p>
             <audio
               id="audio-player"
               controls
               controlsList="nodownload"
-              style={{ width: '100%', maxWidth: '600px' }}
+              className="w-full max-w-full sm:max-w-[600px]"
               onLoadedMetadata={(e) => {
                 const audioEl = e.target as HTMLAudioElement
                 audioEl.playbackRate = 2.0
@@ -346,11 +348,11 @@ export default function ArticlePage() {
 
       {/* Content Tabs */}
       <div className="bg-white rounded-lg shadow-md">
-        <div className="border-b border-gray-200 px-6 pt-4">
-          <nav className="-mb-px flex space-x-8">
+        <div className="border-b border-gray-200 px-4 sm:px-6 pt-3 sm:pt-4 overflow-x-auto">
+          <nav className="-mb-px flex space-x-4 sm:space-x-8">
             <button
               onClick={() => setActiveTab('summary')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                 activeTab === 'summary'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -361,7 +363,7 @@ export default function ArticlePage() {
             {article.transcript_text && (
               <button
                 onClick={() => setActiveTab('transcript')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                   activeTab === 'transcript'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -374,7 +376,7 @@ export default function ArticlePage() {
         </div>
 
         {/* Tab Content */}
-        <div className="p-6" ref={contentRef}>
+        <div className="p-4 sm:p-6" ref={contentRef}>
           {activeTab === 'summary' && (
             <>
               <ArticleSummary

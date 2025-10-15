@@ -238,10 +238,10 @@ export default function ArticleList() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
       {/* Notifications Area */}
       {notifications.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 space-y-2">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto z-50 space-y-2">
           {notifications.map((notification) => (
             <div
               key={notification.id}
@@ -253,15 +253,15 @@ export default function ArticleList() {
                   : 'bg-yellow-50 border border-yellow-200 text-yellow-800'
               }`}
             >
-              {notification.type === 'success' && <CheckCircle className="h-5 w-5 text-green-600" />}
-              {notification.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600" />}
-              {notification.type === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-600" />}
+              {notification.type === 'success' && <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />}
+              {notification.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0" />}
+              {notification.type === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0" />}
 
               <span className="flex-1 text-sm font-medium">{notification.message}</span>
 
               <button
                 onClick={() => removeNotification(notification.id)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -270,20 +270,20 @@ export default function ArticleList() {
         </div>
       )}
 
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">Article Library</h1>
-        <p className="text-gray-600 mb-6">Search and manage your article summaries</p>
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-2 sm:mb-4">Article Library</h1>
+        <p className="text-sm sm:text-base text-gray-600 mb-4 sm:mb-6">Search and manage your article summaries</p>
 
         {/* Search Interface */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
           <div className="flex flex-col gap-4">
             {/* Search Mode Toggle */}
-            <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-sm font-medium text-gray-700">Search Mode:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <span className="text-sm font-medium text-gray-700 flex-shrink-0">Search Mode:</span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setSearchMode('hybrid')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     searchMode === 'hybrid'
                       ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -293,7 +293,7 @@ export default function ArticleList() {
                 </button>
                 <button
                   onClick={() => setSearchMode('keyword')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     searchMode === 'keyword'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -303,12 +303,12 @@ export default function ArticleList() {
                 </button>
               </div>
               {searchMode === 'hybrid' && (
-                <span className="text-xs text-gray-500 italic">
+                <span className="text-xs text-gray-500 italic hidden sm:block">
                   AI understanding + keyword matching for best results
                 </span>
               )}
               {searchMode === 'keyword' && (
-                <span className="text-xs text-gray-500 italic">
+                <span className="text-xs text-gray-500 italic hidden sm:block">
                   Fast exact text matching
                 </span>
               )}
@@ -344,10 +344,10 @@ export default function ArticleList() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     showFilters
                       ? 'bg-blue-100 text-blue-700 border border-blue-300'
                       : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
@@ -357,7 +357,7 @@ export default function ArticleList() {
                 </button>
                 <button
                   onClick={searchArticles}
-                  className={`px-6 py-2 text-white rounded-md focus:ring-2 transition-colors ${
+                  className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 text-white rounded-md focus:ring-2 transition-colors text-xs sm:text-sm ${
                     searchMode === 'hybrid'
                       ? 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
                       : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
@@ -482,28 +482,28 @@ export default function ArticleList() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-2xl font-bold text-blue-600">{articles.length}</div>
-            <div className="text-gray-600">Total Articles</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+            <div className="text-xl sm:text-2xl font-bold text-blue-600">{articles.length}</div>
+            <div className="text-xs sm:text-sm text-gray-600">Total Articles</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-2xl font-bold text-green-600">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+            <div className="text-xl sm:text-2xl font-bold text-green-600">
               {articles.filter(a => a.content_source === 'video').length}
             </div>
-            <div className="text-gray-600">Videos</div>
+            <div className="text-xs sm:text-sm text-gray-600">Videos</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-2xl font-bold text-purple-600">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+            <div className="text-xl sm:text-2xl font-bold text-purple-600">
               {articles.filter(a => a.content_source === 'audio').length}
             </div>
-            <div className="text-gray-600">Audio</div>
+            <div className="text-xs sm:text-sm text-gray-600">Audio</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-2xl font-bold text-orange-600">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+            <div className="text-xl sm:text-2xl font-bold text-orange-600">
               {articles.filter(a => a.content_source === 'article').length}
             </div>
-            <div className="text-gray-600">Articles</div>
+            <div className="text-xs sm:text-sm text-gray-600">Articles</div>
           </div>
         </div>
       </div>
@@ -515,64 +515,64 @@ export default function ArticleList() {
           <p className="mt-4 text-gray-600">Loading articles...</p>
         </div>
       ) : (
-        <div className="grid gap-6">
+        <div className="grid gap-4 sm:gap-6">
           {articles.map((article) => (
             <div key={article.id} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <Link href={`/article/${article.id}`} className="flex-1 mr-4">
-                    <h2 className="text-xl font-semibold text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">
+              <div className="p-4 sm:p-6">
+                <div className="flex justify-between items-start mb-3 sm:mb-4 gap-2">
+                  <Link href={`/article/${article.id}`} className="flex-1 min-w-0">
+                    <h2 className="text-base sm:text-lg lg:text-xl font-semibold text-gray-900 hover:text-blue-600 transition-colors cursor-pointer line-clamp-2">
                       {article.title}
                     </h2>
                   </Link>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                     <a
                       href={article.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 text-gray-500 hover:text-blue-600 transition-colors"
+                      className="p-1.5 sm:p-2 text-gray-500 hover:text-blue-600 transition-colors"
                       title="Open original article"
                     >
-                      <ExternalLink className="h-4 w-4" />
+                      <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </a>
                     <button
                       onClick={() => deleteArticle(article.id)}
-                      className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+                      className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 transition-colors"
                       title="Delete article"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </button>
                   </div>
                 </div>
 
                 {/* Tags and metadata */}
-                <div className="flex flex-wrap gap-2 mb-4">
+                <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3 sm:mb-4">
                   {article.content_source && (
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getContentTypeColor(article.content_source)}`}>
+                    <span className={`px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium ${getContentTypeColor(article.content_source)}`}>
                       {article.content_source}
                     </span>
                   )}
-                  {article.platform && (
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPlatformColor(article.platform)}`}>
-                      {article.platform}
+                  {article.source && (
+                    <span className={`px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium ${getPlatformColor(article.source)}`}>
+                      {article.source}
                     </span>
                   )}
                   {article.tags?.map((tag, index) => (
-                    <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
+                    <span key={index} className="px-2 py-0.5 sm:py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
                       <Tag className="inline h-3 w-3 mr-1" />
                       {tag}
                     </span>
                   ))}
                 </div>
 
-                <div className="flex items-center text-sm text-gray-500 mb-4">
-                  <Calendar className="h-4 w-4 mr-1" />
-                  {formatDate(article.created_at)}
+                <div className="flex items-center text-xs sm:text-sm text-gray-500 mb-3 sm:mb-4">
+                  <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
+                  <span className="truncate">{formatDate(article.created_at)}</span>
                 </div>
 
                 {/* Summary preview */}
                 {article.summary_text && (
-                  <div className="text-gray-700 line-clamp-3">
+                  <div className="text-sm sm:text-base text-gray-700 line-clamp-2 sm:line-clamp-3">
                     {article.summary_text.slice(0, 300)}...
                   </div>
                 )}

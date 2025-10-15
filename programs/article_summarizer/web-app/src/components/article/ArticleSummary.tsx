@@ -9,13 +9,13 @@ interface ArticleSummaryProps {
 
 export default function ArticleSummary({ article, onTimestampClick }: ArticleSummaryProps) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Summary Text (Paragraph Form) */}
       {article.summary_text && (
-        <div className="space-y-4">
-          <h3 className="text-xl font-semibold text-gray-900">Summary</h3>
+        <div className="space-y-3 sm:space-y-4">
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Summary</h3>
           <div
-            className="prose prose-lg max-w-none text-gray-700 leading-relaxed"
+            className="prose prose-sm sm:prose-base lg:prose-lg max-w-none text-gray-700 leading-relaxed"
             dangerouslySetInnerHTML={{ __html: article.summary_text }}
           />
         </div>
@@ -41,11 +41,11 @@ export default function ArticleSummary({ article, onTimestampClick }: ArticleSum
       {article.topics && article.topics.length > 0 && (
         <div className="space-y-2">
           <h4 className="text-sm font-medium text-gray-700">Topics:</h4>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {article.topics.map((topic, index) => (
               <span
                 key={index}
-                className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs"
+                className="px-2 py-0.5 sm:py-1 bg-purple-100 text-purple-800 rounded-full text-xs"
               >
                 {topic}
               </span>

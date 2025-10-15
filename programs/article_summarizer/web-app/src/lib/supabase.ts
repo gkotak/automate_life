@@ -30,6 +30,7 @@ export type Article = {
   video_id: string | null
   audio_url: string | null
   platform: string | null
+  source: string | null
   created_at: string
   updated_at: string
   tags: string[] | null
