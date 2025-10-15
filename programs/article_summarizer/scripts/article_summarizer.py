@@ -165,23 +165,29 @@ class ArticleSummarizer(BaseProcessor):
         response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
         soup = self._get_soup(response.content)
 
-        # Check if we should use browser fetch for this URL/response
-        should_use_browser = self.auth_manager.should_use_browser_fetch(url, response)
-
-        if should_use_browser:
-            self.logger.info("🌐 [BROWSER FALLBACK] Anti-bot measures detected, switching to browser fetch...")
-            browser_success, html_content, browser_message = self.auth_manager.fetch_with_browser(url)
-
-            if browser_success:
-                soup = self._get_soup(html_content)
-                self.logger.info("✅ [BROWSER FALLBACK] Successfully retrieved content via browser")
-            else:
-                self.logger.warning(f"⚠️ [BROWSER FALLBACK] Browser fetch failed: {browser_message}")
-                self.logger.warning("⚠️ [BROWSER FALLBACK] Continuing with standard request content...")
-
-        # Detect platform and handle authentication
+        # Detect platform first
         platform = self.auth_manager.detect_platform(url)
+
+        # Check if URL already has authentication tokens - if so, skip browser fetch
+        # This prevents unnecessary Playwright invocation for URLs with access_token params
         auth_required, auth_reason = self.auth_manager.check_authentication_required(url, platform)
+
+        # Only use browser fetch if no access token is present and anti-bot measures detected
+        if auth_reason != "url_contains_auth_token":
+            should_use_browser = self.auth_manager.should_use_browser_fetch(url, response)
+
+            if should_use_browser:
+                self.logger.info("🌐 [BROWSER FALLBACK] Anti-bot measures detected, switching to browser fetch...")
+                browser_success, html_content, browser_message = self.auth_manager.fetch_with_browser(url)
+
+                if browser_success:
+                    soup = self._get_soup(html_content)
+                    self.logger.info("✅ [BROWSER FALLBACK] Successfully retrieved content via browser")
+                else:
+                    self.logger.warning(f"⚠️ [BROWSER FALLBACK] Browser fetch failed: {browser_message}")
+                    self.logger.warning("⚠️ [BROWSER FALLBACK] Continuing with standard request content...")
+        else:
+            self.logger.info("✅ [SKIP BROWSER] URL contains access token, using direct request")
 
         if auth_required:
             auth_success, auth_message = self.auth_manager.authenticate_if_needed(url, platform)
@@ -828,10 +834,14 @@ CRITICAL TIMESTAMP RULES:
                 embedding_text = self._build_embedding_text(metadata, ai_summary)
                 embedding = self._generate_embedding(embedding_text)
 
+            # Extract source name
+            source = self._extract_source(metadata['url'], metadata)
+
             # Build article record
             article_data = {
                 'title': metadata['title'],
                 'url': metadata['url'],
+                'source': source,
                 'summary_text': ai_summary.get('summary', ''),
                 'transcript_text': transcript_text,
                 'original_article_text': metadata.get('article_text'),
@@ -882,6 +892,20 @@ CRITICAL TIMESTAMP RULES:
 
     def _extract_title(self, soup, url: str) -> str:
         """Extract title from page"""
+        # Try Open Graph title first (most reliable for modern sites)
+        og_title = soup.find('meta', property='og:title')
+        if og_title and og_title.get('content'):
+            title = og_title['content'].strip()
+            if title:
+                return title
+
+        # Try Twitter card title
+        twitter_title = soup.find('meta', attrs={'name': 'twitter:title'})
+        if twitter_title and twitter_title.get('content'):
+            title = twitter_title['content'].strip()
+            if title:
+                return title
+
         # Try multiple selectors
         title_selectors = [
             'h1', 'title',
@@ -892,7 +916,10 @@ CRITICAL TIMESTAMP RULES:
         for selector in title_selectors:
             element = soup.select_one(selector)
             if element and element.get_text(strip=True):
-                return element.get_text(strip=True)
+                title = element.get_text(strip=True)
+                # Skip generic/placeholder titles
+                if title.lower() not in ['search results', 'loading...', 'article']:
+                    return title
 
         # Fallback to URL
         return f"Article from {self._extract_domain(url)}"
@@ -901,6 +928,185 @@ CRITICAL TIMESTAMP RULES:
         """Extract domain from URL"""
         from urllib.parse import urlparse
         return urlparse(url).netloc
+
+    def _extract_source(self, url: str, metadata: Dict) -> str:
+        """
+        Extract source name from URL
+
+        For YouTube: Extract channel name
+        For PocketCasts: Extract podcast name
+        For other URLs: Format domain name nicely
+
+        Args:
+            url: Article URL
+            metadata: Article metadata containing platform info
+
+        Returns:
+            Formatted source name (normalized)
+        """
+        from urllib.parse import urlparse
+
+        # YouTube - try to extract channel name
+        if 'youtube.com' in url or 'youtu.be' in url:
+            channel_name = self._extract_youtube_channel_name(url)
+            if channel_name:
+                return self._normalize_source_name(channel_name)
+            return "YouTube"
+
+        # PocketCasts - extract podcast name from metadata
+        if 'pocketcasts.com' in url:
+            podcast_name = metadata.get('podcast_title') or metadata.get('podcast_name')
+            if podcast_name:
+                return self._normalize_source_name(podcast_name)
+            return "Pocket Casts"
+
+        # For other URLs, format domain nicely
+        domain = self._extract_domain(url)
+
+        # Remove common prefixes
+        domain = domain.replace('www.', '')
+
+        # Special case mappings for common domains
+        domain_mappings = {
+            'substack.com': lambda d: self._format_substack_name(d),
+            'medium.com': 'Medium',
+            'nytimes.com': 'New York Times',
+            'wsj.com': 'Wall Street Journal',
+            'ft.com': 'Financial Times',
+            'bloomberg.com': 'Bloomberg',
+            'techcrunch.com': 'TechCrunch',
+            'theverge.com': 'The Verge',
+            'arstechnica.com': 'Ars Technica',
+            'wired.com': 'Wired',
+            'stratechery.com': 'Stratechery',
+            'lennysnewsletter.com': "Lenny",
+            'akashbajwa.co': 'Akash Bajwa',
+        }
+
+        # Check domain mappings
+        for key, value in domain_mappings.items():
+            if key in domain:
+                if callable(value):
+                    return self._normalize_source_name(value(domain))
+                return value
+
+        # Default: Capitalize domain name
+        return self._normalize_source_name(self._format_domain_name(domain))
+
+    def _normalize_source_name(self, source: str) -> str:
+        """
+        Normalize source name by removing common suffixes like Newsletter, Podcast, Journal, etc.
+
+        Args:
+            source: Raw source name
+
+        Returns:
+            Normalized source name
+        """
+        import re
+
+        # List of suffixes to remove (case-insensitive)
+        suffixes_to_remove = [
+            'Newsletter',
+            'Podcast',
+            'Journal',
+            'Magazine',
+            'Blog',
+            'Daily',
+            'Weekly',
+            'Show',
+            'Network',
+            'Media',
+            'News'
+        ]
+
+        # Build regex pattern to match suffixes at the end
+        # Pattern matches: optional space/colon/dash/apostrophe+s, then suffix
+        # This will match patterns like:
+        # - "Lenny's Newsletter" -> "Lenny's"
+        # - "Lenny's Podcast" -> "Lenny's"
+        # - "TechCrunch Daily" -> "TechCrunch"
+        pattern = r"\s*[-:,]?\s*(?:'s\s+)?(" + '|'.join(suffixes_to_remove) + r")\s*$"
+
+        # Remove matched suffixes (case-insensitive)
+        normalized = re.sub(pattern, '', source, flags=re.IGNORECASE)
+
+        # Clean up any trailing whitespace, colons, or dashes
+        normalized = normalized.rstrip(' :-,')
+
+        return normalized.strip()
+
+    def _format_substack_name(self, domain: str) -> str:
+        """Format Substack subdomain as source name"""
+        # Extract subdomain from domain like 'example.substack.com'
+        parts = domain.split('.')
+        if len(parts) >= 3 and parts[-2] == 'substack':
+            subdomain = parts[0]
+            # Capitalize and replace hyphens with spaces
+            return subdomain.replace('-', ' ').title()
+        return "Substack"
+
+    def _format_domain_name(self, domain: str) -> str:
+        """Format domain name nicely (capitalize, spaces)"""
+        # Remove TLD
+        name = domain.rsplit('.', 1)[0]
+        # Replace hyphens/underscores with spaces
+        name = name.replace('-', ' ').replace('_', ' ')
+        # Capitalize words
+        return name.title()
+
+    def _extract_youtube_channel_name(self, url: str) -> Optional[str]:
+        """
+        Extract YouTube channel name from video URL
+
+        Args:
+            url: YouTube video URL
+
+        Returns:
+            Channel name or None if not found
+        """
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+
+            # Fetch the YouTube page
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Try to find channel name from meta tags
+            # Method 1: og:site_name sometimes contains channel
+            channel_link = soup.find('link', {'itemprop': 'name'})
+            if channel_link and channel_link.get('content'):
+                return channel_link['content']
+
+            # Method 2: Look for channel name in metadata
+            channel_meta = soup.find('meta', {'name': 'author'})
+            if channel_meta and channel_meta.get('content'):
+                return channel_meta['content']
+
+            # Method 3: Look in structured data (JSON-LD)
+            scripts = soup.find_all('script', type='application/ld+json')
+            for script in scripts:
+                try:
+                    data = json.loads(script.string)
+                    if isinstance(data, dict):
+                        # Look for author/creator info
+                        if 'author' in data and isinstance(data['author'], dict):
+                            if 'name' in data['author']:
+                                return data['author']['name']
+                        if 'creator' in data and isinstance(data['creator'], dict):
+                            if 'name' in data['creator']:
+                                return data['creator']['name']
+                except:
+                    continue
+
+            return None
+
+        except Exception as e:
+            self.logger.debug(f"Could not extract YouTube channel name: {e}")
+            return None
 
     def _sanitize_filename(self, title: str) -> str:
         """Sanitize title for use as filename"""
@@ -985,6 +1191,7 @@ CRITICAL TIMESTAMP RULES:
         try:
             import tempfile
             import requests
+            import os
 
             self.logger.info(f"   🎵 [WHISPER] Attempting to transcribe {media_type} from URL...")
 
@@ -1000,7 +1207,15 @@ CRITICAL TIMESTAMP RULES:
                 for chunk in response.iter_content(chunk_size=8192):
                     temp_file.write(chunk)
 
+            # Check file size (OpenAI Whisper limit is 25MB)
+            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
             self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
+            self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
+
+            # If file exceeds 25MB, split into chunks
+            if file_size_mb > 25:
+                self.logger.info(f"   ✂️ [CHUNKING] File exceeds 25MB limit, splitting into chunks...")
+                return self._transcribe_large_audio_file(temp_path, media_type)
 
             # Transcribe the file
             result = self.file_transcriber.transcribe_file(temp_path)
@@ -1030,7 +1245,6 @@ CRITICAL TIMESTAMP RULES:
             self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
 
             # Clean up temp files
-            import os
             try:
                 os.unlink(temp_path)  # Delete downloaded audio file
                 os.unlink(transcript_json_file)  # Delete transcript JSON file
@@ -1042,6 +1256,115 @@ CRITICAL TIMESTAMP RULES:
 
         except Exception as e:
             self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
+            return None
+
+    def _transcribe_large_audio_file(self, audio_path: str, media_type: str) -> Optional[Dict]:
+        """
+        Transcribe large audio files by splitting into chunks
+
+        Args:
+            audio_path: Path to the audio file
+            media_type: Type of media (audio or video)
+
+        Returns:
+            Transcript data dict or None if transcription fails
+        """
+        try:
+            from pydub import AudioSegment
+            import tempfile
+            import os
+
+            self.logger.info(f"   🎵 [CHUNKING] Loading audio file for splitting...")
+
+            # Load audio file
+            audio = AudioSegment.from_file(audio_path)
+            duration_ms = len(audio)
+            duration_min = duration_ms / 1000 / 60
+
+            self.logger.info(f"   ⏱️ [DURATION] Audio is {duration_min:.1f} minutes")
+
+            # Split into 10-minute chunks (600 seconds = 600,000 ms)
+            chunk_length_ms = 10 * 60 * 1000  # 10 minutes
+            chunks = []
+
+            for i in range(0, duration_ms, chunk_length_ms):
+                chunk = audio[i:i + chunk_length_ms]
+                chunks.append((i / 1000, chunk))  # Store start time in seconds
+
+            self.logger.info(f"   ✂️ [CHUNKS] Split into {len(chunks)} chunks of ~10 minutes each")
+
+            # Transcribe each chunk
+            all_segments = []
+            all_text = []
+
+            for chunk_idx, (start_offset, chunk) in enumerate(chunks):
+                self.logger.info(f"   🎙️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Transcribing...")
+
+                # Save chunk to temp file
+                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as chunk_file:
+                    chunk_path = chunk_file.name
+                    chunk.export(chunk_path, format='mp3')
+
+                try:
+                    # Transcribe this chunk
+                    result = self.file_transcriber.transcribe_file(chunk_path)
+                    transcript_data = result['transcript_data']
+                    transcript_json_file = result['output_file']
+
+                    # Adjust timestamps to account for chunk offset
+                    segments = transcript_data.get('segments', [])
+                    for segment in segments:
+                        all_segments.append({
+                            'start': segment.get('start', 0) + start_offset,
+                            'text': segment.get('text', ''),
+                            'duration': segment.get('end', 0) - segment.get('start', 0)
+                        })
+
+                    all_text.append(transcript_data.get('text', ''))
+
+                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments)")
+
+                    # Clean up chunk files
+                    os.unlink(chunk_path)
+                    os.unlink(transcript_json_file)
+
+                except Exception as chunk_error:
+                    self.logger.warning(f"   ⚠️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Failed: {chunk_error}")
+                    # Continue with other chunks even if one fails
+                    try:
+                        os.unlink(chunk_path)
+                    except:
+                        pass
+
+            # Clean up original file
+            os.unlink(audio_path)
+
+            if not all_segments:
+                self.logger.warning(f"   ❌ [CHUNKING] No segments transcribed successfully")
+                return None
+
+            # Combine all transcripts
+            formatted_transcript = {
+                'success': True,
+                'transcript': all_segments,
+                'text': ' '.join(all_text),
+                'language': 'unknown',
+                'type': 'whisper_transcription_chunked',
+                'source': media_type,
+                'total_entries': len(all_segments),
+                'chunks_processed': len(chunks)
+            }
+
+            self.logger.info(f"   ✅ [WHISPER] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
+
+            return formatted_transcript
+
+        except ImportError:
+            self.logger.error(f"   ❌ [CHUNKING] pydub library not installed. Install with: pip install pydub")
+            self.logger.error(f"   ❌ [CHUNKING] Also requires ffmpeg: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")
+            return None
+        except Exception as e:
+            self.logger.error(f"   ❌ [CHUNKING] Failed to process large audio file: {e}")
             return None
 
     def _extract_article_text_content(self, soup) -> str:

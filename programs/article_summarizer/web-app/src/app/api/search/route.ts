@@ -8,7 +8,7 @@ const supabase = createClient(
 
 interface SearchFilters {
   contentTypes?: string[]
-  platforms?: string[]
+  sources?: string[]
   dateFrom?: string
   dateTo?: string
 }
@@ -137,8 +137,8 @@ export async function POST(request: NextRequest) {
       results = results.filter(r => filters.contentTypes!.includes(r.content_source))
     }
 
-    if (filters.platforms && filters.platforms.length > 0) {
-      results = results.filter(r => filters.platforms!.includes(r.platform))
+    if (filters.sources && filters.sources.length > 0) {
+      results = results.filter(r => filters.sources!.includes(r.source))
     }
 
     if (filters.dateFrom) {

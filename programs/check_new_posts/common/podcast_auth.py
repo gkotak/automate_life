@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PocketCasts authentication handler for podcast tracking
+Podcast authentication handler for podcast tracking
 Uses direct API calls to PocketCasts unofficial API
 """
 
@@ -10,7 +10,7 @@ import requests
 from typing import Optional, Dict
 
 
-class PocketCastsAuth:
+class PodcastAuth:
     """Handle PocketCasts authentication using direct API"""
 
     LOGIN_URL = "https://api.pocketcasts.com/user/login"

@@ -8,30 +8,8 @@ interface ArticleSummaryProps {
 }
 
 export default function ArticleSummary({ article, onTimestampClick }: ArticleSummaryProps) {
-  // Check if we have structured data
-  const hasStructuredData =
-    article.key_insights?.length ||
-    article.quotes?.length
-
-  // Render structured data
   return (
     <div className="space-y-8">
-      {/* Article metadata */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-          {article.duration_minutes && (
-            <div className="flex items-center gap-1">
-              🕐 Duration: {article.duration_minutes} minutes
-            </div>
-          )}
-          {article.word_count && (
-            <div className="flex items-center gap-1">
-              📝 ~{article.word_count} words
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Summary Text (Paragraph Form) */}
       {article.summary_text && (
         <div className="space-y-4">

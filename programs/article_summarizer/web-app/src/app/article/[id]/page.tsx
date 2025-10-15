@@ -389,7 +389,23 @@ export default function ArticlePage() {
           )}
 
           {activeTab === 'transcript' && article.transcript_text && (
-            <div className="space-y-2">
+            <div className="space-y-6">
+              {/* Article metadata */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                  {article.duration_minutes && (
+                    <div className="flex items-center gap-1">
+                      🕐 Duration: {article.duration_minutes} minutes
+                    </div>
+                  )}
+                  {article.word_count && (
+                    <div className="flex items-center gap-1">
+                      📝 ~{article.word_count} words
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="space-y-2">
                 {article.transcript_text.split('\n').map((line, index) => {
                   // Parse timestamp format: [MM:SS] or [H:MM:SS]

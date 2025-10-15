@@ -73,12 +73,15 @@ class BaseProcessor:
         self._rotate_log_if_needed(log_file, max_size_mb=2)
 
         logger = logging.getLogger(f'{self.session_name}_logger')
-        logger.setLevel(logging.INFO)
+
+        # Allow DEBUG logging via environment variable
+        log_level = logging.DEBUG if os.getenv('DEBUG_LOGGING') == '1' else logging.INFO
+        logger.setLevel(log_level)
         logger.handlers.clear()
 
         # File handler with detailed formatting
         file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(log_level)
         file_formatter = logging.Formatter(
             f'%(asctime)s - [{self.session_name.upper()}] - %(levelname)s - %(message)s'
         )
@@ -87,7 +90,7 @@ class BaseProcessor:
 
         # Console handler with simple formatting
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(log_level)
         console_formatter = logging.Formatter('%(message)s')
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)

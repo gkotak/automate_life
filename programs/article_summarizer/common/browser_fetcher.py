@@ -349,4 +349,16 @@ class BrowserFetcher:
                 self.logger.info("🌐 [BROWSER FETCH] CAPTCHA detected")
                 return True
 
+            # JavaScript required messages (Pocket Casts, SPAs, etc.)
+            if 'you need to enable javascript' in content or 'javascript is required' in content or 'please enable javascript' in content:
+                self.logger.info("🌐 [BROWSER FETCH] JavaScript required message detected")
+                return True
+
+            # React/SPA loading indicators
+            if '<div id="root"></div>' in content or '<div id="app"></div>' in content:
+                # Check if there's minimal content (likely a SPA that needs JS)
+                if len(content) < 5000:
+                    self.logger.info("🌐 [BROWSER FETCH] Single Page App detected (minimal HTML)")
+                    return True
+
         return False

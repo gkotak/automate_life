@@ -717,6 +717,21 @@ class ContentTypeDetector:
                         self.logger.info(f"✅ [AUDIO FOUND] html_audio - Source: {source_src[:100]}... - Context: embedded_audio_source")
                         break  # Use first valid source
 
+        # Look for direct MP3/audio file links (Pocket Casts, podcast sites, etc.)
+        audio_links = soup.find_all('a', href=True)
+        for link in audio_links:
+            href = link.get('href', '')
+            # Check if link points to audio file
+            if any(ext in href.lower() for ext in ['.mp3', '.m4a', '.wav', '.ogg', '.aac']):
+                audio_data = {
+                    'url': href,
+                    'platform': 'direct_audio_link',
+                    'context': 'audio_file_link',
+                    'link_text': link.get_text(strip=True)[:100]
+                }
+                audio_urls.append(audio_data)
+                self.logger.info(f"✅ [AUDIO FOUND] direct_audio_link - URL: {href[:100]}... - Context: audio_file_link")
+
         # Look for podcast/audio iframes
         iframes = soup.find_all('iframe')
         for iframe in iframes:

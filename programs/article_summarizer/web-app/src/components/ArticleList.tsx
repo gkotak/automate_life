@@ -23,14 +23,46 @@ export default function ArticleList() {
 
   // Filter states
   const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([])
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([])
+  const [selectedSources, setSelectedSources] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
 
+  // Source filter states
+  const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
+  const [showAllSources, setShowAllSources] = useState(false)
+
   useEffect(() => {
     fetchArticles()
+    fetchAvailableSources()
   }, [])
+
+  const fetchAvailableSources = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('source')
+
+      if (error) throw error
+
+      // Count sources
+      const sourceCounts: Record<string, number> = {}
+      data?.forEach(article => {
+        if (article.source) {
+          sourceCounts[article.source] = (sourceCounts[article.source] || 0) + 1
+        }
+      })
+
+      // Convert to array and sort by count
+      const sourcesArray = Object.entries(sourceCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+
+      setAvailableSources(sourcesArray)
+    } catch (error) {
+      console.error('Error fetching sources:', error)
+    }
+  }
 
   const addNotification = (type: NotificationType, message: string) => {
     const id = Date.now().toString()
@@ -95,9 +127,9 @@ export default function ArticleList() {
     }
   }
 
-  const performSearch = async (query: string, contentTypes: string[], platforms: string[], from: string, to: string) => {
+  const performSearch = async (query: string, contentTypes: string[], sources: string[], from: string, to: string) => {
     // Check if we have any filters applied
-    const hasFilters = contentTypes.length > 0 || platforms.length > 0 || from || to
+    const hasFilters = contentTypes.length > 0 || sources.length > 0 || from || to
 
     // If no search query and no filters, just fetch all articles
     if (!query.trim() && !hasFilters) {
@@ -111,7 +143,7 @@ export default function ArticleList() {
       // Build filters object
       const filters: any = {}
       if (contentTypes.length > 0) filters.contentTypes = contentTypes
-      if (platforms.length > 0) filters.platforms = platforms
+      if (sources.length > 0) filters.sources = sources
       if (from) filters.dateFrom = from
       if (to) filters.dateTo = to
 
@@ -144,12 +176,12 @@ export default function ArticleList() {
   }
 
   const searchArticles = async () => {
-    await performSearch(searchQuery, selectedContentTypes, selectedPlatforms, dateFrom, dateTo)
+    await performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, dateTo)
   }
 
   const clearFilters = () => {
     setSelectedContentTypes([])
-    setSelectedPlatforms([])
+    setSelectedSources([])
     setDateFrom('')
     setDateTo('')
   }
@@ -158,17 +190,17 @@ export default function ArticleList() {
     setSelectedContentTypes(prev => {
       const newTypes = prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
       // Trigger search with the new state immediately
-      setTimeout(() => performSearch(searchQuery, newTypes, selectedPlatforms, dateFrom, dateTo), 0)
+      setTimeout(() => performSearch(searchQuery, newTypes, selectedSources, dateFrom, dateTo), 0)
       return newTypes
     })
   }
 
-  const togglePlatform = (platform: string) => {
-    setSelectedPlatforms(prev => {
-      const newPlatforms = prev.includes(platform) ? prev.filter(p => p !== platform) : [...prev, platform]
+  const toggleSource = (source: string) => {
+    setSelectedSources(prev => {
+      const newSources = prev.includes(source) ? prev.filter(s => s !== source) : [...prev, source]
       // Trigger search with the new state immediately
-      setTimeout(() => performSearch(searchQuery, selectedContentTypes, newPlatforms, dateFrom, dateTo), 0)
-      return newPlatforms
+      setTimeout(() => performSearch(searchQuery, selectedContentTypes, newSources, dateFrom, dateTo), 0)
+      return newSources
     })
   }
 
@@ -321,7 +353,7 @@ export default function ArticleList() {
                       : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  Filters {(selectedContentTypes.length + selectedPlatforms.length) > 0 && `(${selectedContentTypes.length + selectedPlatforms.length})`}
+                  Filters {(selectedContentTypes.length + selectedSources.length) > 0 && `(${selectedContentTypes.length + selectedSources.length})`}
                 </button>
                 <button
                   onClick={searchArticles}
@@ -344,7 +376,7 @@ export default function ArticleList() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Content Type</label>
                     <div className="space-y-2">
-                      {['video', 'audio', 'article', 'mixed'].map(type => (
+                      {['video', 'audio', 'article'].map(type => (
                         <label key={type} className="flex items-center cursor-pointer">
                           <input
                             type="checkbox"
@@ -358,21 +390,30 @@ export default function ArticleList() {
                     </div>
                   </div>
 
-                  {/* Platform Filter */}
+                  {/* Source Filter */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Platform</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Source</label>
                     <div className="space-y-2">
-                      {['youtube', 'substack', 'stratechery', 'other'].map(platform => (
-                        <label key={platform} className="flex items-center cursor-pointer">
+                      {(showAllSources ? availableSources : availableSources.slice(0, 4)).map(source => (
+                        <label key={source.name} className="flex items-center cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={selectedPlatforms.includes(platform)}
-                            onChange={() => togglePlatform(platform)}
+                            checked={selectedSources.includes(source.name)}
+                            onChange={() => toggleSource(source.name)}
                             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="ml-2 text-sm text-gray-700 capitalize">{platform}</span>
+                          <span className="ml-2 text-sm text-gray-700">{source.name}</span>
+                          <span className="ml-auto text-xs text-gray-500">({source.count})</span>
                         </label>
                       ))}
+                      {availableSources.length > 4 && (
+                        <button
+                          onClick={() => setShowAllSources(!showAllSources)}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          {showAllSources ? 'Show less' : `More (${availableSources.length - 4})`}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -386,7 +427,7 @@ export default function ArticleList() {
                         const newDateFrom = e.target.value
                         setDateFrom(newDateFrom)
                         // Trigger search with the new date
-                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedPlatforms, newDateFrom, dateTo), 0)
+                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, newDateFrom, dateTo), 0)
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                     />
@@ -401,7 +442,7 @@ export default function ArticleList() {
                         const newDateTo = e.target.value
                         setDateTo(newDateTo)
                         // Trigger search with the new date
-                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedPlatforms, dateFrom, newDateTo), 0)
+                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, newDateTo), 0)
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                     />
@@ -409,7 +450,7 @@ export default function ArticleList() {
                 </div>
 
                 {/* Active Filters Display */}
-                {(selectedContentTypes.length > 0 || selectedPlatforms.length > 0 || dateFrom || dateTo) && (
+                {(selectedContentTypes.length > 0 || selectedSources.length > 0 || dateFrom || dateTo) && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {selectedContentTypes.map(type => (
                       <span key={type} className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
@@ -419,10 +460,10 @@ export default function ArticleList() {
                         </button>
                       </span>
                     ))}
-                    {selectedPlatforms.map(platform => (
-                      <span key={platform} className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
-                        {platform}
-                        <button onClick={() => togglePlatform(platform)} className="hover:text-purple-900">
+                    {selectedSources.map(source => (
+                      <span key={source} className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                        {source}
+                        <button onClick={() => toggleSource(source)} className="hover:text-purple-900">
                           <X className="h-3 w-3" />
                         </button>
                       </span>
