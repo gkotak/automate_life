@@ -22,6 +22,7 @@ View results:
 import sys
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -154,6 +155,12 @@ class ArticleSummarizer(BaseProcessor):
         Returns:
             Dictionary containing metadata and content analysis
         """
+        # Check if URL is a direct YouTube video link
+        youtube_match = re.match(r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', url)
+        if youtube_match:
+            self.logger.info("🎥 [DIRECT YOUTUBE] Detected direct YouTube video URL")
+            return self._process_direct_youtube_url(url, youtube_match.group(1))
+
         # Get page content
         response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
         soup = self._get_soup(response.content)
@@ -211,6 +218,92 @@ class ArticleSummarizer(BaseProcessor):
 
         return metadata
 
+    def _process_direct_youtube_url(self, url: str, video_id: str) -> Dict:
+        """
+        Process a direct YouTube video URL (e.g., https://www.youtube.com/watch?v=xyz)
+
+        Args:
+            url: The YouTube video URL
+            video_id: Extracted YouTube video ID
+
+        Returns:
+            Dictionary containing metadata for direct YouTube video
+        """
+        self.logger.info(f"   📹 [YOUTUBE VIDEO] Processing video ID: {video_id}")
+
+        # Try to get video title from YouTube
+        try:
+            response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
+            soup = self._get_soup(response.content)
+            title = self._extract_title(soup, url)
+        except:
+            title = f"YouTube Video: {video_id}"
+
+        # Extract transcript
+        self.logger.info(f"   🎥 [EXTRACTING] YouTube transcript for video: {video_id}")
+        transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
+
+        transcripts = {}
+        article_text = ""
+
+        if transcript_data and transcript_data.get('success'):
+            transcripts[video_id] = transcript_data
+            self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
+
+            # Extract text from transcript for article content
+            if 'transcript' in transcript_data:
+                article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
+                self.logger.info(f"      ✓ Extracted {len(article_text)} characters from transcript")
+        else:
+            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
+            self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
+
+            # Fallback: Try to download and transcribe video audio using Whisper
+            self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
+
+            # Extract audio URL using yt-dlp
+            audio_url = self._extract_youtube_audio_url(video_id)
+            if audio_url:
+                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
+                transcript_data = self._download_and_transcribe_media(audio_url, "video")
+                if transcript_data:
+                    transcripts[video_id] = transcript_data
+                    self.logger.info(f"      ✓ Video transcription successful via Whisper")
+
+                    # Extract text from transcript
+                    if 'transcript' in transcript_data:
+                        article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
+                        self.logger.info(f"      ✓ Extracted {len(article_text)} characters from Whisper transcript")
+                else:
+                    self.logger.info(f"      ✗ Whisper transcription failed")
+            else:
+                self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
+                self.logger.info(f"      ℹ️ [FALLBACK] Proceeding with title and metadata only")
+
+        # Create video URL dict in expected format
+        video_urls = [{
+            'video_id': video_id,
+            'url': url,
+            'platform': 'youtube',
+            'context': 'direct_url',
+            'relevance_score': 1.0
+        }]
+
+        return {
+            'title': title,
+            'url': url,
+            'platform': 'youtube',
+            'content_type': type('obj', (object,), {
+                'has_embedded_video': True,
+                'has_embedded_audio': False,
+                'is_text_only': False
+            })(),
+            'extracted_at': datetime.now().isoformat(),
+            'media_info': {'youtube_urls': video_urls},
+            'transcripts': transcripts,
+            'article_text': article_text
+        }
+
     def _process_video_content(self, video_urls: List[Dict], soup, base_url: str) -> Dict:
         """Process content with single validated video"""
 
@@ -243,18 +336,20 @@ class ArticleSummarizer(BaseProcessor):
             self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
 
             # Fallback: Try to download and transcribe video audio using Whisper
-            # Construct YouTube audio URL (yt-dlp would normally handle this, but we'll try direct URL)
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
             self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
 
-            # Note: This requires yt-dlp or youtube-dl to extract audio URL
-            # For now, we'll skip auto-download and just log the attempt
-            # Future enhancement: integrate yt-dlp to extract audio stream URL
-            self.logger.info(f"      ⚠️ [FALLBACK] Video audio transcription requires yt-dlp integration (not yet implemented)")
-            # transcript_data = self._download_and_transcribe_media(audio_url, "video")
-            # if transcript_data:
-            #     transcripts[video_id] = transcript_data
-            #     self.logger.info(f"      ✓ Video transcription successful via Whisper")
+            # Extract audio URL using yt-dlp
+            audio_url = self._extract_youtube_audio_url(video_id)
+            if audio_url:
+                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
+                transcript_data = self._download_and_transcribe_media(audio_url, "video")
+                if transcript_data:
+                    transcripts[video_id] = transcript_data
+                    self.logger.info(f"      ✓ Video transcription successful via Whisper")
+                else:
+                    self.logger.info(f"      ✗ Whisper transcription failed")
+            else:
+                self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
 
         # Always extract article text content
         self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
@@ -822,6 +917,55 @@ CRITICAL TIMESTAMP RULES:
         sanitized = re.sub(r'_{2,}', '_', sanitized)
         # Limit length
         return sanitized[:100] if len(sanitized) > 100 else sanitized
+
+    def _extract_youtube_audio_url(self, video_id: str) -> Optional[str]:
+        """
+        Extract audio stream URL from YouTube video using yt-dlp
+
+        Args:
+            video_id: YouTube video ID
+
+        Returns:
+            Audio stream URL or None if extraction fails
+        """
+        try:
+            import yt_dlp
+
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            self.logger.info(f"      🔧 [YT-DLP] Extracting audio URL from YouTube...")
+
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=False)
+
+                # Get the best audio format URL
+                if 'url' in info:
+                    audio_url = info['url']
+                    self.logger.info(f"      ✅ [YT-DLP] Extracted audio URL successfully")
+                    return audio_url
+                elif 'formats' in info:
+                    # Find best audio format
+                    audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none']
+                    if audio_formats:
+                        # Sort by audio bitrate, get best quality
+                        best_audio = max(audio_formats, key=lambda x: x.get('abr', 0))
+                        audio_url = best_audio.get('url')
+                        if audio_url:
+                            self.logger.info(f"      ✅ [YT-DLP] Extracted audio URL successfully")
+                            return audio_url
+
+            self.logger.warning(f"      ⚠️ [YT-DLP] No audio URL found in video info")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"      ❌ [YT-DLP] Failed to extract audio URL: {e}")
+            return None
 
     def _download_and_transcribe_media(self, media_url: str, media_type: str = "audio") -> Optional[Dict]:
         """

@@ -28,8 +28,8 @@ class SpotifyAuth:
 
     # Required scopes for podcast tracking
     SCOPES = [
-        "user-read-recently-played",
-        "user-library-read"  # For accessing saved episodes/shows
+        "user-library-read",  # For accessing saved episodes/shows
+        "user-read-playback-position"  # For tracking episode playback progress
     ]
 
     def __init__(self, base_dir: Path, logger: logging.Logger = None):

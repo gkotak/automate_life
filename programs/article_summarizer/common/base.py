@@ -69,8 +69,8 @@ class BaseProcessor:
         """Setup logging to both console and file with rotation"""
         log_file = self.logs_dir / f"{self.session_name}.log"
 
-        # Rotate log if it's too large (10MB limit)
-        self._rotate_log_if_needed(log_file, max_size_mb=10)
+        # Rotate log if it's too large (2MB limit - keeps ~few days)
+        self._rotate_log_if_needed(log_file, max_size_mb=2)
 
         logger = logging.getLogger(f'{self.session_name}_logger')
         logger.setLevel(logging.INFO)

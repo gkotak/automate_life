@@ -6,6 +6,7 @@ import { supabase, Article } from '@/lib/supabase'
 import { ArrowLeft, ExternalLink, Calendar, Tag, Play, FileText, Headphones } from 'lucide-react'
 import ArticleSummary from '@/components/article/ArticleSummary'
 import ImageGallery from '@/components/article/ImageGallery'
+import RelatedArticles from '@/components/RelatedArticles'
 
 // YouTube API type declarations
 declare global {
@@ -426,6 +427,9 @@ export default function ArticlePage() {
               </div>
             </div>
           )}
+
+          {/* Related Articles Section */}
+          {article && <RelatedArticles articleId={article.id} />}
         </div>
       </div>
     </div>

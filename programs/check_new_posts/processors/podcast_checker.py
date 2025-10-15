@@ -23,7 +23,7 @@ class PodcastChecker(BaseProcessor):
     """Check Spotify for recently played podcast episodes"""
 
     # Spotify API endpoints
-    RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played"
+    SAVED_EPISODES_URL = "https://api.spotify.com/v1/me/episodes"
     SHOW_URL = "https://api.spotify.com/v1/shows"
     EPISODE_URL = "https://api.spotify.com/v1/episodes"
 
@@ -79,15 +79,15 @@ class PodcastChecker(BaseProcessor):
         # Use Spotify's episode ID as the primary identifier
         return generate_post_id(episode_name, episode_id)
 
-    def _fetch_recently_played(self, limit: int = 50) -> List[Dict]:
+    def _fetch_saved_episodes(self, limit: int = 50) -> List[Dict]:
         """
-        Fetch recently played tracks/episodes from Spotify
+        Fetch user's saved podcast episodes from Spotify
 
         Args:
             limit: Maximum number of items to fetch (max 50)
 
         Returns:
-            List of recently played items
+            List of saved episode items with playback position
         """
         # Get valid access token
         access_token = self.spotify_auth.get_valid_token()
@@ -95,7 +95,7 @@ class PodcastChecker(BaseProcessor):
             self.logger.error("❌ Failed to get valid Spotify access token")
             return []
 
-        self.logger.info(f"🎵 Fetching last {limit} recently played items from Spotify...")
+        self.logger.info(f"🎵 Fetching saved podcast episodes from Spotify...")
 
         try:
             headers = {
@@ -107,7 +107,7 @@ class PodcastChecker(BaseProcessor):
             }
 
             response = requests.get(
-                self.RECENTLY_PLAYED_URL,
+                self.SAVED_EPISODES_URL,
                 headers=headers,
                 params=params,
                 timeout=Config.DEFAULT_TIMEOUT
@@ -117,52 +117,52 @@ class PodcastChecker(BaseProcessor):
             data = response.json()
 
             items = data.get('items', [])
-            self.logger.info(f"✅ Retrieved {len(items)} recently played items")
+            self.logger.info(f"✅ Retrieved {len(items)} saved episodes")
 
             return items
 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"❌ Error fetching recently played: {e}")
+            self.logger.error(f"❌ Error fetching saved episodes: {e}")
             return []
 
     def _extract_episode_details(self, item: Dict) -> Optional[Dict]:
         """
-        Extract episode details from Spotify API response
+        Extract episode details from Spotify saved episodes API response
 
         Args:
-            item: Recently played item from Spotify
+            item: Saved episode item from Spotify (/me/episodes)
 
         Returns:
-            Dictionary with episode details or None if not a podcast
+            Dictionary with episode details including playback position
         """
         try:
-            # Check if this is a podcast episode
-            track = item.get('track', {})
-            track_type = track.get('type')
+            # Extract episode information (saved episodes API uses 'episode' key)
+            episode = item.get('episode', {})
 
-            if track_type != 'episode':
-                return None  # Not a podcast episode
-
-            # Extract episode information
-            episode_id = track.get('id')
-            episode_name = track.get('name')
-            episode_description = track.get('description', '')
-            duration_ms = track.get('duration_ms')
-            release_date = track.get('release_date')
+            episode_id = episode.get('id')
+            episode_name = episode.get('name')
+            episode_description = episode.get('description', '')
+            duration_ms = episode.get('duration_ms')
+            release_date = episode.get('release_date')
 
             # Extract show information
-            show = track.get('show', {})
+            show = episode.get('show', {})
             show_name = show.get('name', 'Unknown Show')
             show_id = show.get('id')
             show_publisher = show.get('publisher', '')
 
             # Extract URLs
-            episode_uri = track.get('uri')  # spotify:episode:xxx
-            external_urls = track.get('external_urls', {})
+            episode_uri = episode.get('uri')  # spotify:episode:xxx
+            external_urls = episode.get('external_urls', {})
             web_url = external_urls.get('spotify', '')
 
-            # Extract played_at timestamp
-            played_at = item.get('played_at')
+            # Extract when the episode was added to library
+            added_at = item.get('added_at')
+
+            # Extract playback position (resume point)
+            resume_point = episode.get('resume_point', {})
+            fully_played = resume_point.get('fully_played', False)
+            resume_position_ms = resume_point.get('resume_position_ms', 0)
 
             # Build episode details
             episode_details = {
@@ -176,7 +176,10 @@ class PodcastChecker(BaseProcessor):
                 'release_date': release_date,
                 'episode_uri': episode_uri,
                 'web_url': web_url,
-                'played_at': played_at
+                'added_at': added_at,
+                'fully_played': fully_played,
+                'resume_position_ms': resume_position_ms,
+                'progress_percent': (resume_position_ms / duration_ms * 100) if duration_ms else 0
             }
 
             return episode_details
@@ -239,37 +242,40 @@ class PodcastChecker(BaseProcessor):
         total_episodes_checked = 0
         new_podcasts_for_processing = []
 
-        # Fetch recently played items
-        recently_played = self._fetch_recently_played(limit=50)
+        # Fetch saved episodes
+        saved_episodes = self._fetch_saved_episodes(limit=50)
 
-        if not recently_played:
-            self.logger.warning("❌ No recently played items found")
+        if not saved_episodes:
+            self.logger.warning("❌ No saved episodes found")
             self.log_session_summary(
                 total_episodes_checked=0,
                 new_podcasts_discovered=0,
                 total_tracked_podcasts=len(tracked_podcasts),
-                summary="No recently played items found"
+                summary="No saved episodes found"
             )
-            return "No recently played items found"
+            return "No saved episodes found"
 
-        self.logger.info(f"🔍 Processing {len(recently_played)} recently played items...")
+        self.logger.info(f"🔍 Processing {len(saved_episodes)} saved episodes...")
 
         # Process each item
-        for idx, item in enumerate(recently_played, 1):
+        for idx, item in enumerate(saved_episodes, 1):
             # Extract episode details
             episode_details = self._extract_episode_details(item)
 
             if not episode_details:
-                continue  # Not a podcast episode, skip
+                continue  # Failed to extract details, skip
 
             total_episodes_checked += 1
 
             episode_id = episode_details['episode_id']
             episode_name = episode_details['episode_name']
             show_name = episode_details['show_name']
+            progress = episode_details['progress_percent']
+            fully_played = episode_details['fully_played']
 
             self.logger.info(f"   🎙️ EPISODE {total_episodes_checked}: {episode_name[:60]}...")
             self.logger.info(f"      📺 Show: {show_name}")
+            self.logger.info(f"      ▶️ Progress: {progress:.1f}% {'✓ Fully played' if fully_played else ''}")
 
             # Generate episode hash
             episode_hash = self._get_episode_hash(episode_id, episode_name)
@@ -277,41 +283,49 @@ class PodcastChecker(BaseProcessor):
 
             # Check if we've already tracked this episode
             if episode_hash not in tracked_podcasts:
-                self.logger.info("      ✅ Episode is NEW (not in tracking database)")
-                new_podcasts_found += 1
+                # Only track episodes that have been started (progress > 0)
+                if progress > 0:
+                    self.logger.info("      ✅ Episode is NEW and has been started")
+                    new_podcasts_found += 1
 
-                # Attempt to get RSS feed (may not be available)
-                show_rss_feed = self._get_show_rss_feed(episode_details['show_id'])
+                    # Attempt to get RSS feed (may not be available)
+                    show_rss_feed = self._get_show_rss_feed(episode_details['show_id'])
 
-                # Add to processing list
-                new_podcasts_for_processing.append({
-                    'episode_name': episode_name,
-                    'show_name': show_name,
-                    'web_url': episode_details['web_url'],
-                    'played_at': episode_details['played_at'],
-                    'episode_hash': episode_hash
-                })
+                    # Add to processing list
+                    new_podcasts_for_processing.append({
+                        'episode_name': episode_name,
+                        'show_name': show_name,
+                        'web_url': episode_details['web_url'],
+                        'added_at': episode_details['added_at'],
+                        'progress_percent': progress,
+                        'fully_played': fully_played,
+                        'episode_hash': episode_hash
+                    })
 
-                # Track this episode
-                tracked_podcasts[episode_hash] = {
-                    'episode_title': episode_name,
-                    'episode_description': episode_details['episode_description'],
-                    'show_name': show_name,
-                    'show_publisher': episode_details['show_publisher'],
-                    'show_id': episode_details['show_id'],
-                    'episode_id': episode_id,
-                    'episode_url': episode_details['episode_uri'],
-                    'web_url': episode_details['web_url'],
-                    'show_rss_feed': show_rss_feed,
-                    'duration_ms': episode_details['duration_ms'],
-                    'release_date': episode_details['release_date'],
-                    'played_at': episode_details['played_at'],
-                    'found_at': datetime.now().isoformat(),
-                    'status': 'discovered',
-                    'platform': 'spotify_podcast'
-                }
+                    # Track this episode
+                    tracked_podcasts[episode_hash] = {
+                        'episode_title': episode_name,
+                        'episode_description': episode_details['episode_description'],
+                        'show_name': show_name,
+                        'show_publisher': episode_details['show_publisher'],
+                        'show_id': episode_details['show_id'],
+                        'episode_id': episode_id,
+                        'episode_url': episode_details['episode_uri'],
+                        'web_url': episode_details['web_url'],
+                        'show_rss_feed': show_rss_feed,
+                        'duration_ms': episode_details['duration_ms'],
+                        'release_date': episode_details['release_date'],
+                        'added_at': episode_details['added_at'],
+                        'progress_percent': progress,
+                        'fully_played': fully_played,
+                        'found_at': datetime.now().isoformat(),
+                        'status': 'discovered',
+                        'platform': 'spotify_podcast'
+                    }
 
-                self.logger.info(f"      📋 NEW PODCAST ADDED TO TRACKING")
+                    self.logger.info(f"      📋 NEW PODCAST ADDED TO TRACKING")
+                else:
+                    self.logger.info("      ⏭️ Episode not started yet, skipping...")
             else:
                 self.logger.info(f"      ♻️ Episode already tracked, skipping...")
 
@@ -368,17 +382,22 @@ class PodcastChecker(BaseProcessor):
             self.logger.info("=" * 80)
 
             for i, podcast in enumerate(new_podcasts, 1):
-                played_at = podcast.get('played_at', 'Unknown')
-                if played_at and played_at != 'Unknown':
+                added_at = podcast.get('added_at', 'Unknown')
+                if added_at and added_at != 'Unknown':
                     # Format timestamp
                     try:
-                        played_dt = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
-                        played_at = played_dt.strftime('%Y-%m-%d %H:%M')
+                        added_dt = datetime.fromisoformat(added_at.replace('Z', '+00:00'))
+                        added_at = added_dt.strftime('%Y-%m-%d %H:%M')
                     except:
                         pass
 
+                progress = podcast.get('progress_percent', 0)
+                fully_played = podcast.get('fully_played', False)
+                status = '✓ Completed' if fully_played else f'{progress:.1f}% played'
+
                 self.logger.info(f"{i}. {podcast['episode_name'][:70]}...")
-                self.logger.info(f"   🎙️ {podcast['show_name']} | ⏰ Played: {played_at}")
+                self.logger.info(f"   🎙️ {podcast['show_name']} | ⏰ Added: {added_at}")
+                self.logger.info(f"   ▶️ Status: {status}")
                 self.logger.info(f"   🔗 {podcast['web_url']}")
 
             self.logger.info("=" * 80)

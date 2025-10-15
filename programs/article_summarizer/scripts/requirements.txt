@@ -5,3 +5,4 @@ youtube-transcript-api>=1.6.0
 python-dotenv>=1.0.0
 supabase>=2.0.0
 playwright>=1.40.0
+yt-dlp>=2024.0.0
