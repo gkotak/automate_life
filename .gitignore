@@ -63,4 +63,6 @@ ENV/
 # Temporary files
 *.tmp
 *.temp
-.cache/
+.cache/.codex/
+# Codex review outputs
+.codex/

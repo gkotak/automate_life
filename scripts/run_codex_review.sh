@@ -22,17 +22,16 @@ tmp_diff="$(mktemp)"
 trap 'rm -f "$tmp_diff"' EXIT
 
 git diff --cached >"$tmp_diff"
-diff_content="$(cat "$tmp_diff")"
 
 codex_state_dir="$repo_root/.codex"
 mkdir -p "$codex_state_dir"
 review_output="$codex_state_dir/last_review.md"
 
-set +e
-codex exec \
-  -C "$repo_root" \
-  --output-last-message "$review_output" \
-  - <<EOF
+# Create prompt with diff
+prompt_file="$(mktemp)"
+trap 'rm -f "$tmp_diff" "$prompt_file"' EXIT
+
+cat >"$prompt_file" <<'PROMPT_END'
 You are OpenAI Codex. Review the staged diff for regressions, bugs,
 missing tests, style inconsistencies, and risky logic. Reply as Markdown with:
 
@@ -41,10 +40,20 @@ missing tests, style inconsistencies, and risky logic. Reply as Markdown with:
 - 👍 Positives worth noting
 
 Diff:
-\`\`\`diff
-$diff_content
-\`\`\`
-EOF
+```diff
+PROMPT_END
+
+cat "$tmp_diff" >>"$prompt_file"
+
+cat >>"$prompt_file" <<'PROMPT_END'
+```
+PROMPT_END
+
+set +e
+codex exec \
+  -C "$repo_root" \
+  --output-last-message "$review_output" \
+  - <"$prompt_file"
 codex_status=$?
 set -e
 
@@ -53,9 +62,14 @@ if [[ $codex_status -ne 0 ]]; then
   exit $codex_status
 fi
 
-if [[ -f "$review_output" ]] && grep -q '🔥' "$review_output"; then
-  echo "[codex-review] Blockers reported by Codex; please address before committing." >&2
-  exit 1
+if [[ -f "$review_output" ]]; then
+  # Check if there are actual blocker items (lines starting with - after the 🔥 Blockers header)
+  # Not just the header itself, but actual content under it
+  if grep -A 1 '🔥 Blockers' "$review_output" | tail -n +2 | grep -q '^- '; then
+    echo "[codex-review] Blockers reported by Codex; please address before committing." >&2
+    cat "$review_output" >&2
+    exit 1
+  fi
 fi
 
 exit 0
