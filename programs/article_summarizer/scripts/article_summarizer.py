@@ -1258,23 +1258,31 @@ CRITICAL TIMESTAMP RULES:
             self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
             return None
 
-    def _transcribe_large_audio_file(self, audio_path: str, media_type: str) -> Optional[Dict]:
+    def _transcribe_large_audio_file(self, audio_path: str, media_type: str, max_duration_minutes: int = 15) -> Optional[Dict]:
         """
-        Transcribe large audio files by splitting into chunks
+        Transcribe large audio files by splitting into chunks with timeout handling
 
         Args:
             audio_path: Path to the audio file
             media_type: Type of media (audio or video)
+            max_duration_minutes: Maximum time to spend on transcription (default: 15 minutes)
 
         Returns:
             Transcript data dict or None if transcription fails
+
+        Note:
+            If max_duration_minutes is reached, returns partial transcript with whatever
+            chunks were successfully transcribed
         """
         try:
             from pydub import AudioSegment
             import tempfile
             import os
+            import time
 
             self.logger.info(f"   🎵 [CHUNKING] Loading audio file for splitting...")
+            start_time = time.time()
+            timeout_seconds = max_duration_minutes * 60
 
             # Load audio file
             audio = AudioSegment.from_file(audio_path)
@@ -1282,6 +1290,7 @@ CRITICAL TIMESTAMP RULES:
             duration_min = duration_ms / 1000 / 60
 
             self.logger.info(f"   ⏱️ [DURATION] Audio is {duration_min:.1f} minutes")
+            self.logger.info(f"   ⏰ [TIMEOUT] Will process for max {max_duration_minutes} minutes")
 
             # Split into 10-minute chunks (600 seconds = 600,000 ms)
             chunk_length_ms = 10 * 60 * 1000  # 10 minutes
@@ -1296,9 +1305,17 @@ CRITICAL TIMESTAMP RULES:
             # Transcribe each chunk
             all_segments = []
             all_text = []
+            chunks_completed = 0
 
             for chunk_idx, (start_offset, chunk) in enumerate(chunks):
-                self.logger.info(f"   🎙️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Transcribing...")
+                # Check if we've exceeded timeout
+                elapsed = time.time() - start_time
+                if elapsed > timeout_seconds:
+                    self.logger.warning(f"   ⏰ [TIMEOUT] Reached {max_duration_minutes} minute limit after {chunk_idx}/{len(chunks)} chunks")
+                    self.logger.info(f"   📦 [PARTIAL] Processing {chunks_completed} completed chunks...")
+                    break
+
+                self.logger.info(f"   🎙️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Transcribing... ({elapsed/60:.1f}/{max_duration_minutes} min elapsed)")
 
                 # Save chunk to temp file
                 with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as chunk_file:
@@ -1321,6 +1338,7 @@ CRITICAL TIMESTAMP RULES:
                         })
 
                     all_text.append(transcript_data.get('text', ''))
+                    chunks_completed += 1
 
                     self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments)")
 
@@ -1344,18 +1362,25 @@ CRITICAL TIMESTAMP RULES:
                 return None
 
             # Combine all transcripts
+            is_partial = chunks_completed < len(chunks)
             formatted_transcript = {
                 'success': True,
                 'transcript': all_segments,
                 'text': ' '.join(all_text),
                 'language': 'unknown',
-                'type': 'whisper_transcription_chunked',
+                'type': 'whisper_transcription_chunked' + ('_partial' if is_partial else ''),
                 'source': media_type,
                 'total_entries': len(all_segments),
-                'chunks_processed': len(chunks)
+                'chunks_processed': chunks_completed,
+                'total_chunks': len(chunks),
+                'is_partial': is_partial
             }
 
-            self.logger.info(f"   ✅ [WHISPER] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
+            if is_partial:
+                self.logger.warning(f"   ⚠️ [PARTIAL] Transcription incomplete: {chunks_completed}/{len(chunks)} chunks processed")
+                self.logger.info(f"   📊 [PARTIAL] Returning partial transcript ({len(formatted_transcript['text'])} chars)")
+            else:
+                self.logger.info(f"   ✅ [WHISPER] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
 
             return formatted_transcript
 
