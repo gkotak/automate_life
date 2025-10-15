@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase, Article } from '@/lib/supabase'
 import { Search, Trash2, ExternalLink, Calendar, Tag, X, CheckCircle, AlertCircle } from 'lucide-react'
@@ -18,8 +18,15 @@ export default function ArticleList() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'summary' | 'transcript' | 'article'>('all')
-  const [searchMode, setSearchMode] = useState<'keyword' | 'semantic'>('keyword')
+  const [searchMode, setSearchMode] = useState<'keyword' | 'hybrid'>('hybrid')
   const [notifications, setNotifications] = useState<Notification[]>([])
+
+  // Filter states
+  const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([])
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([])
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
     fetchArticles()
@@ -88,8 +95,12 @@ export default function ArticleList() {
     }
   }
 
-  const searchArticles = async () => {
-    if (!searchQuery.trim()) {
+  const performSearch = async (query: string, contentTypes: string[], platforms: string[], from: string, to: string) => {
+    // Check if we have any filters applied
+    const hasFilters = contentTypes.length > 0 || platforms.length > 0 || from || to
+
+    // If no search query and no filters, just fetch all articles
+    if (!query.trim() && !hasFilters) {
       fetchArticles()
       return
     }
@@ -97,54 +108,68 @@ export default function ArticleList() {
     try {
       setLoading(true)
 
-      if (searchMode === 'semantic') {
-        // Use semantic search API
-        const response = await fetch('/api/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: searchQuery,
-            limit: 20,
-          }),
-        })
+      // Build filters object
+      const filters: any = {}
+      if (contentTypes.length > 0) filters.contentTypes = contentTypes
+      if (platforms.length > 0) filters.platforms = platforms
+      if (from) filters.dateFrom = from
+      if (to) filters.dateTo = to
 
-        if (!response.ok) {
-          throw new Error('Semantic search failed')
-        }
+      // Use API for search with filters (even if query is empty)
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: query || '',
+          limit: 30,
+          mode: searchMode,
+          filters,
+        }),
+      })
 
-        const { results } = await response.json()
-        setArticles(results || [])
-      } else {
-        // Basic keyword text search
-        let query = supabase
-          .from('articles')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (searchFilter === 'summary') {
-          query = query.ilike('summary_text', `%${searchQuery}%`)
-        } else if (searchFilter === 'transcript') {
-          query = query.ilike('transcript_text', `%${searchQuery}%`)
-        } else if (searchFilter === 'article') {
-          query = query.ilike('original_article_text', `%${searchQuery}%`)
-        } else {
-          // Search across title, summary, and transcript
-          query = query.or(`title.ilike.%${searchQuery}%,summary_text.ilike.%${searchQuery}%,transcript_text.ilike.%${searchQuery}%`)
-        }
-
-        const { data, error } = await query
-
-        if (error) throw error
-        setArticles(data || [])
+      if (!response.ok) {
+        throw new Error('Search failed')
       }
+
+      const { results } = await response.json()
+      setArticles(results || [])
     } catch (error) {
       console.error('Error searching articles:', error)
       addNotification('error', 'Search failed. Please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const searchArticles = async () => {
+    await performSearch(searchQuery, selectedContentTypes, selectedPlatforms, dateFrom, dateTo)
+  }
+
+  const clearFilters = () => {
+    setSelectedContentTypes([])
+    setSelectedPlatforms([])
+    setDateFrom('')
+    setDateTo('')
+  }
+
+  const toggleContentType = (type: string) => {
+    setSelectedContentTypes(prev => {
+      const newTypes = prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+      // Trigger search with the new state immediately
+      setTimeout(() => performSearch(searchQuery, newTypes, selectedPlatforms, dateFrom, dateTo), 0)
+      return newTypes
+    })
+  }
+
+  const togglePlatform = (platform: string) => {
+    setSelectedPlatforms(prev => {
+      const newPlatforms = prev.includes(platform) ? prev.filter(p => p !== platform) : [...prev, platform]
+      // Trigger search with the new state immediately
+      setTimeout(() => performSearch(searchQuery, selectedContentTypes, newPlatforms, dateFrom, dateTo), 0)
+      return newPlatforms
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -221,9 +246,19 @@ export default function ArticleList() {
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex flex-col gap-4">
             {/* Search Mode Toggle */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <span className="text-sm font-medium text-gray-700">Search Mode:</span>
               <div className="flex gap-2">
+                <button
+                  onClick={() => setSearchMode('hybrid')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    searchMode === 'hybrid'
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  🧠 AI Search
+                </button>
                 <button
                   onClick={() => setSearchMode('keyword')}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -234,20 +269,15 @@ export default function ArticleList() {
                 >
                   Keyword
                 </button>
-                <button
-                  onClick={() => setSearchMode('semantic')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    searchMode === 'semantic'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  🧠 Semantic (AI)
-                </button>
               </div>
-              {searchMode === 'semantic' && (
+              {searchMode === 'hybrid' && (
                 <span className="text-xs text-gray-500 italic">
-                  Find articles by meaning, not just keywords
+                  AI understanding + keyword matching for best results
+                </span>
+              )}
+              {searchMode === 'keyword' && (
+                <span className="text-xs text-gray-500 italic">
+                  Fast exact text matching
                 </span>
               )}
             </div>
@@ -260,48 +290,153 @@ export default function ArticleList() {
                   <input
                     type="text"
                     placeholder={
-                      searchMode === 'semantic'
-                        ? 'Ask a question or describe what you\'re looking for...'
-                        : 'Search articles...'
+                      searchMode === 'hybrid'
+                        ? 'Ask a question or search by keywords...'
+                        : 'Search articles by keywords...'
                     }
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={() => {
+                        setSearchQuery('')
+                        fetchArticles()
+                      }}
+                      className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
-                {searchMode === 'keyword' && (
-                  <select
-                    value={searchFilter}
-                    onChange={(e) => setSearchFilter(e.target.value as any)}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">All Content</option>
-                    <option value="summary">Summary Only</option>
-                    <option value="transcript">Transcript Only</option>
-                    <option value="article">Article Only</option>
-                  </select>
-                )}
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    showFilters
+                      ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Filters {(selectedContentTypes.length + selectedPlatforms.length) > 0 && `(${selectedContentTypes.length + selectedPlatforms.length})`}
+                </button>
                 <button
                   onClick={searchArticles}
                   className={`px-6 py-2 text-white rounded-md focus:ring-2 transition-colors ${
-                    searchMode === 'semantic'
-                      ? 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500'
+                    searchMode === 'hybrid'
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
                       : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
                   }`}
                 >
                   Search
                 </button>
-                <button
-                  onClick={fetchArticles}
-                  className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:ring-2 focus:ring-gray-500"
-                >
-                  Clear
-                </button>
               </div>
             </div>
+
+            {/* Filters Section */}
+            {showFilters && (
+              <div className="pt-4 border-t border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Content Type Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Content Type</label>
+                    <div className="space-y-2">
+                      {['video', 'audio', 'article', 'mixed'].map(type => (
+                        <label key={type} className="flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedContentTypes.includes(type)}
+                            onChange={() => toggleContentType(type)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700 capitalize">{type}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Platform Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Platform</label>
+                    <div className="space-y-2">
+                      {['youtube', 'substack', 'stratechery', 'other'].map(platform => (
+                        <label key={platform} className="flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedPlatforms.includes(platform)}
+                            onChange={() => togglePlatform(platform)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700 capitalize">{platform}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Date Range Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => {
+                        const newDateFrom = e.target.value
+                        setDateFrom(newDateFrom)
+                        // Trigger search with the new date
+                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedPlatforms, newDateFrom, dateTo), 0)
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">To Date</label>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => {
+                        const newDateTo = e.target.value
+                        setDateTo(newDateTo)
+                        // Trigger search with the new date
+                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedPlatforms, dateFrom, newDateTo), 0)
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Active Filters Display */}
+                {(selectedContentTypes.length > 0 || selectedPlatforms.length > 0 || dateFrom || dateTo) && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {selectedContentTypes.map(type => (
+                      <span key={type} className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+                        {type}
+                        <button onClick={() => toggleContentType(type)} className="hover:text-blue-900">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    {selectedPlatforms.map(platform => (
+                      <span key={platform} className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                        {platform}
+                        <button onClick={() => togglePlatform(platform)} className="hover:text-purple-900">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      onClick={clearFilters}
+                      className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
