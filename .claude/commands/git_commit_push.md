@@ -20,18 +20,11 @@ For each file that has changes:
 
 ## Step 3: AI Code Review
 
-Use the OpenAI Codex CLI (available as `claude --print --output-format text`) to perform a code review:
+Codex now runs automatically via the pre-commit hook (`scripts/run_codex_review.sh`) and stores the latest report in `.codex/last_review.md`.
 
-For each significant change:
-- Analyze code quality, patterns, and potential issues
-- Check if changes align with the project's architecture (see CLAUDE.md)
-- Identify any security concerns or anti-patterns
-- Verify consistency with existing code style
-
-Present a summary of the review findings to the user, highlighting:
-- ✅ Good changes and improvements
-- ⚠️ Potential issues or concerns
-- 💡 Suggestions for improvement (if any)
+1. If the review file exists, read it and summarize the findings for the user with the usual ✅ / ⚠️ / 💡 callouts.
+2. If the file is missing or the user requests a fresh review, rerun `scripts/run_codex_review.sh` (it respects `SKIP_CODEX=1` when a bypass is needed).
+3. Highlight any 🔥 blockers that Codex surfaced, since the hook will stop the commit until they are resolved.
 
 ## Step 4: Generate Commit Message
 
