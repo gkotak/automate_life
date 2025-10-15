@@ -150,20 +150,15 @@ When a podcast is >25MB (Whisper API limit), it:
 - Adjusts timestamps to account for offsets
 - Reassembles into one seamless transcript
 
-### 3. **Dynamic Source Filtering**
-The web app shows your top 4 content sources by frequency:
-- "Stratechery (12 articles)"
-- "Lenny's Newsletter (8 articles)"
-- "Football 301 (5 episodes)"
-- With a "More" button to expand if you have additional sources
+### 3. **Semantic Search with pgvector + OpenAI Embeddings**
+The web app uses hybrid search combining traditional keywords with AI-powered semantic understanding:
+- **Vector Embeddings**: Each article converted to 1536-dimensional vectors using OpenAI's `text-embedding-3-small`
+- **pgvector Storage**: Vectors stored in PostgreSQL using pgvector extension for efficient similarity search
+- **Cosine Similarity**: Finds semantically similar content even without exact keyword matches
+- **Hybrid Ranking**: Combines keyword relevance with vector similarity for optimal results
+- **Real Example**: Search "China's economic strategy" → finds articles about manufacturing, trade policy, geopolitics
 
-### 4. **Source Name Normalization**
-Automatically cleans up source names:
-- "Lenny's Newsletter" → "Lenny"
-- "Football 301 with Nate Tice Podcast" → "Football 301"
-- Removes common suffixes (Newsletter, Podcast, Journal)
-
-### 5. **Automated Code Review**
+### 4. **Automated Code Review**
 Before every git commit:
 - OpenAI Codex reviews the code changes
 - Blocks commits if critical issues (🔥) are found
