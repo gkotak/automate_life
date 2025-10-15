@@ -18,6 +18,7 @@ export default function ArticleList() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'summary' | 'transcript' | 'article'>('all')
+  const [searchMode, setSearchMode] = useState<'keyword' | 'semantic'>('keyword')
   const [notifications, setNotifications] = useState<Notification[]>([])
 
   useEffect(() => {
@@ -96,29 +97,51 @@ export default function ArticleList() {
     try {
       setLoading(true)
 
-      // Basic text search for now
-      let query = supabase
-        .from('articles')
-        .select('*')
-        .order('created_at', { ascending: false })
+      if (searchMode === 'semantic') {
+        // Use semantic search API
+        const response = await fetch('/api/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: searchQuery,
+            limit: 20,
+          }),
+        })
 
-      if (searchFilter === 'summary') {
-        query = query.ilike('summary_text', `%${searchQuery}%`)
-      } else if (searchFilter === 'transcript') {
-        query = query.ilike('transcript_text', `%${searchQuery}%`)
-      } else if (searchFilter === 'article') {
-        query = query.ilike('original_article_text', `%${searchQuery}%`)
+        if (!response.ok) {
+          throw new Error('Semantic search failed')
+        }
+
+        const { results } = await response.json()
+        setArticles(results || [])
       } else {
-        // Search across title, summary, and transcript
-        query = query.or(`title.ilike.%${searchQuery}%,summary_text.ilike.%${searchQuery}%,transcript_text.ilike.%${searchQuery}%`)
+        // Basic keyword text search
+        let query = supabase
+          .from('articles')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (searchFilter === 'summary') {
+          query = query.ilike('summary_text', `%${searchQuery}%`)
+        } else if (searchFilter === 'transcript') {
+          query = query.ilike('transcript_text', `%${searchQuery}%`)
+        } else if (searchFilter === 'article') {
+          query = query.ilike('original_article_text', `%${searchQuery}%`)
+        } else {
+          // Search across title, summary, and transcript
+          query = query.or(`title.ilike.%${searchQuery}%,summary_text.ilike.%${searchQuery}%,transcript_text.ilike.%${searchQuery}%`)
+        }
+
+        const { data, error } = await query
+
+        if (error) throw error
+        setArticles(data || [])
       }
-
-      const { data, error } = await query
-
-      if (error) throw error
-      setArticles(data || [])
     } catch (error) {
       console.error('Error searching articles:', error)
+      addNotification('error', 'Search failed. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -196,43 +219,88 @@ export default function ArticleList() {
 
         {/* Search Interface */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search articles..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+          <div className="flex flex-col gap-4">
+            {/* Search Mode Toggle */}
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-gray-700">Search Mode:</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSearchMode('keyword')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    searchMode === 'keyword'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Keyword
+                </button>
+                <button
+                  onClick={() => setSearchMode('semantic')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    searchMode === 'semantic'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  🧠 Semantic (AI)
+                </button>
               </div>
+              {searchMode === 'semantic' && (
+                <span className="text-xs text-gray-500 italic">
+                  Find articles by meaning, not just keywords
+                </span>
+              )}
             </div>
-            <div className="flex gap-2">
-              <select
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value as any)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Content</option>
-                <option value="summary">Summary Only</option>
-                <option value="transcript">Transcript Only</option>
-                <option value="article">Article Only</option>
-              </select>
-              <button
-                onClick={searchArticles}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500"
-              >
-                Search
-              </button>
-              <button
-                onClick={fetchArticles}
-                className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:ring-2 focus:ring-gray-500"
-              >
-                Clear
-              </button>
+
+            {/* Search Input */}
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder={
+                      searchMode === 'semantic'
+                        ? 'Ask a question or describe what you\'re looking for...'
+                        : 'Search articles...'
+                    }
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {searchMode === 'keyword' && (
+                  <select
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value as any)}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All Content</option>
+                    <option value="summary">Summary Only</option>
+                    <option value="transcript">Transcript Only</option>
+                    <option value="article">Article Only</option>
+                  </select>
+                )}
+                <button
+                  onClick={searchArticles}
+                  className={`px-6 py-2 text-white rounded-md focus:ring-2 transition-colors ${
+                    searchMode === 'semantic'
+                      ? 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500'
+                      : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+                  }`}
+                >
+                  Search
+                </button>
+                <button
+                  onClick={fetchArticles}
+                  className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:ring-2 focus:ring-gray-500"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
           </div>
         </div>
