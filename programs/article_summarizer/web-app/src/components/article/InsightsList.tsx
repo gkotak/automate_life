@@ -19,25 +19,25 @@ export default function InsightsList({ insights, onTimestampClick }: InsightsLis
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+      <h3 className="text-lg font-semibold text-[#030712] flex items-center gap-2">
         💡 Key Insights
-        <span className="text-sm font-normal text-gray-500">({insights.length})</span>
+        <span className="text-sm font-normal text-[#475569]">({insights.length})</span>
       </h3>
 
       <div className="space-y-3">
         {insights.map((insight, index) => (
           <div
             key={index}
-            className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100"
+            className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-[#e2e8f0]"
           >
             <div className="flex-1">
-              <p className="text-gray-800 leading-relaxed">{insight.insight}</p>
+              <p className="text-[#030712] leading-relaxed">{insight.insight}</p>
             </div>
 
             {insight.timestamp_seconds && insight.time_formatted && (
               <button
                 onClick={() => handleTimestampClick(insight.timestamp_seconds)}
-                className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors shrink-0"
+                className="flex items-center gap-1 px-2 py-1 bg-[#077331] text-white rounded text-sm hover:bg-[#055a24] transition-colors shrink-0"
                 title={`Jump to ${insight.time_formatted}`}
               >
                 <Play className="h-3 w-3" />
