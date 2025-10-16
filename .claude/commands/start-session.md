@@ -1,19 +1,17 @@
-Check if the user already provided a task description in their message (look for words after "/start-session").
+Execute the session start script to create a new git branch for this session:
 
-**If they provided a description already:**
-Example: "/start-session env-vars" or "start session for fixing docs"
-→ Extract the task name and run: `source .claude/hooks/session-start.sh "task-name"`
+```bash
+source .claude/hooks/session-start.sh "$ARGUMENTS"
+```
 
-**If they just said "/start-session" with no description:**
-→ Ask: "What are you working on? (Press Enter to skip for random name)"
-→ If they provide a description, run: `source .claude/hooks/session-start.sh "their-description"`
-→ If they press Enter or say "skip" or "nothing", run: `source .claude/hooks/session-start.sh`
+**If user provided arguments:**
+- `/start-session env-vars` → Creates `agent/env-vars-TIMESTAMP-ID`
+- `/start-session fix-docs` → Creates `agent/fix-docs-TIMESTAMP-ID`
 
-Examples:
-- "/start-session env-vars" → run: `source .claude/hooks/session-start.sh "env-vars"`
-- "/start-session" then user says "docs" → run: `source .claude/hooks/session-start.sh "docs"`
-- "/start-session" then user presses Enter → run: `source .claude/hooks/session-start.sh`
-- "Start session for authentication fixes" → run: `source .claude/hooks/session-start.sh "auth-fixes"`
+**If no arguments (empty):**
+- `/start-session` → Ask: "What are you working on? (Press Enter to skip for random name)"
+- If they provide description, run with that description
+- If they press Enter or skip, run: `source .claude/hooks/session-start.sh` (creates `agent/work-TIMESTAMP-ID`)
 
 Then tell the user:
 1. What branch was created (show the full branch name)
