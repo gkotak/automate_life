@@ -7,12 +7,13 @@ import ChatMessages from '@/components/chat/ChatMessages'
 import ChatInput from '@/components/chat/ChatInput'
 import { useChat } from '@/hooks/useChat'
 import { Conversation } from '@/types/chat'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Menu } from 'lucide-react'
 
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const {
     messages,
@@ -57,10 +58,12 @@ export default function ChatPage() {
 
   const handleSelectConversation = async (id: number) => {
     await loadConversation(id)
+    setIsSidebarOpen(false) // Close sidebar on mobile after selecting
   }
 
   const handleNewChat = () => {
     clearMessages()
+    setIsSidebarOpen(false) // Close sidebar on mobile after new chat
   }
 
   const handleDeleteConversation = async (id: number) => {
@@ -87,19 +90,42 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <ChatSidebar
-        conversations={conversations}
-        currentConversationId={conversationId}
-        onSelectConversation={handleSelectConversation}
-        onNewChat={handleNewChat}
-        onDeleteConversation={handleDeleteConversation}
-      />
+      {/* Mobile Overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - Hidden on mobile unless open, always visible on lg+ */}
+      <div className={`
+        fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto
+        transform transition-transform duration-300 ease-in-out
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        <ChatSidebar
+          conversations={conversations}
+          currentConversationId={conversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+          onDeleteConversation={handleDeleteConversation}
+        />
+      </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-white border-b px-4 py-3 flex items-center gap-3">
+          {/* Hamburger Menu - Only visible on mobile */}
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Toggle sidebar"
+          >
+            <Menu size={20} className="text-gray-600" />
+          </button>
+
           <Link
             href="/"
             className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"

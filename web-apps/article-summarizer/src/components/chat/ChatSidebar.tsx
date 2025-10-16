@@ -46,7 +46,7 @@ export default function ChatSidebar({
   }
 
   return (
-    <div className="w-64 sm:w-72 lg:w-80 bg-[#077331] text-white flex flex-col h-full">
+    <div className="w-64 sm:w-72 lg:w-80 bg-[#077331] text-white flex flex-col h-screen lg:h-full">
       {/* Header */}
       <div className="p-4 border-b border-green-600">
         <button
