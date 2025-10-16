@@ -22,10 +22,11 @@ For each file that has changes:
 
 Codex now runs automatically via the pre-commit hook (`scripts/run_codex_review.sh`) and stores the latest report in `.codex/last_review.md`.
 
-1. If the review file exists, read it and summarize the findings for the user with the usual ✅ / ⚠️ / 💡 callouts.
-2. If the file is missing or the user requests a fresh review, rerun `scripts/run_codex_review.sh` (it respects `SKIP_CODEX=1` when a bypass is needed, especially if it take more than 90 seconds.
-3. Highlight any 🔥 blockers that Codex surfaced, since the hook will stop the commit until they are resolved. 
-4. always run the codex review but if it takes too long or if you disagree with any of the blockers ask me
+1. Codex review requires staged changes. So stage the changes first and then run the review
+2. If the review file exists, read it and summarize the findings for the user with the usual ✅ / ⚠️ / 💡 callouts.
+3. If the file is missing or the user requests a fresh review, rerun `scripts/run_codex_review.sh` (it respects `SKIP_CODEX=1` when a bypass is needed, especially if it take more than 90 seconds.
+4. Highlight any 🔥 blockers that Codex surfaced, since the hook will stop the commit until they are resolved. 
+5. always run the codex review but if it takes too long or if you disagree with any of the blockers ask me
 
 Ask: "Would you like me to proceed with commit despite codex saying it is a blocker" OR "Would you like me to proceed with commit despite codex code review not yet completed?"
 
