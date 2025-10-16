@@ -66,3 +66,8 @@ ENV/
 .cache/.codex/
 # Codex review outputs
 .codex/
+
+# Next.js
+.next/
+out/
+*.next
