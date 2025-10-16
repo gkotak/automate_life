@@ -32,9 +32,13 @@ This is a Claude Code configuration repository that automates content analysis a
 programs/article_summarizer/
 ├── scripts/                    # Core processing scripts
 ├── logs/                       # Processing logs
-├── web-app/                    # Next.js web interface (runs on port 3000)
 ├── common/                     # Shared utilities
 └── processors/                 # Content processors
+
+web-apps/article-summarizer/   # Next.js web interface (runs on port 3000)
+├── src/                        # React components and pages
+├── public/                     # Static assets
+└── package.json                # Dependencies
 ```
 
 **Check New Posts** (`programs/check_new_posts/`)
@@ -72,7 +76,7 @@ programs/article_summarizer/
 - Database stores structured JSON (key_insights, quotes, transcripts, etc.)
 - Web app dynamically renders from Supabase - no static files
 - Authentication framework supports multiple platforms (Substack, Medium, Patreon, etc.)
-- To view summaries: `cd programs/article_summarizer/web-app && npm run dev`
+- To view summaries: `cd web-apps/article-summarizer && npm run dev`
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

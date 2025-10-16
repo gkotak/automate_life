@@ -177,10 +177,11 @@ automate_life/
 │   │   │   ├── authentication.py  # Paywall handling
 │   │   │   ├── content_detector.py # Video/audio detection
 │   │   │   └── browser_fetcher.py # Playwright automation
-│   │   └── web-app/               # Next.js frontend
-│   │       └── src/
-│   │           ├── components/    # React components
-│   │           └── app/           # Next.js app router
+├── web-apps/
+│   └── article-summarizer/        # Next.js frontend
+│       └── src/
+│           ├── components/        # React components
+│           └── app/               # Next.js app router
 │   └── check_new_posts/           # Automated content discovery
 │       ├── processors/
 │       │   ├── post_checker.py    # Newsletter/RSS monitoring
@@ -257,7 +258,7 @@ You can browse my processed content library without any setup!
 
 4. **Install frontend dependencies**:
    ```bash
-   cd programs/article_summarizer/web-app
+   cd web-apps/article-summarizer
    npm install
    ```
 

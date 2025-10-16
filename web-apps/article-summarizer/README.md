@@ -1,4 +1,10 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Article Summarizer Web App
+
+Web interface for viewing and managing article summaries. Built with [Next.js](https://nextjs.org) and Supabase.
+
+## Location
+
+This web app is located at `web-apps/article-summarizer/` (moved from `programs/article_summarizer/web-app/`).
 
 ## Getting Started
 
