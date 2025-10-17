@@ -122,10 +122,17 @@ class PodcastChecker(BaseProcessor):
         """Save tracked podcasts to Supabase content_queue table"""
         try:
             # Convert podcasts dict to list of records for upserting
-            records = []
+            # Use a dict to deduplicate by URL (in case multiple episode_hashes map to same URL)
+            records_dict = {}
             for episode_hash, podcast in podcasts.items():
-                record = {
-                    'url': podcast['episode_url'],
+                url = podcast['episode_url']
+
+                # Skip if we already have this URL
+                if url in records_dict:
+                    continue
+
+                records_dict[url] = {
+                    'url': url,
                     'title': podcast['episode_title'],
                     'content_type': 'podcast_episode',
                     'channel_title': podcast['podcast_title'],
@@ -143,7 +150,9 @@ class PodcastChecker(BaseProcessor):
                     'progress_percent': podcast.get('progress_percent'),
                     'playing_status': podcast.get('playing_status')
                 }
-                records.append(record)
+
+            # Convert to list
+            records = list(records_dict.values())
 
             # Batch upsert to Supabase (upsert based on unique URL)
             if records:
