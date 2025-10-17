@@ -346,12 +346,19 @@ class BrowserFetcher:
         Returns:
             True if browser fetch should be used
         """
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc
+
+        # NEVER use browser fetch for PocketCasts
+        # PocketCasts URLs are handled by podcast_checker which extracts YouTube links
+        # and does its own scraping logic
+        if 'pocketcasts.com' in domain:
+            self.logger.info(f"🚫 [BROWSER FETCH] Skipping browser fetch for PocketCasts (handled by podcast_checker)")
+            return False
+
         # Check environment variable for domains that always need browser fetch
         browser_fetch_domains = os.getenv('BROWSER_FETCH_DOMAINS', '').split(',')
         browser_fetch_domains = [d.strip() for d in browser_fetch_domains if d.strip()]
-
-        from urllib.parse import urlparse
-        domain = urlparse(url).netloc
 
         # Check if domain is in always-use-browser list
         for browser_domain in browser_fetch_domains:

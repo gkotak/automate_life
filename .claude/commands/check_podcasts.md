@@ -1,38 +1,68 @@
-# Check Podcasts
+# check_podcasts
 
-Run the podcast checker to scan your in-progress podcast episodes from PocketCasts.
+Execute the podcast checker to scan your in-progress podcast episodes from PocketCasts, and optionally process them with article_summarizer.
 
-## Instructions
+```bash
+python3 programs/check_new_posts/processors/podcast_checker.py $ARGUMENTS
+```
 
-1. Run the podcast checker script to fetch in-progress episodes
-2. First run will require PocketCasts credentials in `.env.local`
-3. Wait for the script to complete and capture the output
-4. After completion, display a summary of the newly discovered podcast episodes showing:
-   - Total number of new episodes found
-   - List of new episodes with podcast names and progress
-   - Episode URLs for reference
-5. If no new episodes were found, clearly state that
-6. Provide information about tracked podcasts
+## Usage Examples
 
-## Technical Details
+### Check Only (no arguments)
+```
+/check_podcasts
+```
+Just checks for new podcasts without processing.
 
-- Podcast checker location: `programs/check_new_posts/processors/podcast_checker.py`
-- Tracking file: `programs/check_new_posts/output/processed_podcasts.json`
-- Uses unofficial PocketCasts API via direct API calls
-- Fetches all in-progress episodes (episodes you've started listening to)
-- Requires PocketCasts account credentials in `.env.local`
+### Process N Podcasts
+```
+/check_podcasts 5
+```
+Checks for new podcasts AND processes the 5 most recent unprocessed ones.
 
-## Setup (First Time Only)
+### Interactive Mode
+```
+/check_podcasts --process
+```
+Checks for new podcasts, shows list, and prompts for how many to process.
 
-If not already configured, add credentials to `.env.local`:
+## What This Does
+
+1. **Always**: Checks PocketCasts for in-progress episodes and tracks new ones
+2. **If number provided**: Processes that many of the most recent unprocessed podcasts with article_summarizer
+3. **If --process flag**: Shows interactive prompt to select how many to process
+
+When processing podcasts:
+- Queries Supabase to find which podcasts are already processed
+- Sorts unprocessed podcasts by discovery date (most recent first)
+- Calls article_summarizer.py for each selected podcast URL
+- Prefers YouTube URLs over PocketCasts URLs (better transcripts)
+- Shows success/failure status for each
+- 10-minute timeout per podcast
+
+## Output
+
+After completion, you'll see:
+- Summary of newly discovered podcast episodes
+- List of processed podcasts (if processing mode used)
+- Success/failure status for each processed podcast
+- Episode URLs and article IDs for reference
+
+## Requirements
+
+First-time setup requires credentials in `.env.local`:
 ```
 POCKETCASTS_EMAIL=your-email@example.com
 POCKETCASTS_PASSWORD=your-password
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
-## Notes
+## Technical Details
 
-- This uses the **unofficial** PocketCasts API
-- Only tracks episodes that are "in progress" (started but not finished)
+- Uses unofficial PocketCasts API to fetch in-progress episodes
+- Tracks episodes in: `programs/check_new_posts/output/processed_podcasts.json`
+- Checks Supabase `articles` table to find unprocessed podcasts
+- Processes via: `programs/article_summarizer/scripts/article_summarizer.py`
+- Processed articles viewable at: http://localhost:3000
 - Does not require PocketCasts Plus subscription
-- Episode URLs are in format: https://pocketcasts.com/episode/{uuid}

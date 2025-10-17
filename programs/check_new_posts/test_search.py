@@ -48,7 +48,7 @@ def main():
         print(f"Episode: {test['episode'][:80]}...")
         print()
 
-        url = checker._search_podcast_full_url(test['episode'], test['podcast'])
+        url = checker._search_podcast_video_url(test['episode'], test['podcast'])
 
         if url:
             print(f"\n✅ SUCCESS: Found URL")
