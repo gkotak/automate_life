@@ -140,6 +140,61 @@ class AuthenticationManager:
             self.logger.warning(f"⚠️ [CHROME COOKIES] Could not load Chrome cookies: {e}")
             self.logger.warning("   Will fall back to credential-based authentication if needed")
 
+    def load_cookies_for_url(self, url: str) -> bool:
+        """
+        Load Chrome cookies for a specific URL domain
+
+        This is useful for sites like Substack newsletters where each subdomain
+        (e.g., lennysnewsletter.com) has its own cookies separate from the parent
+        domain (substack.com).
+
+        Args:
+            url: The URL to load cookies for
+
+        Returns:
+            True if cookies were loaded successfully
+        """
+        try:
+            from pycookiecheat import chrome_cookies
+            from urllib.parse import urlparse
+
+            domain = urlparse(url).netloc
+
+            # Extract cookies for this specific domain
+            try:
+                domain_cookies = chrome_cookies(url)
+
+                if domain_cookies:
+                    cookie_count = 0
+                    for name, value in domain_cookies.items():
+                        # Create cookie for the session
+                        cookie = requests.cookies.create_cookie(
+                            domain=domain,
+                            name=name,
+                            value=value,
+                            path='/',
+                            secure=True
+                        )
+                        self.session.cookies.set_cookie(cookie)
+                        cookie_count += 1
+
+                    if cookie_count > 0:
+                        self.logger.info(f"🍪 [CHROME COOKIES] Loaded {cookie_count} cookies for {domain}")
+                        return True
+
+            except Exception as e:
+                # Domain might not have cookies
+                if "No cookies found" not in str(e):
+                    self.logger.debug(f"Could not load cookies for {domain}: {e}")
+
+            return False
+
+        except ImportError:
+            return False
+        except Exception as e:
+            self.logger.debug(f"Error loading cookies for URL: {e}")
+            return False
+
     def detect_platform(self, url: str) -> str:
         """
         Detect the platform from URL (only for username/password authentication)

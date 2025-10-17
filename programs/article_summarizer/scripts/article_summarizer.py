@@ -161,6 +161,9 @@ class ArticleSummarizer(BaseProcessor):
             self.logger.info("🎥 [DIRECT YOUTUBE] Detected direct YouTube video URL")
             return self._process_direct_youtube_url(url, youtube_match.group(1))
 
+        # Load Chrome cookies for this specific URL domain (for Substack subdomains, etc.)
+        self.auth_manager.load_cookies_for_url(url)
+
         # Get page content
         response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
         soup = self._get_soup(response.content)
