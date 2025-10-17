@@ -6,6 +6,7 @@ Manually checks platform URLs for new posts and outputs URLs for processing
 
 import json
 import time
+import os
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
@@ -13,6 +14,8 @@ import warnings
 from bs4 import XMLParsedAsHTMLWarning
 import feedparser
 import email.utils
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
 # Import our base class and config
 import sys
@@ -22,6 +25,10 @@ from common.base import BaseProcessor
 from common.config import Config
 from common.url_utils import normalize_url, generate_post_id
 
+# Load environment variables
+root_env = Path(__file__).parent.parent.parent.parent / '.env.local'
+load_dotenv(root_env)
+
 # Suppress XML parsing warnings since we'll handle them properly
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
@@ -30,38 +37,142 @@ class PostChecker(BaseProcessor):
     def __init__(self):
         super().__init__("post_checker")
 
-        # Setup specific directories for this processor
+        # Setup specific directories for this processor (backup only)
         self.tracking_file = self.base_dir / "programs" / "check_new_posts" / "output" / "processed_posts.json"
         self.summarizer_script = self.base_dir / "programs" / "article_summarizer" / "scripts" / "summarize_article.sh"
 
         # Initialize Supabase client
-        from supabase import create_client
-        import os
         supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        supabase_key = os.getenv("SUPABASE_ANON_KEY")
 
         if not supabase_url or not supabase_key:
-            self.logger.warning("⚠️ Supabase credentials not found - will fall back to markdown file")
-            self.supabase = None
-            self.links_file = self.base_dir / "programs" / "check_new_posts" / "newsletter_podcast_links.md"
-        else:
-            self.supabase = create_client(supabase_url, supabase_key)
-            self.logger.info("✅ Supabase client initialized for content_sources")
+            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env.local")
+
+        self.supabase: Client = create_client(supabase_url, supabase_key)
+        self.logger.info("✅ Connected to Supabase")
+
+        # Fallback markdown file
+        self.links_file = self.base_dir / "programs" / "check_new_posts" / "newsletter_podcast_links.md"
 
     def _load_tracked_posts(self):
-        """Load previously processed posts from tracking file"""
-        if self.tracking_file.exists():
+        """Load previously processed posts from Supabase content_queue table"""
+        try:
+            # Query all articles from content_queue
+            result = self.supabase.table('content_queue').select('*').eq(
+                'content_type', 'article'
+            ).execute()
+
+            # Convert to dict format with post_hash as key (for backward compatibility)
+            tracked_posts = {}
+            for row in result.data:
+                # Generate post hash from URL
+                post_hash = generate_post_id(row['url'], row['url'])
+
+                tracked_posts[post_hash] = {
+                    'title': row['title'],
+                    'url': row['url'],
+                    'platform': row['platform'],
+                    'found_at': row['found_at'],
+                    'source_feed': row['source_feed'],
+                    'published_date': row['published_date'],
+                    'status': row['status']
+                }
+
+            self.logger.info(f"📂 Loaded {len(tracked_posts)} posts from database")
+            return tracked_posts
+
+        except Exception as e:
+            self.logger.error(f"❌ Error loading posts from database: {e}")
+            # Fallback to JSON file if database fails
+            self.logger.warning("⚠️ Falling back to JSON file")
             try:
-                with open(self.tracking_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                return {}
-        return {}
+                if self.tracking_file.exists():
+                    with open(self.tracking_file, 'r') as f:
+                        return json.load(f)
+            except Exception as json_error:
+                self.logger.error(f"❌ Error loading from JSON: {json_error}")
+            return {}
 
     def _save_tracked_posts(self, tracked_posts):
-        """Save processed posts to tracking file"""
-        with open(self.tracking_file, 'w') as f:
-            json.dump(tracked_posts, f, indent=2)
+        """Save processed posts to Supabase content_queue table"""
+        try:
+            # Convert tracked_posts dict to list of records for upserting
+            # Use a dict to deduplicate by URL (in case multiple post_hashes map to same URL)
+            records_dict = {}
+            for post_hash, post in tracked_posts.items():
+                url = post['url']
+
+                # Skip if we already have this URL
+                if url in records_dict:
+                    continue
+
+                # Extract channel info from URL or source_feed
+                channel_title, channel_url = self._extract_channel_info(url, post.get('source_feed'))
+
+                records_dict[url] = {
+                    'url': url,
+                    'title': post['title'],
+                    'content_type': 'article',
+                    'channel_title': channel_title,
+                    'channel_url': channel_url,
+                    'video_url': None,  # Will be populated by article_summarizer
+                    'platform': post.get('platform', 'generic'),
+                    'source_feed': post.get('source_feed'),
+                    'found_at': post.get('found_at'),
+                    'published_date': post.get('published_date'),
+                    'status': post.get('status', 'discovered')
+                }
+
+            # Convert to list
+            records = list(records_dict.values())
+
+            # Batch upsert to Supabase (upsert based on unique URL)
+            if records:
+                self.supabase.table('content_queue').upsert(
+                    records,
+                    on_conflict='url'
+                ).execute()
+
+            self.logger.info(f"💾 Saved {len(tracked_posts)} posts to database")
+
+            # Also save to JSON as backup
+            try:
+                self.tracking_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.tracking_file, 'w') as f:
+                    json.dump(tracked_posts, f, indent=2)
+                self.logger.debug(f"💾 Backup saved to {self.tracking_file}")
+            except Exception as backup_error:
+                self.logger.warning(f"⚠️ Failed to save JSON backup: {backup_error}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error saving posts to database: {e}")
+            raise
+
+    def _extract_channel_info(self, url: str, source_feed: str = None):
+        """Extract channel title and URL from article URL"""
+        # Common patterns
+        if 'stratechery.com' in url:
+            return 'Stratechery', 'https://stratechery.com'
+        elif 'lennysnewsletter.com' in url:
+            return "Lenny's Newsletter", 'https://www.lennysnewsletter.com'
+        elif 'creatoreconomy.so' in url:
+            return 'Creator Economy', 'https://creatoreconomy.so'
+        elif 'akashbajwa.co' in url:
+            return 'Akash Bajwa', 'https://www.akashbajwa.co'
+
+        # Try to extract from source_feed if provided
+        if source_feed:
+            parsed = urlparse(source_feed)
+            domain = parsed.netloc.replace('www.', '')
+            return domain, f"https://{parsed.netloc}"
+
+        # Try to extract domain as fallback
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.replace('www.', '')
+            return domain, f"https://{parsed.netloc}"
+        except:
+            return None, None
 
     def _read_platform_urls(self):
         """Read platform URLs from Supabase or fallback to markdown file"""
