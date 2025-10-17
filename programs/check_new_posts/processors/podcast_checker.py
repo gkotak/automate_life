@@ -17,6 +17,8 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
 # Import our base classes
 sys.path.append(str(Path(__file__).parent.parent))
@@ -25,6 +27,10 @@ from common.config import Config
 from common.url_utils import generate_post_id
 from common.podcast_auth import PodcastAuth
 
+# Load environment variables
+root_env = Path(__file__).parent.parent.parent.parent / '.env.local'
+load_dotenv(root_env)
+
 
 class PodcastChecker(BaseProcessor):
     """Check PocketCasts for in-progress podcast episodes"""
@@ -32,13 +38,23 @@ class PodcastChecker(BaseProcessor):
     def __init__(self):
         super().__init__("podcast_checker")
 
-        # Setup specific files for podcast tracking
+        # Setup specific files for podcast tracking (backup only)
         self.podcasts_file = self.base_dir / "programs" / "check_new_posts" / "output" / "processed_podcasts.json"
+
+        # Initialize Supabase client
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_ANON_KEY')
+
+        if not supabase_url or not supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env.local")
+
+        self.supabase: Client = create_client(supabase_url, supabase_key)
+        self.logger.info("✅ Connected to Supabase")
 
         # Initialize PocketCasts authentication
         self.podcast_auth = PodcastAuth(self.logger)
 
-        # Load existing podcasts
+        # Load existing podcasts from database
         self.podcasts = self._load_tracked_podcasts()
 
         # Path to article_summarizer script
@@ -57,29 +73,98 @@ class PodcastChecker(BaseProcessor):
             self.logger.warning("⚠️ No SerpAPI whitelist configured (SERPAPI_PODCAST_WHITELIST not set)")
 
     def _load_tracked_podcasts(self) -> Dict[str, Any]:
-        """Load previously tracked podcasts from JSON file"""
+        """Load previously tracked podcasts from Supabase content_queue table"""
         try:
-            if self.podcasts_file.exists():
-                with open(self.podcasts_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            else:
-                return {}
+            # Query all podcast episodes from content_queue
+            result = self.supabase.table('content_queue').select('*').eq(
+                'content_type', 'podcast_episode'
+            ).execute()
+
+            # Convert to dict format with episode_hash as key (for backward compatibility)
+            podcasts = {}
+            for row in result.data:
+                # Generate episode hash from URL
+                episode_hash = generate_post_id(row['url'], row['url'])
+
+                podcasts[episode_hash] = {
+                    'episode_title': row['title'],
+                    'podcast_title': row['channel_title'],
+                    'podcast_uuid': row['podcast_uuid'],
+                    'episode_uuid': row['episode_uuid'],
+                    'episode_url': row['url'],
+                    'podcast_video_url': row['video_url'],
+                    'duration': row['duration_seconds'],
+                    'played_up_to': row['played_up_to'],
+                    'progress_percent': float(row['progress_percent']) if row['progress_percent'] else 0,
+                    'playing_status': row['playing_status'],
+                    'published_date': row['published_date'],
+                    'found_at': row['found_at'],
+                    'status': row['status'],
+                    'platform': row['platform']
+                }
+
+            self.logger.info(f"📂 Loaded {len(podcasts)} podcasts from database")
+            return podcasts
+
         except Exception as e:
-            self.logger.error(f"❌ Error loading podcasts: {e}")
+            self.logger.error(f"❌ Error loading podcasts from database: {e}")
+            # Fallback to JSON file if database fails
+            self.logger.warning("⚠️ Falling back to JSON file")
+            try:
+                if self.podcasts_file.exists():
+                    with open(self.podcasts_file, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+            except Exception as json_error:
+                self.logger.error(f"❌ Error loading from JSON: {json_error}")
             return {}
 
     def _save_tracked_podcasts(self, podcasts: Dict[str, Any]):
-        """Save tracked podcasts to JSON file"""
+        """Save tracked podcasts to Supabase content_queue table"""
         try:
-            # Ensure directory exists
-            self.podcasts_file.parent.mkdir(parents=True, exist_ok=True)
+            # Convert podcasts dict to list of records for upserting
+            records = []
+            for episode_hash, podcast in podcasts.items():
+                record = {
+                    'url': podcast['episode_url'],
+                    'title': podcast['episode_title'],
+                    'content_type': 'podcast_episode',
+                    'channel_title': podcast['podcast_title'],
+                    'channel_url': f"https://pocketcasts.com/podcast/{podcast['podcast_uuid']}",
+                    'video_url': podcast.get('podcast_video_url'),
+                    'platform': podcast.get('platform', 'pocketcasts'),
+                    'source_feed': None,
+                    'found_at': podcast.get('found_at'),
+                    'published_date': podcast.get('published_date'),
+                    'status': podcast.get('status', 'discovered'),
+                    'podcast_uuid': podcast['podcast_uuid'],
+                    'episode_uuid': podcast['episode_uuid'],
+                    'duration_seconds': podcast.get('duration'),
+                    'played_up_to': podcast.get('played_up_to'),
+                    'progress_percent': podcast.get('progress_percent'),
+                    'playing_status': podcast.get('playing_status')
+                }
+                records.append(record)
 
-            with open(self.podcasts_file, 'w', encoding='utf-8') as f:
-                json.dump(podcasts, f, indent=2, ensure_ascii=False)
+            # Batch upsert to Supabase (upsert based on unique URL)
+            if records:
+                self.supabase.table('content_queue').upsert(
+                    records,
+                    on_conflict='url'
+                ).execute()
 
-            self.logger.info(f"💾 Saved {len(podcasts)} podcasts to {self.podcasts_file}")
+            self.logger.info(f"💾 Saved {len(podcasts)} podcasts to database")
+
+            # Also save to JSON as backup
+            try:
+                self.podcasts_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.podcasts_file, 'w', encoding='utf-8') as f:
+                    json.dump(podcasts, f, indent=2, ensure_ascii=False)
+                self.logger.debug(f"💾 Backup saved to {self.podcasts_file}")
+            except Exception as backup_error:
+                self.logger.warning(f"⚠️ Failed to save JSON backup: {backup_error}")
+
         except Exception as e:
-            self.logger.error(f"❌ Error saving podcasts: {e}")
+            self.logger.error(f"❌ Error saving podcasts to database: {e}")
             raise
 
     def _get_episode_hash(self, episode_uuid: str, episode_title: str) -> str:
