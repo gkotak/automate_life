@@ -363,19 +363,23 @@ class BrowserFetcher:
         if response:
             content = response.text.lower()
 
-            # Cloudflare challenge
-            if 'checking your browser' in content or 'cloudflare' in content:
+            # Cloudflare challenge (not just CDN usage)
+            # Only trigger if we see the actual challenge page
+            if 'checking your browser' in content or 'just a moment' in content:
                 self.logger.info("🌐 [BROWSER FETCH] Cloudflare challenge detected")
                 return True
 
             # Bot blocking messages
-            if 'access denied' in content or 'forbidden' in content or '403' in content:
-                self.logger.info("🌐 [BROWSER FETCH] Access denied/bot blocking detected")
-                return True
+            if 'access denied' in content or 'forbidden' in content:
+                # Also check if status code is 403
+                if response.status_code == 403:
+                    self.logger.info("🌐 [BROWSER FETCH] Access denied/bot blocking detected (403)")
+                    return True
 
-            # Captcha
-            if 'captcha' in content or 'recaptcha' in content:
-                self.logger.info("🌐 [BROWSER FETCH] CAPTCHA detected")
+            # Captcha - only if it's actually being shown (not in config)
+            # Look for actual captcha elements, not just the word in JSON
+            if 'recaptcha/api' in content or 'hcaptcha.com' in content or '<div class="g-recaptcha"' in content:
+                self.logger.info("🌐 [BROWSER FETCH] Active CAPTCHA detected")
                 return True
 
             # JavaScript required messages (Pocket Casts, SPAs, etc.)
@@ -383,8 +387,8 @@ class BrowserFetcher:
                 self.logger.info("🌐 [BROWSER FETCH] JavaScript required message detected")
                 return True
 
-            # React/SPA loading indicators
-            if '<div id="root"></div>' in content or '<div id="app"></div>' in content:
+            # React/SPA loading indicators - empty root div with minimal content
+            if ('<div id="root"></div>' in content or '<div id="app"></div>' in content):
                 # Check if there's minimal content (likely a SPA that needs JS)
                 if len(content) < 5000:
                     self.logger.info("🌐 [BROWSER FETCH] Single Page App detected (minimal HTML)")
