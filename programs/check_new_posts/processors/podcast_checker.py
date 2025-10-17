@@ -38,8 +38,8 @@ class PodcastChecker(BaseProcessor):
     def __init__(self):
         super().__init__("podcast_checker")
 
-        # Setup specific files for podcast tracking (backup only)
-        self.podcasts_file = self.base_dir / "programs" / "check_new_posts" / "output" / "processed_podcasts.json"
+        # Note: Podcast tracking now uses Supabase content_queue table only
+        # JSON file backup has been removed
 
         # Initialize Supabase client
         supabase_url = os.getenv('SUPABASE_URL')
@@ -108,15 +108,8 @@ class PodcastChecker(BaseProcessor):
 
         except Exception as e:
             self.logger.error(f"❌ Error loading podcasts from database: {e}")
-            # Fallback to JSON file if database fails
-            self.logger.warning("⚠️ Falling back to JSON file")
-            try:
-                if self.podcasts_file.exists():
-                    with open(self.podcasts_file, 'r', encoding='utf-8') as f:
-                        return json.load(f)
-            except Exception as json_error:
-                self.logger.error(f"❌ Error loading from JSON: {json_error}")
-            return {}
+            self.logger.error("💥 Database is required - cannot continue without it")
+            raise
 
     def _save_tracked_podcasts(self, podcasts: Dict[str, Any]):
         """Save tracked podcasts to Supabase content_queue table"""
@@ -162,15 +155,6 @@ class PodcastChecker(BaseProcessor):
                 ).execute()
 
             self.logger.info(f"💾 Saved {len(podcasts)} podcasts to database")
-
-            # Also save to JSON as backup
-            try:
-                self.podcasts_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(self.podcasts_file, 'w', encoding='utf-8') as f:
-                    json.dump(podcasts, f, indent=2, ensure_ascii=False)
-                self.logger.debug(f"💾 Backup saved to {self.podcasts_file}")
-            except Exception as backup_error:
-                self.logger.warning(f"⚠️ Failed to save JSON backup: {backup_error}")
 
         except Exception as e:
             self.logger.error(f"❌ Error saving podcasts to database: {e}")
