@@ -31,9 +31,22 @@ class PostChecker(BaseProcessor):
         super().__init__("post_checker")
 
         # Setup specific directories for this processor
-        self.links_file = self.base_dir / "programs" / "check_new_posts" / "newsletter_podcast_links.md"
         self.tracking_file = self.base_dir / "programs" / "check_new_posts" / "output" / "processed_posts.json"
         self.summarizer_script = self.base_dir / "programs" / "article_summarizer" / "scripts" / "summarize_article.sh"
+
+        # Initialize Supabase client
+        from supabase import create_client
+        import os
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        if not supabase_url or not supabase_key:
+            self.logger.warning("⚠️ Supabase credentials not found - will fall back to markdown file")
+            self.supabase = None
+            self.links_file = self.base_dir / "programs" / "check_new_posts" / "newsletter_podcast_links.md"
+        else:
+            self.supabase = create_client(supabase_url, supabase_key)
+            self.logger.info("✅ Supabase client initialized for content_sources")
 
     def _load_tracked_posts(self):
         """Load previously processed posts from tracking file"""
@@ -51,7 +64,44 @@ class PostChecker(BaseProcessor):
             json.dump(tracked_posts, f, indent=2)
 
     def _read_platform_urls(self):
-        """Read platform URLs from newsletter_podcast_links.md"""
+        """Read platform URLs from Supabase or fallback to markdown file"""
+
+        # Try Supabase first
+        if self.supabase:
+            try:
+                self.logger.info("📖 Reading platform URLs from Supabase content_sources table")
+
+                # Query active sources
+                response = self.supabase.table('content_sources').select('*').eq('is_active', True).execute()
+
+                if response.data:
+                    urls = [row['url'] for row in response.data]
+                    self.logger.info(f"✅ Loaded {len(urls)} active URLs from Supabase")
+
+                    # Log source types breakdown
+                    source_types = {}
+                    for row in response.data:
+                        source_type = row.get('source_type', 'unknown')
+                        source_types[source_type] = source_types.get(source_type, 0) + 1
+
+                    for source_type, count in source_types.items():
+                        self.logger.info(f"   • {source_type}: {count}")
+
+                    return urls
+                else:
+                    self.logger.warning("⚠️ No active content sources found in Supabase")
+                    return []
+
+            except Exception as e:
+                self.logger.error(f"❌ Error reading from Supabase: {e}")
+                self.logger.warning("⚠️ Falling back to markdown file")
+                # Fall through to markdown fallback
+
+        # Fallback to markdown file
+        if not hasattr(self, 'links_file') or not self.links_file:
+            self.logger.error("❌ No Supabase connection and no fallback file configured")
+            return []
+
         self.logger.info(f"📖 Reading platform URLs from: {self.links_file}")
 
         if not self.links_file.exists():
