@@ -44,6 +44,18 @@ class PodcastChecker(BaseProcessor):
         # Path to article_summarizer script
         self.article_summarizer_script = self.base_dir / "programs" / "article_summarizer" / "scripts" / "article_summarizer.py"
 
+        # Load SerpAPI whitelist from environment variable
+        # Format: comma-separated list of podcast titles
+        whitelist_str = os.getenv('SERPAPI_PODCAST_WHITELIST', '')
+        self.serpapi_whitelist = {title.strip() for title in whitelist_str.split(',') if title.strip()}
+
+        if self.serpapi_whitelist:
+            self.logger.info(f"📋 SerpAPI whitelist loaded: {len(self.serpapi_whitelist)} podcasts")
+            for podcast in sorted(self.serpapi_whitelist):
+                self.logger.debug(f"   • {podcast}")
+        else:
+            self.logger.warning("⚠️ No SerpAPI whitelist configured (SERPAPI_PODCAST_WHITELIST not set)")
+
     def _load_tracked_podcasts(self) -> Dict[str, Any]:
         """Load previously tracked podcasts from JSON file"""
         try:
@@ -871,7 +883,11 @@ class PodcastChecker(BaseProcessor):
                 episode_url = episode_details['episode_url']
 
                 if os.getenv('SEARCH_PODCAST_URLS') == '1':
-                    self.logger.info(f"      🎯 [YOUTUBE SEARCH] Starting YouTube video search...")
+                    # Log episode and podcast details before starting YouTube search
+                    self.logger.info(f"")
+                    self.logger.info(f"      🎯 [YOUTUBE SEARCH] Starting search for YouTube video...")
+                    self.logger.info(f"      📝 Episode: {episode_title}")
+                    self.logger.info(f"      🎙️ Podcast: {podcast_title}")
 
                     # Step 1: Extract YouTube channel/playlist from PocketCasts page
                     self.logger.info(f"      📍 [STEP 1] Scraping PocketCasts page for YouTube link...")
@@ -902,22 +918,31 @@ class PodcastChecker(BaseProcessor):
                                 podcast_video_url = video_url
                                 self.logger.info(f"      ✅ [STEP 1b] Found video via playlist scraping (FREE)!")
                             else:
-                                # TEMPORARILY DISABLED: Scraping didn't find it, try SerpAPI search within channel
-                                self.logger.info(f"      📍 [STEP 1c] SerpAPI temporarily disabled, skipping...")
-                                # video_url = self._search_youtube_channel_for_episode(
-                                #     youtube_url, episode_title, podcast_title
-                                # )
-                                # if video_url:
-                                #     podcast_video_url = video_url
+                                # Step 1c: If playlist scraping failed and podcast is whitelisted, try SerpAPI
+                                if podcast_title in self.serpapi_whitelist:
+                                    self.logger.info(f"      📍 [STEP 1c] Playlist scraping failed, trying SerpAPI (whitelisted podcast)...")
+                                    video_url = self._search_youtube_channel_for_episode(
+                                        youtube_url, episode_title, podcast_title
+                                    )
+                                    if video_url:
+                                        podcast_video_url = video_url
+                                        self.logger.info(f"      ✅ [STEP 1c] Found video via SerpAPI channel search!")
+                                else:
+                                    self.logger.info(f"      ℹ️ [STEP 1c] Playlist scraping failed, SerpAPI not used (podcast not whitelisted)")
                         else:
                             # Unknown YouTube URL type, log warning
                             self.logger.warning(f"      ⚠️ [STEP 1] Unknown YouTube URL type: {youtube_url}")
                             self.logger.warning(f"      ⚠️ [STEP 1] Not a video, playlist, or channel URL")
 
-                    # TEMPORARILY DISABLED: Step 2: If Step 1 didn't find a video, use SerpAPI direct search
+                    # Step 2: If Step 1 didn't find a video and podcast is whitelisted, use SerpAPI direct search
                     if not podcast_video_url:
-                        self.logger.info(f"      📍 [STEP 2] SerpAPI temporarily disabled, skipping...")
-                        # podcast_video_url = self._search_podcast_video_url(episode_title, podcast_title)
+                        if podcast_title in self.serpapi_whitelist:
+                            self.logger.info(f"      📍 [STEP 2] Step 1 failed, trying SerpAPI direct search (whitelisted podcast)...")
+                            podcast_video_url = self._search_podcast_video_url(episode_title, podcast_title)
+                            if podcast_video_url:
+                                self.logger.info(f"      ✅ [STEP 2] Found video via SerpAPI direct search!")
+                        else:
+                            self.logger.info(f"      ℹ️ [STEP 2] SerpAPI not used (podcast not whitelisted)")
 
                     # Log final result
                     if podcast_video_url:
