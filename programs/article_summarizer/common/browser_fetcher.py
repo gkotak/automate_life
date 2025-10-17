@@ -94,6 +94,12 @@ class BrowserFetcher:
                 self.logger.info(f"🌐 [BROWSER FETCH] Navigating to URL...")
 
                 try:
+                    # If we have substack cookies, navigate to substack.com first to establish session
+                    if cookies and any('substack' in getattr(c, 'domain', '').lower() for c in cookies):
+                        self.logger.info("🔄 [BROWSER FETCH] Establishing Substack session...")
+                        page.goto('https://substack.com', timeout=10000, wait_until='domcontentloaded')
+                        self.logger.info("✅ [BROWSER FETCH] Substack session established")
+
                     # Navigate with timeout
                     response = page.goto(url, timeout=self.timeout, wait_until='networkidle')
 
@@ -152,25 +158,48 @@ class BrowserFetcher:
         domain = parsed.netloc
 
         # Handle both dict and requests.cookies.RequestsCookieJar
-        if hasattr(cookies, 'items'):
-            cookie_items = cookies.items()
-        else:
-            cookie_items = [(c.name, c.value) for c in cookies]
-
-        cookie_count = 0
-        for name, value in cookie_items:
-            try:
-                # Create cookie for Playwright
-                cookie_dict = {
+        if isinstance(cookies, dict):
+            # Dict format - simple cookies without full attributes
+            cookie_list = []
+            for name, value in cookies.items():
+                cookie_list.append({
                     'name': name,
                     'value': value,
-                    'domain': domain if not domain.startswith('.') else domain,
+                    'domain': domain,
                     'path': '/',
+                    'secure': True,
+                    'httpOnly': False,
+                    'sameSite': 'Lax'
+                })
+        else:
+            # RequestsCookieJar - preserve all cookie attributes
+            cookie_list = []
+            for c in cookies:
+                cookie_dict = {
+                    'name': c.name,
+                    'value': c.value,
+                    'domain': c.domain,
+                    'path': c.path or '/',
+                    'secure': bool(c.secure),
+                    'httpOnly': bool(getattr(c, 'has_nonstandard_attr', lambda x: False)('HttpOnly')),
+                    'sameSite': 'Lax'  # Default to Lax for compatibility
                 }
+
+                # Add expiry if available
+                if c.expires:
+                    cookie_dict['expires'] = c.expires
+
+                cookie_list.append(cookie_dict)
+
+        cookie_count = 0
+        failed_count = 0
+        for cookie_dict in cookie_list:
+            try:
                 context.add_cookies([cookie_dict])
                 cookie_count += 1
             except Exception as e:
-                self.logger.warning(f"⚠️ [BROWSER FETCH] Could not inject cookie {name}: {e}")
+                failed_count += 1
+                self.logger.debug(f"Could not inject cookie {cookie_dict.get('name')}: {e}")
 
         if cookie_count > 0:
             self.logger.info(f"🍪 [BROWSER FETCH] Injected {cookie_count} cookies into browser context")
