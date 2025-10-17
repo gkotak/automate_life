@@ -37,11 +37,10 @@ class PostChecker(BaseProcessor):
     def __init__(self):
         super().__init__("post_checker")
 
-        # Setup specific directories for this processor (backup only)
-        self.tracking_file = self.base_dir / "programs" / "check_new_posts" / "output" / "processed_posts.json"
+        # Setup specific directories for this processor
         self.summarizer_script = self.base_dir / "programs" / "article_summarizer" / "scripts" / "summarize_article.sh"
 
-        # Initialize Supabase client
+        # Initialize Supabase client (required - database-only approach, no JSON fallback)
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_ANON_KEY")
 
@@ -83,15 +82,8 @@ class PostChecker(BaseProcessor):
 
         except Exception as e:
             self.logger.error(f"❌ Error loading posts from database: {e}")
-            # Fallback to JSON file if database fails
-            self.logger.warning("⚠️ Falling back to JSON file")
-            try:
-                if self.tracking_file.exists():
-                    with open(self.tracking_file, 'r') as f:
-                        return json.load(f)
-            except Exception as json_error:
-                self.logger.error(f"❌ Error loading from JSON: {json_error}")
-            return {}
+            self.logger.error("💥 Database is required - cannot continue without it")
+            raise
 
     def _save_tracked_posts(self, tracked_posts):
         """Save processed posts to Supabase content_queue table"""
@@ -134,15 +126,6 @@ class PostChecker(BaseProcessor):
                 ).execute()
 
             self.logger.info(f"💾 Saved {len(tracked_posts)} posts to database")
-
-            # Also save to JSON as backup
-            try:
-                self.tracking_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(self.tracking_file, 'w') as f:
-                    json.dump(tracked_posts, f, indent=2)
-                self.logger.debug(f"💾 Backup saved to {self.tracking_file}")
-            except Exception as backup_error:
-                self.logger.warning(f"⚠️ Failed to save JSON backup: {backup_error}")
 
         except Exception as e:
             self.logger.error(f"❌ Error saving posts to database: {e}")
