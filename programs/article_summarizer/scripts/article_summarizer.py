@@ -1261,14 +1261,14 @@ CRITICAL TIMESTAMP RULES:
             self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
             return None
 
-    def _transcribe_large_audio_file(self, audio_path: str, media_type: str, max_duration_minutes: int = 15) -> Optional[Dict]:
+    def _transcribe_large_audio_file(self, audio_path: str, media_type: str, max_duration_minutes: int = 30) -> Optional[Dict]:
         """
         Transcribe large audio files by splitting into chunks with timeout handling
 
         Args:
             audio_path: Path to the audio file
             media_type: Type of media (audio or video)
-            max_duration_minutes: Maximum time to spend on transcription (default: 15 minutes)
+            max_duration_minutes: Maximum time to spend on transcription (default: 30 minutes)
 
         Returns:
             Transcript data dict or None if transcription fails
@@ -1295,15 +1295,16 @@ CRITICAL TIMESTAMP RULES:
             self.logger.info(f"   ⏱️ [DURATION] Audio is {duration_min:.1f} minutes")
             self.logger.info(f"   ⏰ [TIMEOUT] Will process for max {max_duration_minutes} minutes")
 
-            # Split into 10-minute chunks (600 seconds = 600,000 ms)
-            chunk_length_ms = 10 * 60 * 1000  # 10 minutes
+            # Split into 20-minute chunks (1200 seconds = 1,200,000 ms)
+            # At 128kbps: 20 minutes ≈ 19MB (well under 25MB Whisper API limit)
+            chunk_length_ms = 20 * 60 * 1000  # 20 minutes
             chunks = []
 
             for i in range(0, duration_ms, chunk_length_ms):
                 chunk = audio[i:i + chunk_length_ms]
                 chunks.append((i / 1000, chunk))  # Store start time in seconds
 
-            self.logger.info(f"   ✂️ [CHUNKS] Split into {len(chunks)} chunks of ~10 minutes each")
+            self.logger.info(f"   ✂️ [CHUNKS] Split into {len(chunks)} chunks of ~20 minutes each")
 
             # Transcribe each chunk
             all_segments = []
