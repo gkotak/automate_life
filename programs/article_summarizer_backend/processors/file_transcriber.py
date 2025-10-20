@@ -12,8 +12,8 @@ from openai import OpenAI
 # Import our base class and config
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
-from common.base import BaseProcessor
-from common.config import Config
+from core.base import BaseProcessor
+from core.config import Config
 
 
 class FileTranscriber(BaseProcessor):
