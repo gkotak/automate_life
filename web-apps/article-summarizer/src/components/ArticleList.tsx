@@ -271,8 +271,22 @@ export default function ArticleList() {
       )}
 
       <div className="mb-6 sm:mb-8">
-        <div className="flex items-center justify-between mb-2 sm:mb-4">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Article Library</h1>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-3">
+            {/* Logo Icon */}
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-[#077331] to-[#055a24] opacity-20 blur-lg rounded-full"></div>
+              <div className="relative bg-gradient-to-br from-[#077331] to-[#055a24] p-2 sm:p-3 rounded-xl shadow-lg">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+            </div>
+            {/* Logo Text */}
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-[#077331] to-[#055a24] bg-clip-text text-transparent leading-tight">
+              Article Summarizer
+            </h1>
+          </div>
           <Link
             href="/chat"
             className="flex items-center gap-2 px-4 py-2 bg-[#077331] hover:bg-[#055a24] text-white rounded-lg transition-all duration-200 shadow-md hover:shadow-lg font-medium text-sm"
@@ -284,7 +298,7 @@ export default function ArticleList() {
             <span className="sm:hidden">Chat</span>
           </Link>
         </div>
-        <p className="text-sm sm:text-base text-gray-600 mb-4 sm:mb-6">Search and manage your article summaries</p>
+        <p className="text-sm sm:text-base text-gray-600 mb-4 sm:mb-6 ml-0 sm:ml-14">Transform articles into actionable insights with AI-powered analysis</p>
 
         {/* Search Interface */}
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">

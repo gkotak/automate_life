@@ -178,8 +178,11 @@ class Config:
         """
         Find Claude CLI executable
 
+        Note: This function is deprecated as we now use Anthropic Python SDK directly.
+        Returns a dummy value for backwards compatibility.
+
         Returns:
-            Path to Claude CLI executable
+            Path to Claude CLI executable (or dummy value for SDK usage)
         """
         locations = [
             "/usr/local/bin/claude",
@@ -196,7 +199,8 @@ class Config:
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
 
-        raise FileNotFoundError("Claude CLI not found. Please install it first.")
+        # Return dummy value - ClaudeClient uses Anthropic Python SDK directly
+        return "anthropic-python-sdk"
 
     @staticmethod
     def get_claude_prompts() -> Dict[str, str]:
