@@ -43,10 +43,10 @@ class PodcastChecker(BaseProcessor):
 
         # Initialize Supabase client
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_ANON_KEY')
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
         if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env.local")
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env.local")
 
         self.supabase: Client = create_client(supabase_url, supabase_key)
         self.logger.info("✅ Connected to Supabase")
@@ -1171,7 +1171,7 @@ class PodcastChecker(BaseProcessor):
                 load_dotenv(root_env)
 
             supabase_url = os.getenv('SUPABASE_URL')
-            supabase_key = os.getenv('SUPABASE_ANON_KEY')
+            supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
             if not supabase_url or not supabase_key:
                 self.logger.warning("⚠️ Supabase credentials not found - cannot check processed podcasts")

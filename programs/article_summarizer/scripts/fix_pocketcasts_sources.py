@@ -69,10 +69,10 @@ def main():
 
     # Initialize Supabase client
     supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_ANON_KEY')
+    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
     if not supabase_url or not supabase_key:
-        print("❌ Error: SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment")
+        print("❌ Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment")
         sys.exit(1)
 
     supabase: Client = create_client(supabase_url, supabase_key)

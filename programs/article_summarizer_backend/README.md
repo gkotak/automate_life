@@ -111,7 +111,7 @@ Required:
 - `ANTHROPIC_API_KEY` - Claude API key
 - `OPENAI_API_KEY` - OpenAI API key (for embeddings)
 - `SUPABASE_URL` - Supabase project URL
-- `SUPABASE_ANON_KEY` - Supabase anon key
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase anon key
 - `API_KEY` - Backend API authentication key
 
 ## Cost Estimate

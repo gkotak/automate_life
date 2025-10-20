@@ -75,7 +75,7 @@ class ArticleProcessor(BaseProcessor):
 
         # Initialize Supabase client with anon key
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_ANON_KEY')
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         self.supabase: Optional[Client] = None
 
         if supabase_url and supabase_key:
@@ -89,7 +89,7 @@ class ArticleProcessor(BaseProcessor):
             if not supabase_url:
                 missing.append('SUPABASE_URL')
             if not supabase_key:
-                missing.append('SUPABASE_ANON_KEY')
+                missing.append('SUPABASE_SERVICE_ROLE_KEY')
             self.logger.warning(f"⚠️ Supabase credentials not found - database insertion will be skipped (missing: {', '.join(missing)})")
 
         # Initialize OpenAI client for embeddings
