@@ -36,8 +36,10 @@
 5. Deploy to Railway (30 min)
 6. Configure auth with interactive setup (30 min)
 7. Frontend integration (1-2 hours)
+8. Add admin panel & command automation (2-3 hours) - *Optional but recommended*
 
-**Total time**: 4-5 hours
+**Core functionality time**: 4-5 hours
+**With admin panel**: 6-8 hours total
 
 ---
 
@@ -429,6 +431,59 @@ BACKEND_API_KEY=<same-as-railway-api-key>
 **Create submission page** (see RAILWAY_MIGRATION_GUIDE.md for full code)
 
 **Estimated time**: 1-2 hours
+
+---
+
+### Step 8: Add Admin Panel & Command Automation (Optional but Recommended)
+
+**Purpose**: Enable running commands on Railway without local machine access
+
+Once deployed, you'll want to invoke commands (process article, check posts, check podcasts) easily. This step adds:
+- Web-based admin panel for one-click command execution
+- Railway cron jobs for automated recurring tasks
+- No local machine dependency
+
+**See detailed implementation**: `RAILWAY_MIGRATION_GUIDE.md` → "Running Commands on Railway" section
+
+**Quick Summary**:
+
+1. **Create Admin Panel** (`web-apps/article-summarizer/src/app/admin/page.tsx`)
+   - Button to process article URL
+   - Buttons to trigger post/podcast checks
+   - Status display
+
+2. **Add Command Routes** (`app/routes/commands.py`)
+   - `/trigger/check-posts` endpoint
+   - `/trigger/check-podcasts` endpoint
+   - Executes Python scripts via subprocess
+
+3. **Configure Cron Jobs** (update `railway.json`)
+   ```json
+   "cron": [
+     {
+       "name": "check-new-posts",
+       "schedule": "0 */4 * * *",
+       "command": "python3 scripts/check_new_posts.py"
+     },
+     {
+       "name": "check-podcasts",
+       "schedule": "0 */6 * * *",
+       "command": "python3 scripts/podcast_checker.py"
+     }
+   ]
+   ```
+
+4. **Copy Scripts to Backend**
+   ```bash
+   cp programs/check_new_posts/*.py programs/article_summarizer_backend/scripts/
+   # Update import paths: common.* → core.*
+   ```
+
+**Access**: `http://localhost:3000/admin` (or Railway frontend URL)
+
+**Estimated time**: 2-3 hours
+
+**When to do this**: After Step 7 (frontend integration) is complete and working
 
 ---
 

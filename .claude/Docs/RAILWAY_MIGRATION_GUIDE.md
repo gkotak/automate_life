@@ -686,6 +686,399 @@ python3 -m app.main
 
 ---
 
+## Running Commands on Railway (No Local Machine Needed)
+
+Once your backend is deployed to Railway, you'll want to run commands like article processing, RSS checking, and podcast checking **without** using your local machine. Here's the recommended approach:
+
+### 🎯 Recommended: Hybrid Approach
+
+Use a combination of methods based on the task:
+
+| Task | Method | When to Use |
+|------|--------|-------------|
+| Process single article | Web UI | Quick, visual, one-click |
+| Check new posts/podcasts | Railway Cron Jobs | Automated, runs on schedule |
+| Manual check (urgent) | Web UI Button | One-click manual trigger |
+| Debugging/Testing | Railway Shell | Full access when needed |
+
+---
+
+### Method 1: Web-Based Admin Panel (Best UX) ✅
+
+**Create an admin page in your Next.js app** for easy command invocation:
+
+**Location**: `web-apps/article-summarizer/src/app/admin/page.tsx`
+
+**Features**:
+- Button to process new article (enter URL and submit)
+- Buttons to manually trigger RSS/podcast checks
+- View recent activity and status
+- Password/API key protected
+
+**Example Implementation**:
+
+```typescript
+'use client'
+
+import { useState } from 'react'
+
+export default function AdminPanel() {
+  const [url, setUrl] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState('')
+
+  const processArticle = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/railway/process-article', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_API_KEY}`
+        },
+        body: JSON.stringify({ url })
+      })
+      const data = await res.json()
+      setStatus(`✅ Processed article ID: ${data.article_id}`)
+    } catch (err) {
+      setStatus(`❌ Error: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const checkNewPosts = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/railway/check-posts', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_API_KEY}` }
+      })
+      const data = await res.json()
+      setStatus(`✅ Found ${data.new_posts} new posts`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const checkPodcasts = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/railway/check-podcasts', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_API_KEY}` }
+      })
+      const data = await res.json()
+      setStatus(`✅ Found ${data.new_podcasts} new podcasts`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <h1 className="text-3xl font-bold mb-8">Admin Command Panel</h1>
+
+      {/* Process Article */}
+      <section className="mb-8 p-6 bg-white rounded-lg shadow">
+        <h2 className="text-xl font-semibold mb-4">Process Article</h2>
+        <div className="flex gap-4">
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/article"
+            className="flex-1 px-4 py-2 border rounded"
+          />
+          <button
+            onClick={processArticle}
+            disabled={loading}
+            className="px-6 py-2 bg-[#077331] text-white rounded hover:bg-[#055a24] disabled:opacity-50"
+          >
+            {loading ? 'Processing...' : 'Process Now'}
+          </button>
+        </div>
+      </section>
+
+      {/* Automated Tasks */}
+      <section className="mb-8 p-6 bg-white rounded-lg shadow">
+        <h2 className="text-xl font-semibold mb-4">Manual Task Triggers</h2>
+        <div className="flex gap-4">
+          <button
+            onClick={checkNewPosts}
+            disabled={loading}
+            className="flex-1 px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Check New Posts
+          </button>
+          <button
+            onClick={checkPodcasts}
+            disabled={loading}
+            className="flex-1 px-6 py-3 bg-purple-600 text-white rounded hover:bg-purple-700"
+          >
+            Check Podcasts
+          </button>
+        </div>
+      </section>
+
+      {/* Status Display */}
+      {status && (
+        <section className="p-6 bg-gray-50 rounded-lg">
+          <p className="text-sm">{status}</p>
+        </section>
+      )}
+    </div>
+  )
+}
+```
+
+**Railway Backend Endpoints**:
+
+Add to `programs/article_summarizer_backend/app/routes/commands.py`:
+
+```python
+"""
+Command Execution Routes
+
+Endpoints for triggering Python scripts on Railway.
+"""
+
+import subprocess
+import logging
+from fastapi import APIRouter, Depends
+from app.middleware.auth import verify_api_key
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.post("/trigger/check-posts")
+async def trigger_check_posts(api_key: str = Depends(verify_api_key)):
+    """Manually trigger RSS/post checking"""
+    logger.info("🔄 Triggering check_new_posts script")
+
+    try:
+        result = subprocess.run(
+            ['python3', 'scripts/check_new_posts.py'],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+
+        return {
+            "status": "success",
+            "new_posts": parse_output(result.stdout),
+            "output": result.stdout
+        }
+    except Exception as e:
+        logger.error(f"❌ Error running check_posts: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/trigger/check-podcasts")
+async def trigger_check_podcasts(api_key: str = Depends(verify_api_key)):
+    """Manually trigger podcast checking"""
+    logger.info("🔄 Triggering podcast_checker script")
+
+    try:
+        result = subprocess.run(
+            ['python3', 'scripts/podcast_checker.py'],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+
+        return {
+            "status": "success",
+            "new_podcasts": parse_output(result.stdout),
+            "output": result.stdout
+        }
+    except Exception as e:
+        logger.error(f"❌ Error running podcast_checker: {e}")
+        return {"status": "error", "message": str(e)}
+```
+
+**Access**: Navigate to `http://localhost:3000/admin` (or your Railway frontend URL)
+
+---
+
+### Method 2: Railway Cron Jobs (Automated) ✅
+
+**For recurring tasks that should run automatically**, use Railway's built-in cron scheduler:
+
+**Update `railway.json`**:
+
+```json
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "sleepApplication": false,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+    "cron": [
+      {
+        "name": "check-new-posts",
+        "schedule": "0 */4 * * *",
+        "command": "python3 scripts/check_new_posts.py"
+      },
+      {
+        "name": "check-podcasts",
+        "schedule": "0 */6 * * *",
+        "command": "python3 scripts/podcast_checker.py"
+      }
+    ]
+  }
+}
+```
+
+**Cron Schedule Examples**:
+- `0 */4 * * *` - Every 4 hours
+- `0 */6 * * *` - Every 6 hours
+- `0 0 * * *` - Daily at midnight
+- `0 */1 * * *` - Every hour
+- `*/30 * * * *` - Every 30 minutes
+
+**No manual action needed** - tasks run automatically on schedule!
+
+---
+
+### Method 3: Railway CLI (Terminal Access) ⚡
+
+**For power users who prefer terminal**, use Railway CLI:
+
+**Setup (one-time)**:
+```bash
+# Install Railway CLI
+npm i -g @railway/cli
+
+# Login to Railway
+railway login
+
+# Link to your project
+railway link
+```
+
+**Run Commands**:
+```bash
+# Process article
+railway run python3 scripts/article_summarizer.py "https://example.com/article"
+
+# Check new posts
+railway run python3 scripts/check_new_posts.py
+
+# Check podcasts
+railway run python3 scripts/podcast_checker.py
+
+# Any Python script
+railway run python3 scripts/your_script.py
+```
+
+**Pros**: Fast, terminal-based, executes on Railway servers
+**Cons**: Still requires local terminal (but no local Python/dependencies)
+
+---
+
+### Method 4: Railway Shell (SSH Access) 🔧
+
+**For debugging and one-off manual runs**:
+
+```bash
+# Connect to Railway container
+railway connect
+
+# Inside container shell:
+python3 scripts/article_summarizer.py "URL"
+python3 scripts/check_new_posts.py
+python3 scripts/podcast_checker.py
+
+# Exit shell
+exit
+```
+
+**When to use**: Debugging, testing, inspecting files, one-time setup
+
+---
+
+### Migration Steps
+
+**Copy scripts to Railway backend**:
+
+```bash
+# Copy check_new_posts scripts
+cp -r programs/check_new_posts/* programs/article_summarizer_backend/scripts/
+
+# Update import paths in copied scripts
+# Change: from processors.* → from core.*
+# Change: from common.* → from core.*
+```
+
+**Scripts to migrate**:
+```
+programs/article_summarizer_backend/scripts/
+├── article_summarizer.py      ✅ (already have)
+├── check_new_posts.py          (copy from check_new_posts/)
+├── podcast_checker.py          (copy from check_new_posts/)
+└── setup_auth.py              ✅ (will create)
+```
+
+---
+
+### Recommended Workflow
+
+**Week 1 - Manual Only**:
+- Use Railway Shell for testing: `railway connect`
+- Run scripts manually as needed
+- Get familiar with Railway environment
+
+**Week 2 - Add Web UI**:
+- Build admin panel page
+- Test command buttons
+- Use UI instead of SSH for most tasks
+
+**Week 3 - Automate**:
+- Add cron jobs for RSS/podcast checks
+- Set to run every 4-6 hours
+- Only use UI for one-off article processing
+
+**Ongoing**:
+- Cron handles recurring tasks automatically
+- Use web UI for manual article processing
+- Use Railway Shell for debugging only
+
+---
+
+### Security Considerations
+
+**Admin Panel Protection**:
+
+```typescript
+// Middleware to protect admin routes
+export function middleware(request: NextRequest) {
+  const authHeader = request.headers.get('authorization')
+  const apiKey = process.env.ADMIN_API_KEY
+
+  if (authHeader !== `Bearer ${apiKey}`) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+}
+
+export const config = {
+  matcher: '/admin/:path*'
+}
+```
+
+**Or use simple password protection**:
+- Next.js middleware with password check
+- Vercel password protection feature
+- Railway environment variable for admin password
+
+---
+
 ## Next Steps After Deployment
 
 ### Short Term (Week 1)
