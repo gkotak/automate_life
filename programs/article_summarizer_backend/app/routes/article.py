@@ -54,14 +54,14 @@ async def process_article(
     logger.info(f"📥 Processing article request: {request.url}")
 
     try:
-        # Import ArticleSummarizer here to avoid circular imports
-        from app.services.article_processor import ArticleSummarizer
+        # Import ArticleProcessor here to avoid circular imports
+        from app.services.article_processor import ArticleProcessor
 
         # Initialize processor
-        summarizer = ArticleSummarizer()
+        processor = ArticleProcessor()
 
         # Process the article
-        article_id = summarizer.process_article(str(request.url))
+        article_id = processor.process_article(str(request.url))
 
         logger.info(f"✅ Successfully processed article: ID={article_id}")
 
