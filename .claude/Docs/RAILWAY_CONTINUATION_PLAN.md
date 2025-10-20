@@ -24,7 +24,24 @@
 
 ---
 
-## 🔄 Next Steps - Detailed Implementation Guide
+## 🔄 Next Steps - Simplified Implementation Guide
+
+**Updated Approach**: We're using **Option 2 (Browser-in-Docker with Playwright)** from BACKEND_AUTH_PLAN.md with **Method A (Interactive Setup)** only. Cookie extraction script has been removed as it's not needed for MVP.
+
+**Steps Overview**:
+1. Create article_processor.py service (45 min)
+2. Create setup_auth.py script (45 min)
+3. ~~Extract cookies~~ (SKIP - not needed)
+4. Test backend locally (1-2 hours)
+5. Deploy to Railway (30 min)
+6. Configure auth with interactive setup (30 min)
+7. Frontend integration (1-2 hours)
+
+**Total time**: 4-5 hours
+
+---
+
+## 🔄 Detailed Implementation Guide
 
 ### Step 1: Create Article Processor Service
 
@@ -203,20 +220,21 @@ python3 scripts/setup_auth.py --platform substack
 
 ---
 
-### Step 3: Create Cookie Extraction Script (Optional)
+### Step 3: ~~Create Cookie Extraction Script~~ (SKIP - Not Needed for MVP)
 
-**File**: `programs/article_summarizer_backend/scripts/extract_cookies.py`
+**Status**: ❌ **Skip this step**
 
-**Purpose**: Extract cookies from local Chrome and upload to Railway
+**Why skip**:
+- Interactive setup (Step 2) works for 95% of cases
+- Adds complexity without immediate benefit
+- Can be created later if needed
 
-This is an alternative to the interactive setup. Useful for:
-- Quickly syncing cookies from your desktop
-- Refreshing expired sessions
-- Initial setup without SSH access to Railway
+**When you might need it**:
+- Interactive setup fails on Railway (rare)
+- Need to refresh sessions frequently (unlikely)
+- Want to automate cookie rotation (future optimization)
 
-**Implementation**: See RAILWAY_MIGRATION_GUIDE.md section on "Option A: Upload Cookies"
-
-**Estimated time**: 30 minutes
+**If you need it later**: See RAILWAY_MIGRATION_GUIDE.md section on "Option A: Upload Cookies"
 
 ---
 
