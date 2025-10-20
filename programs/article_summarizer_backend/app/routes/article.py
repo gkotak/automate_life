@@ -60,8 +60,8 @@ async def process_article(
         # Initialize processor
         processor = ArticleProcessor()
 
-        # Process the article
-        article_id = processor.process_article(str(request.url))
+        # Process the article (now async)
+        article_id = await processor.process_article(str(request.url))
 
         logger.info(f"✅ Successfully processed article: ID={article_id}")
 

@@ -105,7 +105,7 @@ class ArticleProcessor(BaseProcessor):
         else:
             self.logger.warning("⚠️ OPENAI_API_KEY not found - embeddings will not be generated")
 
-    def process_article(self, url: str) -> str:
+    async def process_article(self, url: str) -> str:
         """
         Main processing pipeline for any article type
 
@@ -120,7 +120,7 @@ class ArticleProcessor(BaseProcessor):
         try:
             # Step 1: Extract metadata and detect content type
             self.logger.info("1. Extracting metadata...")
-            metadata = self._extract_metadata(url)
+            metadata = await self._extract_metadata(url)
             self.logger.info(f"   Title: {metadata['title']}")
 
             # Step 2: Generate filename
@@ -142,7 +142,7 @@ class ArticleProcessor(BaseProcessor):
             self.logger.error(f"❌ Processing failed: {e}")
             raise
 
-    def _extract_metadata(self, url: str) -> Dict:
+    async def _extract_metadata(self, url: str) -> Dict:
         """
         Extract metadata and detect content type
 
@@ -178,7 +178,8 @@ class ArticleProcessor(BaseProcessor):
 
             if should_use_browser:
                 self.logger.info("🌐 [BROWSER FALLBACK] Anti-bot measures detected, switching to browser fetch...")
-                browser_success, html_content, browser_message = self.auth_manager.fetch_with_browser(url)
+                # Use async version for FastAPI compatibility
+                browser_success, html_content, browser_message = await self.auth_manager.fetch_with_browser_async(url)
 
                 if browser_success:
                     soup = self._get_soup(html_content)

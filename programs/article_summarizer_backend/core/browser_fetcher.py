@@ -13,9 +13,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Try to import Playwright
+# Try to import Playwright (both sync and async APIs)
 try:
     from playwright.sync_api import sync_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
+    from playwright.async_api import async_playwright, Browser as AsyncBrowser, Page as AsyncPage
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -141,6 +142,109 @@ class BrowserFetcher:
 
         except Exception as e:
             self.logger.error(f"❌ [BROWSER FETCH] Error: {e}")
+            return False, None, f"Error: {str(e)}"
+
+    async def fetch_with_playwright_async(self, url: str, cookies: Optional[Dict] = None) -> Tuple[bool, Optional[str], str]:
+        """
+        Async version of fetch_with_playwright for use with FastAPI/async contexts
+
+        Args:
+            url: The URL to fetch
+            cookies: Optional dictionary of cookies to inject (from requests.Session)
+
+        Returns:
+            Tuple of (success, html_content, message)
+        """
+        if not PLAYWRIGHT_AVAILABLE:
+            return False, None, "Playwright not installed"
+
+        self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Launching browser for: {url}")
+        self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Headless: {self.headless}, Timeout: {self.timeout}ms")
+
+        try:
+            async with async_playwright() as p:
+                # Launch browser
+                browser = await p.chromium.launch(
+                    headless=self.headless,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                    ]
+                )
+
+                # Create context with realistic settings
+                context = await browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    locale='en-US',
+                    timezone_id='America/New_York',
+                )
+
+                # Inject cookies if provided
+                if cookies:
+                    await self._inject_cookies_async(context, cookies, url)
+
+                # Create page and navigate
+                page = await context.new_page()
+
+                # Additional stealth: hide webdriver property
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """)
+
+                self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Navigating to URL...")
+
+                try:
+                    # If we have substack cookies, navigate to substack.com first to establish session
+                    if cookies and any('substack' in getattr(c, 'domain', '').lower() for c in cookies):
+                        self.logger.info("🔄 [BROWSER FETCH ASYNC] Establishing Substack session...")
+                        await page.goto('https://substack.com', timeout=10000, wait_until='domcontentloaded')
+                        self.logger.info("✅ [BROWSER FETCH ASYNC] Substack session established")
+
+                    # Navigate with timeout
+                    response = await page.goto(url, timeout=self.timeout, wait_until='networkidle')
+
+                    if response:
+                        self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Response status: {response.status}")
+
+                    # Wait for content to load
+                    success = await self._wait_for_content_async(page)
+
+                    if not success:
+                        self.logger.warning("⚠️ [BROWSER FETCH ASYNC] Content did not load within timeout")
+
+                    # Take screenshot for debugging
+                    screenshot_path = await self._take_screenshot_async(page, url)
+                    self.logger.info(f"📸 [BROWSER FETCH ASYNC] Screenshot saved: {screenshot_path}")
+
+                    # Extract HTML
+                    html_content = await page.content()
+
+                    # Try to detect logged-in user from page content
+                    logged_in_user = await self._detect_logged_in_user_from_page_async(page)
+                    if logged_in_user:
+                        self.logger.info(f"✅ [BROWSER FETCH ASYNC] Successfully fetched {len(html_content)} chars - authenticated as: {logged_in_user}")
+                    else:
+                        self.logger.info(f"✅ [BROWSER FETCH ASYNC] Successfully fetched {len(html_content)} chars")
+
+                    await browser.close()
+                    return True, html_content, "Success"
+
+                except PlaywrightTimeoutError as e:
+                    self.logger.error(f"❌ [BROWSER FETCH ASYNC] Timeout: {e}")
+
+                    if self.screenshot_on_error:
+                        screenshot_path = await self._take_screenshot_async(page, url)
+                        self.logger.info(f"📸 [BROWSER FETCH ASYNC] Screenshot saved: {screenshot_path}")
+
+                    await browser.close()
+                    return False, None, f"Timeout: {str(e)}"
+
+        except Exception as e:
+            self.logger.error(f"❌ [BROWSER FETCH ASYNC] Error: {e}")
             return False, None, f"Error: {str(e)}"
 
     def _inject_cookies(self, context, cookies: Dict, url: str):
@@ -395,3 +499,143 @@ class BrowserFetcher:
                     return True
 
         return False
+
+    # Async helper methods for async Playwright API
+
+    async def _inject_cookies_async(self, context, cookies: Dict, url: str):
+        """Async version of _inject_cookies"""
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        domain = parsed.netloc
+
+        # Handle both dict and requests.cookies.RequestsCookieJar
+        if isinstance(cookies, dict):
+            cookie_list = []
+            for name, value in cookies.items():
+                cookie_list.append({
+                    'name': name,
+                    'value': value,
+                    'domain': domain,
+                    'path': '/',
+                    'secure': True,
+                    'httpOnly': False,
+                    'sameSite': 'Lax'
+                })
+        else:
+            cookie_list = []
+            for c in cookies:
+                cookie_dict = {
+                    'name': c.name,
+                    'value': c.value,
+                    'domain': c.domain,
+                    'path': c.path or '/',
+                    'secure': bool(c.secure),
+                    'httpOnly': bool(getattr(c, 'has_nonstandard_attr', lambda x: False)('HttpOnly')),
+                    'sameSite': 'Lax'
+                }
+                if c.expires:
+                    cookie_dict['expires'] = c.expires
+                cookie_list.append(cookie_dict)
+
+        cookie_count = 0
+        for cookie_dict in cookie_list:
+            try:
+                await context.add_cookies([cookie_dict])
+                cookie_count += 1
+            except Exception as e:
+                self.logger.debug(f"Could not inject cookie {cookie_dict.get('name')}: {e}")
+
+        if cookie_count > 0:
+            self.logger.info(f"🍪 [BROWSER FETCH ASYNC] Injected {cookie_count} cookies into browser context")
+
+    async def _wait_for_content_async(self, page: 'AsyncPage') -> bool:
+        """Async version of _wait_for_content"""
+        content_selectors = [
+            'article',
+            '[role="main"]',
+            '.article-content',
+            '.post-content',
+            '.entry-content',
+            'main',
+        ]
+
+        for selector in content_selectors:
+            try:
+                await page.wait_for_selector(selector, timeout=5000, state='visible')
+                self.logger.info(f"✅ [BROWSER FETCH ASYNC] Found content using selector: {selector}")
+
+                # Scroll down to trigger lazy-loaded images
+                await page.evaluate('() => { window.scrollTo(0, document.body.scrollHeight / 2); }')
+                await page.wait_for_timeout(1000)
+                await page.evaluate('() => { window.scrollTo(0, document.body.scrollHeight); }')
+                await page.wait_for_timeout(2000)
+                await page.evaluate('() => { window.scrollTo(0, 0); }')
+                await page.wait_for_timeout(1000)
+
+                self.logger.info("✅ [BROWSER FETCH ASYNC] Scrolled page to trigger lazy-loaded images")
+                return True
+            except PlaywrightTimeoutError:
+                continue
+
+        # If no specific content selector found, just wait a bit for JS to execute
+        self.logger.info("⚠️ [BROWSER FETCH ASYNC] No specific content selector found, waiting for page to settle...")
+        await page.wait_for_timeout(5000)
+        return True
+
+    async def _detect_logged_in_user_from_page_async(self, page: 'AsyncPage') -> Optional[str]:
+        """Async version of _detect_logged_in_user_from_page"""
+        try:
+            selectors = [
+                '[data-testid="account-menu"]',
+                '[class*="account"]',
+                '[class*="profile"]',
+                '[class*="user-menu"]',
+                'button[aria-label*="account"]',
+                'button[aria-label*="profile"]',
+            ]
+
+            for selector in selectors:
+                try:
+                    element = page.locator(selector).first
+                    if await element.is_visible(timeout=1000):
+                        text = await element.text_content()
+                        if text and len(text) > 2 and len(text) < 50:
+                            return text.strip()
+                except Exception:
+                    continue
+
+            # Try to extract from page content using regex
+            import re
+            html_content = await page.content()
+
+            username_patterns = [
+                r'"username":\s*"([^"]+)"',
+                r'"email":\s*"([^"@]+@[^"]+)"',
+                r'"user":\s*"([^"]+)"',
+                r'data-user[^>]*=\s*"([^"]+)"',
+            ]
+
+            for pattern in username_patterns:
+                match = re.search(pattern, html_content)
+                if match:
+                    return match.group(1)
+
+        except Exception as e:
+            self.logger.debug(f"Could not detect logged-in user: {e}")
+
+        return None
+
+    async def _take_screenshot_async(self, page: 'AsyncPage', url: str) -> str:
+        """Async version of _take_screenshot"""
+        from urllib.parse import urlparse
+        import time
+
+        parsed = urlparse(url)
+        domain = parsed.netloc.replace('.', '_')
+        timestamp = int(time.time())
+
+        screenshot_path = f"/tmp/playwright_error_{domain}_{timestamp}.png"
+        await page.screenshot(path=screenshot_path, full_page=True)
+
+        return screenshot_path

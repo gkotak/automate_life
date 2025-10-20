@@ -432,6 +432,31 @@ class AuthenticationManager:
 
         return success, html_content, message
 
+    async def fetch_with_browser_async(self, url: str) -> Tuple[bool, Optional[str], str]:
+        """
+        Async version of fetch_with_browser for use with FastAPI/async contexts
+
+        Args:
+            url: The URL to fetch
+
+        Returns:
+            Tuple of (success, html_content, message)
+        """
+        if not self.browser_fetcher.is_available():
+            return False, None, "Playwright not available - install with: pip install playwright && playwright install chromium"
+
+        self.logger.info(f"🌐 [BROWSER AUTH ASYNC] Using Playwright to fetch: {url}")
+
+        # Fetch using async Playwright with injected cookies
+        success, html_content, message = await self.browser_fetcher.fetch_with_playwright_async(url, self.session.cookies)
+
+        if success:
+            self.logger.info(f"✅ [BROWSER AUTH ASYNC] Successfully fetched content via browser")
+        else:
+            self.logger.error(f"❌ [BROWSER AUTH ASYNC] Browser fetch failed: {message}")
+
+        return success, html_content, message
+
     def should_use_browser_fetch(self, url: str, response: Optional[requests.Response] = None) -> bool:
         """
         Determine if browser fetch should be used
