@@ -1647,7 +1647,9 @@ def main():
         print(f"View at: http://localhost:3000/article/{article_id}")
 
     except Exception as e:
-        print(f"Error processing article: {e}")
+        print(f"❌ ERROR: Processing failed - {e}")
+        print(f"❌ Article was NOT saved to database")
+        print(f"❌ Please check the error above and fix the issue before retrying")
         sys.exit(1)
 
 

@@ -83,8 +83,9 @@ class PodcastChecker(BaseProcessor):
             # Convert to dict format with episode_hash as key (for backward compatibility)
             podcasts = {}
             for row in result.data:
-                # Generate episode hash from URL
-                episode_hash = generate_post_id(row['url'], row['url'])
+                # Generate episode hash using same method as _get_episode_hash()
+                # This ensures consistency between loading and checking
+                episode_hash = generate_post_id(row['title'], row['episode_uuid'])
 
                 podcasts[episode_hash] = {
                     'episode_title': row['title'],
@@ -1299,14 +1300,17 @@ class PodcastChecker(BaseProcessor):
                     })
                 else:
                     self.logger.error(f"   ❌ Processing failed (exit code: {result.returncode})")
+                    self.logger.error(f"   ❌ Article was NOT saved to database due to processing error")
                     if result.stderr:
-                        self.logger.error(f"   Error: {result.stderr[:200]}")
+                        self.logger.error(f"   Error details: {result.stderr[:500]}")
+                    if result.stdout:
+                        self.logger.error(f"   Output: {result.stdout[:500]}")
                     results['failed'] += 1
                     results['details'].append({
                         'episode': episode_title,
                         'status': 'failed',
                         'url': url_to_process,
-                        'error': result.stderr[:200] if result.stderr else 'Unknown error'
+                        'error': result.stderr[:500] if result.stderr else result.stdout[:500] if result.stdout else 'Unknown error'
                     })
 
             except subprocess.TimeoutExpired:

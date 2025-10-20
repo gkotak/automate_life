@@ -115,16 +115,18 @@ class ClaudeClient:
             if result.returncode != 0:
                 self.logger.error(f"   ❌ Claude API failed with return code {result.returncode}")
                 self.logger.error(f"   ❌ Stderr: {stderr[:500]}")
-                return f"Error calling Claude API: {stderr}"
+                raise RuntimeError(f"Claude API failed with return code {result.returncode}: {stderr}")
 
             if not response:
                 self.logger.warning(f"   ⚠️ Claude API returned empty response (stderr: {stderr[:200]})")
+                raise RuntimeError(f"Claude API returned empty response: {stderr}")
 
             return response
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             self.logger.error("   ❌ Claude API call timed out after 300 seconds")
-            return "Claude API call timed out after 300 seconds"
+            raise TimeoutError("Claude API call timed out after 300 seconds") from e
         except Exception as e:
             self.logger.error(f"   ❌ Exception in Claude API call: {str(e)}")
-            return f"Error in Claude API call: {str(e)}"
+            # Re-raise the exception instead of returning error string
+            raise
