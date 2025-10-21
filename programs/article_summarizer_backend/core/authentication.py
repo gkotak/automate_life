@@ -2,7 +2,7 @@
 Authentication Module - Railway Version
 
 Handles authentication for various platforms and content sources.
-Uses Playwright browser sessions stored in storage_state.json for Railway deployment.
+Uses Playwright browser sessions stored in Supabase database for Railway deployment.
 """
 
 import os
@@ -12,6 +12,12 @@ import requests
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 from bs4 import BeautifulSoup
+
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -62,27 +68,84 @@ class AuthenticationManager:
 
         return credentials
 
+    def _load_storage_state_from_supabase(self) -> Optional[Dict]:
+        """
+        Load browser session storage_state from Supabase database
+
+        Returns:
+            Storage state dict if found, None otherwise
+        """
+        if not SUPABASE_AVAILABLE:
+            self.logger.debug("Supabase library not available")
+            return None
+
+        try:
+            supabase_url = os.getenv('SUPABASE_URL')
+            supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+
+            if not supabase_url or not supabase_key:
+                self.logger.debug("Supabase credentials not configured")
+                return None
+
+            self.logger.info("🔍 [SUPABASE] Loading browser session from Supabase...")
+
+            # Initialize Supabase client
+            supabase: Client = create_client(supabase_url, supabase_key)
+
+            # Query for active browser session (platform='all')
+            result = supabase.table('browser_sessions')\
+                .select('*')\
+                .eq('platform', 'all')\
+                .eq('is_active', True)\
+                .order('updated_at', desc=True)\
+                .limit(1)\
+                .execute()
+
+            if result.data and len(result.data) > 0:
+                session_data = result.data[0]
+                storage_state = session_data['storage_state']
+
+                self.logger.info(f"✅ [SUPABASE] Loaded browser session from Supabase")
+                self.logger.info(f"   Session ID: {session_data['id']}")
+                self.logger.info(f"   Updated: {session_data['updated_at']}")
+                self.logger.info(f"   Cookies: {len(storage_state.get('cookies', []))}")
+
+                return storage_state
+            else:
+                self.logger.warning("⚠️ [SUPABASE] No active browser session found in database")
+                return None
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ [SUPABASE] Error loading session from database: {e}")
+            return None
+
     def _load_storage_state_cookies(self):
         """
-        Load authentication cookies from Playwright storage_state.json (Railway)
+        Load authentication cookies from Supabase browser_sessions table
 
         This replaces Chrome cookie extraction for Railway deployment.
-        Cookies are loaded from the persistent storage volume.
+        Cookies are loaded from Supabase database instead of file storage.
         """
         try:
-            storage_dir = os.getenv('STORAGE_DIR', '/app/storage')
-            storage_state_file = Path(storage_dir) / 'storage_state.json'
+            # First try to load from Supabase
+            storage_state = self._load_storage_state_from_supabase()
 
-            if not storage_state_file.exists():
-                self.logger.warning(f"⚠️ [STORAGE STATE] No browser session found at {storage_state_file}")
-                self.logger.warning("   Run setup_auth.py to configure authentication for paywalled content")
-                return
+            # Fallback to file-based storage if Supabase fails
+            if not storage_state:
+                self.logger.info(f"🔄 [STORAGE STATE] Falling back to file-based storage...")
+                storage_dir = os.getenv('STORAGE_DIR', '/app/storage')
+                storage_state_file = Path(storage_dir) / 'storage_state.json'
 
-            self.logger.info(f"🍪 [STORAGE STATE] Loading authentication cookies from {storage_state_file}...")
+                if not storage_state_file.exists():
+                    self.logger.warning(f"⚠️ [STORAGE STATE] No browser session found")
+                    self.logger.warning("   Upload session to Supabase using: python scripts/upload_session_to_supabase.py")
+                    return
 
-            # Load storage state
-            with open(storage_state_file, 'r') as f:
-                storage_state = json.load(f)
+                self.logger.info(f"🍪 [STORAGE STATE] Loading authentication cookies from {storage_state_file}...")
+
+                # Load storage state from file
+                with open(storage_state_file, 'r') as f:
+                    storage_state = json.load(f)
 
             cookies = storage_state.get('cookies', [])
             cookie_count = 0

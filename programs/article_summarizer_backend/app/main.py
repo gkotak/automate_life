@@ -110,15 +110,44 @@ async def health_check():
     storage_dir = os.getenv('STORAGE_DIR', '/app/storage')
     storage_exists = os.path.exists(storage_dir)
 
-    # Check browser session
-    storage_state_file = os.path.join(storage_dir, 'storage_state.json')
-    session_configured = os.path.exists(storage_state_file)
+    # Check browser session (Supabase or file)
+    session_configured = False
+    session_source = None
+
+    # First check Supabase
+    try:
+        from supabase import create_client
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+
+        if supabase_url and supabase_key:
+            supabase = create_client(supabase_url, supabase_key)
+            result = supabase.table('browser_sessions')\
+                .select('id')\
+                .eq('platform', 'all')\
+                .eq('is_active', True)\
+                .limit(1)\
+                .execute()
+
+            if result.data and len(result.data) > 0:
+                session_configured = True
+                session_source = "supabase"
+    except Exception:
+        pass
+
+    # Fallback to file-based session
+    if not session_configured:
+        storage_state_file = os.path.join(storage_dir, 'storage_state.json')
+        if os.path.exists(storage_state_file):
+            session_configured = True
+            session_source = "file"
 
     return {
         "status": "healthy",
         "playwright": playwright_available,
         "storage": storage_exists,
         "session_configured": session_configured,
+        "session_source": session_source,
         "environment": os.getenv('ENVIRONMENT', 'development')
     }
 
