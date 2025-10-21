@@ -57,8 +57,9 @@ class ArticleProcessor(BaseProcessor):
     - Text-only articles
     """
 
-    def __init__(self):
+    def __init__(self, event_emitter=None):
         super().__init__("ArticleProcessor")
+        self.event_emitter = event_emitter
         self.auth_manager = AuthenticationManager(self.base_dir, self.session)
         self.content_detector = ContentTypeDetector(self.session)
         self.transcript_processor = TranscriptProcessor(self.base_dir, self.session)
@@ -119,21 +120,80 @@ class ArticleProcessor(BaseProcessor):
 
         try:
             # Step 1: Extract metadata and detect content type
+            if self.event_emitter:
+                await self.event_emitter.emit('fetch_start', {'url': url})
+
             self.logger.info("1. Extracting metadata...")
             metadata = await self._extract_metadata(url)
             self.logger.info(f"   Title: {metadata['title']}")
+
+            if self.event_emitter:
+                await self.event_emitter.emit('fetch_complete', {
+                    'title': metadata['title'],
+                    'url': url
+                })
+
+            # Step 2: Detect media type
+            if self.event_emitter:
+                await self.event_emitter.emit('media_detect_start')
 
             # Step 2: Generate filename
             filename = self._sanitize_filename(metadata['title']) + '.html'
             self.logger.info(f"   Filename: {filename}")
 
-            # Step 3: AI-powered content analysis
+            # Emit media detection result
+            content_type = metadata.get('content_type')
+            media_type = 'text-only'
+            if content_type and hasattr(content_type, 'has_embedded_video') and content_type.has_embedded_video:
+                media_type = 'video'
+            elif content_type and hasattr(content_type, 'has_embedded_audio') and content_type.has_embedded_audio:
+                media_type = 'audio'
+
+            if self.event_emitter:
+                await self.event_emitter.emit('media_detected', {'media_type': media_type})
+
+            # Step 3: Content extraction
+            if self.event_emitter:
+                await self.event_emitter.emit('content_extract_start')
+
+            # Check if we have transcript data
+            transcript_method = None
+            if metadata.get('transcript'):
+                if media_type == 'video':
+                    transcript_method = 'youtube'
+                elif media_type == 'audio':
+                    # Check if it was chunked
+                    if metadata.get('audio_chunks'):
+                        transcript_method = 'chunked'
+                    else:
+                        transcript_method = 'audio'
+
+            if self.event_emitter:
+                await self.event_emitter.emit('content_extracted', {
+                    'transcript_method': transcript_method
+                })
+
+            # Step 4: AI-powered content analysis
+            if self.event_emitter:
+                await self.event_emitter.emit('ai_start')
+
             self.logger.info("2. Analyzing content with AI...")
             ai_summary = self._generate_summary_with_ai(url, metadata)
 
-            # Step 4: Save to Supabase database
+            if self.event_emitter:
+                await self.event_emitter.emit('ai_complete')
+
+            # Step 5: Save to Supabase database
+            if self.event_emitter:
+                await self.event_emitter.emit('save_start')
+
             self.logger.info("3. Saving to Supabase database...")
             article_id = self._save_to_database(metadata, ai_summary)
+
+            if self.event_emitter:
+                await self.event_emitter.emit('save_complete', {
+                    'article_id': article_id
+                })
 
             self.logger.info(f"✅ Processing complete! View at: http://localhost:3000/article/{article_id}")
             return article_id
