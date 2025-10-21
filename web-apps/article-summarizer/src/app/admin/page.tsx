@@ -89,6 +89,11 @@ export default function AdminPage() {
 
       console.log('EventSource connection opened for job:', job_id);
 
+      eventSource.addEventListener('ping', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('PING received:', data);
+      });
+
       eventSource.addEventListener('started', (e) => {
         const data = JSON.parse(e.data);
         console.log('Processing started:', data);

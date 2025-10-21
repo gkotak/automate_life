@@ -103,12 +103,22 @@ class ProcessingEventEmitter:
 
         logger.info(f"📡 [SSE] Started streaming events for job {job_id}")
 
+        # Send a ping event immediately to test connection
+        logger.info(f"📡 [SSE] Sending initial ping for job {job_id}")
+        yield {
+            "event": "ping",
+            "data": json.dumps({"message": "SSE connection established"})
+        }
+
         while True:
             event = await queue.get()
 
             if event is None:  # Sentinel value means stream is done
                 logger.info(f"📡 [SSE] Stream closed for job {job_id}")
                 break
+
+            # Log each event being sent
+            logger.info(f"📡 [SSE] Streaming event '{event['type']}' for job {job_id}")
 
             # Format as SSE event
             yield {
