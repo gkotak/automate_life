@@ -110,8 +110,21 @@ class ProcessingEventEmitter:
             "data": json.dumps({"message": "SSE connection established"})
         }
 
+        # Keep-alive heartbeat to prevent connection timeout
+        last_heartbeat = datetime.now()
+
         while True:
-            event = await queue.get()
+            try:
+                # Wait for event with timeout to send periodic heartbeats
+                event = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                # No event received in 15 seconds, send heartbeat
+                logger.debug(f"📡 [SSE] Sending heartbeat for job {job_id}")
+                yield {
+                    "event": "heartbeat",
+                    "data": json.dumps({"timestamp": datetime.now().isoformat()})
+                }
+                continue
 
             if event is None:  # Sentinel value means stream is done
                 logger.info(f"📡 [SSE] Stream closed for job {job_id}")
