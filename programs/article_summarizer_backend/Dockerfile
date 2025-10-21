@@ -1,5 +1,6 @@
 # Article Summarizer Backend - Railway Dockerfile
 # Includes Playwright + Chromium for authentication and anti-bot protection
+# Deployment trigger
 
 FROM python:3.11-slim
 
