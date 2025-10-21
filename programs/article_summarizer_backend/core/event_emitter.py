@@ -104,10 +104,15 @@ class ProcessingEventEmitter:
         logger.info(f"📡 [SSE] Started streaming events for job {job_id}")
 
         # Send a ping event immediately to test connection
+        # Add padding to force Railway proxy to flush the response
         logger.info(f"📡 [SSE] Sending initial ping for job {job_id}")
+        padding = " " * 2048  # 2KB padding to force flush
         yield {
             "event": "ping",
-            "data": json.dumps({"message": "SSE connection established"})
+            "data": json.dumps({
+                "message": "SSE connection established",
+                "_padding": padding  # Forces proxy to flush
+            })
         }
 
         # Keep-alive heartbeat to prevent connection timeout
@@ -120,9 +125,13 @@ class ProcessingEventEmitter:
             except asyncio.TimeoutError:
                 # No event received in 15 seconds, send heartbeat
                 logger.debug(f"📡 [SSE] Sending heartbeat for job {job_id}")
+                padding = " " * 2048
                 yield {
                     "event": "heartbeat",
-                    "data": json.dumps({"timestamp": datetime.now().isoformat()})
+                    "data": json.dumps({
+                        "timestamp": datetime.now().isoformat(),
+                        "_padding": padding
+                    })
                 }
                 continue
 
@@ -133,12 +142,14 @@ class ProcessingEventEmitter:
             # Log each event being sent
             logger.info(f"📡 [SSE] Streaming event '{event['type']}' for job {job_id}")
 
-            # Format as SSE event
+            # Format as SSE event with padding to force Railway to flush
+            padding = " " * 2048  # 2KB padding
             yield {
                 "event": event['type'],
                 "data": json.dumps({
                     'elapsed': event['elapsed'],
                     'timestamp': event['timestamp'],
-                    **event['data']
+                    **event['data'],
+                    '_padding': padding  # Forces nginx to flush immediately
                 })
             }
