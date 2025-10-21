@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Playwright Headless: {os.getenv('PLAYWRIGHT_HEADLESS', 'true')}")
 
     # Check critical environment variables
-    required_vars = ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'API_KEY']
+    required_vars = ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'API_KEY']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
 
     if missing_vars:
