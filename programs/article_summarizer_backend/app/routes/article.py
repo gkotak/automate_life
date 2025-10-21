@@ -123,6 +123,9 @@ async def process_article_stream(
         try:
             from app.services.article_processor import ArticleProcessor
 
+            # Small delay to ensure EventSource connection is established
+            await asyncio.sleep(0.5)
+
             # Send initial event
             await emitter.emit('started', {'url': str(request.url)})
 
@@ -191,7 +194,11 @@ async def stream_processing_status(
 
     return EventSourceResponse(
         ProcessingEventEmitter.stream_events(job_id),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
     )
 
 

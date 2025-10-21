@@ -80,11 +80,14 @@ export default function AdminPage() {
       }
 
       const { job_id } = await response.json();
+      console.log('Job started with ID:', job_id);
 
-      // Connect to SSE stream
+      // Connect to SSE stream immediately
       const eventSource = new EventSource(
         `https://automatelife-production.up.railway.app/api/status/${job_id}?api_key=article-summarizer-production-key-2025`
       );
+
+      console.log('EventSource connection opened for job:', job_id);
 
       eventSource.addEventListener('started', (e) => {
         const data = JSON.parse(e.data);
@@ -93,11 +96,13 @@ export default function AdminPage() {
 
       eventSource.addEventListener('fetch_start', (e) => {
         const data = JSON.parse(e.data);
+        console.log('Event: fetch_start', data);
         updateStep('fetch', { status: 'processing', elapsed: data.elapsed });
       });
 
       eventSource.addEventListener('fetch_complete', (e) => {
         const data = JSON.parse(e.data);
+        console.log('Event: fetch_complete', data);
         updateStep('fetch', {
           status: 'complete',
           detail: `Article fetched successfully`,
