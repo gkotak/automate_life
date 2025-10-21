@@ -10,7 +10,7 @@ Usage:
 
 Environment Variables Required:
     - SUPABASE_URL
-    - SUPABASE_SERVICE_ROLE_KEY (needs update permissions)
+    - SUPABASE_SECRET_KEY (needs update permissions)
     - OPENAI_API_KEY
 """
 
@@ -44,13 +44,11 @@ class EmbeddingBackfiller:
     def __init__(self):
         # Initialize Supabase
         supabase_url = os.getenv('SUPABASE_URL') or os.getenv('NEXT_PUBLIC_SUPABASE_URL')
-        # Use service role key for update permissions
-        supabase_key = (os.getenv('SUPABASE_SERVICE_ROLE_KEY') or
-                       os.getenv('SUPABASE_SERVICE_ROLE_KEY') or
-                       os.getenv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY'))
+        # Use secret key for update permissions
+        supabase_key = os.getenv('SUPABASE_SECRET_KEY')
 
         if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_ROLE_KEY) must be set")
+            raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must be set")
 
         self.supabase: Client = create_client(supabase_url, supabase_key)
         print("✅ Supabase client initialized")
@@ -260,7 +258,7 @@ def main():
         print(f"❌ Configuration error: {e}")
         print("\nRequired environment variables:")
         print("  - SUPABASE_URL")
-        print("  - SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_ROLE_KEY)")
+        print("  - SUPABASE_SECRET_KEY")
         print("  - OPENAI_API_KEY")
         sys.exit(1)
 

@@ -29,10 +29,10 @@ def backfill_sources(dry_run=False, force=False):
 
     # Initialize Supabase client
     supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+    supabase_key = os.getenv('SUPABASE_SECRET_KEY')
 
     if not supabase_url or not supabase_key:
-        print("❌ Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env.local")
+        print("❌ Error: SUPABASE_URL and SUPABASE_SECRET_KEY must be set in .env.local")
         return
 
     supabase = create_client(supabase_url, supabase_key)

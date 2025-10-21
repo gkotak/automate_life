@@ -33,12 +33,12 @@ def test_vector_search():
 
     # Initialize clients
     supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+    supabase_key = os.getenv('SUPABASE_SECRET_KEY')
     openai_api_key = os.getenv('OPENAI_API_KEY')
 
     if not all([supabase_url, supabase_key, openai_api_key]):
         print("❌ Missing required environment variables")
-        print("   Required: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY")
+        print("   Required: SUPABASE_URL, SUPABASE_SECRET_KEY, OPENAI_API_KEY")
         return
 
     supabase = create_client(supabase_url, supabase_key)

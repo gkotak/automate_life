@@ -13,11 +13,11 @@ elif [ -f "../../.env.local" ]; then
 fi
 
 # Check for required environment variables
-if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-  echo "Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set"
+if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
+  echo "Error: SUPABASE_URL and SUPABASE_SECRET_KEY must be set"
   echo "Using SUPABASE_URL: $SUPABASE_URL"
   echo ""
-  echo "Please set SUPABASE_SERVICE_ROLE_KEY in .env.local or run the SQL manually in Supabase SQL Editor"
+  echo "Please set SUPABASE_SECRET_KEY in .env.local or run the SQL manually in Supabase SQL Editor"
   echo ""
   echo "To run manually:"
   echo "1. Go to https://supabase.com/dashboard/project/YOUR_PROJECT/sql"
@@ -31,8 +31,8 @@ echo "URL: $SUPABASE_URL"
 
 # Apply the schema using Supabase REST API
 curl -X POST "${SUPABASE_URL}/rest/v1/rpc/exec_sql" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SUPABASE_SECRET_KEY}" \
+  -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
   -H "Content-Type: application/json" \
   -d @chat_schema.sql
 
