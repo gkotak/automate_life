@@ -11,6 +11,7 @@ Think of it as a **smart content library with AI-powered summaries**. I can thro
 3. **Create clickable timestamps** for audio/video content
 4. **Store everything in a searchable database**
 5. **Give me a beautiful web interface** to browse and search everything.
+6. **Chat with your knowledge base** - Ask questions across all your content using AI
 
 There are also scripts that find the right URL (new posts, youtube videos or podcasts), and automatically summarizes them using the steps above
 
@@ -21,6 +22,7 @@ Over time, I plan to have 1000s of articles / content. You can access it here - 
 - Filter by source (Stratechery, Lenny's Newsletter, etc.)
 - Search semantically: "articles about supply chain dynamics"
 - Click timestamps to jump to specific moments in audio/video
+- **Chat with AI** to ask questions across your entire knowledge base
 
 ## Why Did I Build This?
 
@@ -54,6 +56,13 @@ Uses Claude AI to generate:
 - Search your entire library using natural language
 - "Find articles about AI and China" actually understands what you mean
 - Uses embeddings for smart matching beyond keyword search
+
+### 💬 AI Chat Interface
+- Ask questions across your entire knowledge base
+- AI retrieves relevant articles using semantic search
+- Get answers with source citations and links to original content
+- Natural conversation interface for exploring your content library
+- Example: "What have I learned about AI regulation?" → AI finds and synthesizes insights from multiple articles
 
 ### 🌐 Smart Authentication
 - Handles paywalled content (Substack, Medium, Stratechery)
