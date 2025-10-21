@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 
+// API configuration from environment variables
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://automatelife-production.up.railway.app';
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'article-summarizer-production-key-2025';
+
 interface ProcessingStep {
   id: string;
   label: string;
@@ -60,11 +64,11 @@ export default function AdminPage() {
 
     try {
       // Start article processing and get job_id
-      const response = await fetch('https://automatelife-production.up.railway.app/api/process-article-stream', {
+      const response = await fetch(`${API_URL}/api/process-article-stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer article-summarizer-production-key-2025'
+          'Authorization': `Bearer ${API_KEY}`
         },
         body: JSON.stringify({ url: url.trim() })
       });
@@ -84,7 +88,7 @@ export default function AdminPage() {
 
       // Connect to SSE stream immediately
       const eventSource = new EventSource(
-        `https://automatelife-production.up.railway.app/api/status/${job_id}?api_key=article-summarizer-production-key-2025`
+        `${API_URL}/api/status/${job_id}?api_key=${API_KEY}`
       );
 
       console.log('EventSource connection opened for job:', job_id);
