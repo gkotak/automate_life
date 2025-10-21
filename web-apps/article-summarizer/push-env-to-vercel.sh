@@ -1,12 +1,12 @@
 #!/bin/bash
-# Push environment variables from .env.local to Vercel
+# Push environment variables from .env.production to Vercel
 
 set -e  # Exit on error
 set -o pipefail  # Catch errors in pipelines
 
-# Check if .env.local exists
-if [ ! -f ".env.local" ]; then
-  echo "❌ Error: .env.local file not found!"
+# Check if .env.production exists
+if [ ! -f ".env.production" ]; then
+  echo "❌ Error: .env.production file not found!"
   echo "   Make sure you're running this from the web-apps/article-summarizer directory"
   exit 1
 fi
@@ -44,9 +44,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     echo "     ❌ Failed to add $key"
     exit 1
   fi
-done < .env.local
+done < .env.production
 
 echo ""
 echo "✅ Done! Pushed $count environment variable(s) to Vercel production."
 echo ""
+echo "📋 Summary:"
+echo "   • .env.local → Used for LOCAL development (localhost:8000)"
+echo "   • .env.production → Used for VERCEL production (Railway URL)"
+echo ""
 echo "💡 To verify, visit: https://vercel.com/dashboard → Your Project → Settings → Environment Variables"
+echo ""
+echo "🔄 Trigger a redeploy for changes to take effect:"
+echo "   vercel --prod"

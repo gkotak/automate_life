@@ -158,23 +158,73 @@ Event: media_detected {media_type: "audio", elapsed: 5}
 
 ## Switching Between Local and Production
 
-### For Development (Local Backend)
+### Understanding Environment Files
 
-```bash
-# web-apps/article-summarizer/.env.local
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_API_KEY=test-api-key-for-local-development-only
+**You DON'T need to manually switch!** The system uses different files for different environments:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ENVIRONMENT FILE USAGE                                      │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  .env.local (LOCAL DEVELOPMENT)                              │
+│  ├─ Used when: npm run dev                                   │
+│  ├─ Location: Only on your computer                          │
+│  ├─ API URL: http://localhost:8000                           │
+│  └─ Never committed to Git / Never on Vercel                 │
+│                                                              │
+│  .env.production (VERCEL PRODUCTION)                         │
+│  ├─ Used when: Vercel builds & deploys                       │
+│  ├─ Location: Vercel dashboard environment variables         │
+│  ├─ API URL: https://automatelife-production.up.railway.app  │
+│  └─ Pushed via: ./push-env-to-vercel.sh                      │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### For Production (Railway Backend)
+### The Key Insight
+
+**YES - Vercel production ALWAYS uses Railway (production backend)!**
+
+Here's why:
+1. `.env.local` is in `.gitignore` → **Never deployed to Vercel**
+2. `.env.production` contains Railway URL → **Pushed to Vercel via script**
+3. Vercel reads from its own environment variables → **Always points to Railway**
+
+### Setting Up Vercel Production (One-Time Setup)
+
+Run this from `web-apps/article-summarizer`:
 
 ```bash
-# web-apps/article-summarizer/.env.local
-NEXT_PUBLIC_API_URL=https://automatelife-production.up.railway.app
-NEXT_PUBLIC_API_KEY=article-summarizer-production-key-2025
+# Make sure you're logged in to Vercel CLI
+vercel login
+
+# Push production environment variables to Vercel
+./push-env-to-vercel.sh
+
+# Verify in Vercel dashboard
+open https://vercel.com/dashboard
 ```
 
-**Note:** The code automatically falls back to Railway URLs if environment variables are not set.
+This reads `.env.production` (with Railway URL) and pushes to Vercel.
+
+### Summary Table
+
+| Environment | Where | API URL | How to Use |
+|------------|-------|---------|------------|
+| **Local Dev** | Your computer | `localhost:8000` | `npm run dev` uses `.env.local` |
+| **Vercel Production** | Cloud (vercel.app) | Railway URL | Vercel uses dashboard env vars |
+| **Railway Backend** | Cloud (railway.app) | N/A | Auto-deploys from `main` branch |
+
+### When You Make Changes
+
+**Local Development:**
+- Edit `.env.local` → Restart `npm run dev` → Changes apply immediately
+
+**Vercel Production:**
+- Edit `.env.production` → Run `./push-env-to-vercel.sh` → Redeploy on Vercel
+
+**Note:** The frontend code automatically falls back to Railway URLs if environment variables are not set, so production will always work even if you forget to set env vars.
 
 ## Debugging Tips
 
