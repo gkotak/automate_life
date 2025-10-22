@@ -1,15 +1,28 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import SuccessMessage from '@/components/SuccessMessage'
+import ErrorMessage from '@/components/ErrorMessage'
+import AuthPrimaryButton from '@/components/auth/AuthPrimaryButton'
+import AuthInput from '@/components/auth/AuthInput'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { resetPassword } = useAuth()
+  const { user, resetPassword } = useAuth()
+  const router = useRouter()
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      router.push('/')
+    }
+  }, [user, router])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -42,51 +55,31 @@ export default function ForgotPasswordPage() {
 
         <div className="max-w-sm mx-auto">
           <form className="space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
-                {error}
-              </div>
-            )}
+            {error && <ErrorMessage message={error} />}
 
-            {success && (
-              <div className="bg-green-900/20 border border-green-500 text-green-400 px-4 py-3 rounded-lg">
-                <p className="font-medium mb-1">Request submitted</p>
-                <p className="text-sm">
-                  If an account exists with <strong>{email}</strong>, you'll receive a password reset link shortly.
-                </p>
-              </div>
-            )}
-
-            {!success && (
+            {!success ? (
               <>
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-950 mb-2">
-                    Email address
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent text-sm"
-                    placeholder="Enter your email address"
-                  />
-                </div>
+                <AuthInput
+                  id="email"
+                  name="email"
+                  type="email"
+                  label="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="Enter your email address"
+                />
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  style={{ backgroundColor: '#077331' }}
-                  onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#065a27')}
-                  onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = '#077331')}
-                >
+                <AuthPrimaryButton type="submit" loading={loading}>
                   {loading ? 'Sending...' : 'Submit'}
-                </button>
+                </AuthPrimaryButton>
               </>
+            ) : (
+              <SuccessMessage
+                title="Check your email"
+                message={`If an account exists with ${email}, you'll receive a password reset link shortly.`}
+              />
             )}
 
             <div className="text-center">

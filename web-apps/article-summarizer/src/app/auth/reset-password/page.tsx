@@ -3,6 +3,10 @@
 import { useState, FormEvent, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
+import SuccessMessage from '@/components/SuccessMessage'
+import ErrorMessage from '@/components/ErrorMessage'
+import AuthPrimaryButton from '@/components/auth/AuthPrimaryButton'
+import AuthInput from '@/components/auth/AuthInput'
 
 export default function ResetPasswordPage() {
   const [newPassword, setNewPassword] = useState('')
@@ -76,29 +80,16 @@ export default function ResetPasswordPage() {
     )
   }
 
-  // If no user after checking, show error with option to request new link
+  // If no user after checking, show error
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white px-8 py-8">
         <div className="w-full max-w-lg border border-slate-200 rounded-2xl py-12 px-6">
           <div className="text-center max-w-sm mx-auto">
-            <h2 className="text-3xl font-semibold text-gray-950 mb-4">
+            <h2 className="text-3xl font-semibold text-gray-950 mb-6">
               Reset Link Expired
             </h2>
-            <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg mb-6">
-              <p className="text-sm">
-                This password reset link has expired or is invalid. Please request a new one.
-              </p>
-            </div>
-            <button
-              onClick={() => router.push('/forgot-password')}
-              className="w-full py-2.5 px-4 text-white rounded-md transition-colors font-semibold text-sm"
-              style={{ backgroundColor: '#077331' }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#065a27')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#077331')}
-            >
-              Request New Reset Link
-            </button>
+            <ErrorMessage message="This password reset link has expired or is invalid. Please go to the forgot password page to request a new one." />
           </div>
         </div>
       </div>
@@ -119,66 +110,47 @@ export default function ResetPasswordPage() {
 
         <div className="max-w-sm mx-auto">
           <form className="space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
-                {error}
-              </div>
+            {error && <ErrorMessage message={error} />}
+
+            {success ? (
+              <SuccessMessage
+                title="Password updated!"
+                message="Your password has been successfully updated. Redirecting you to the home page..."
+              />
+            ) : (
+              <>
+                <div className="space-y-5">
+                  <AuthInput
+                    id="new-password"
+                    name="new-password"
+                    type="password"
+                    label="New password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    placeholder="Enter your password"
+                    helperText="Must be at least 6 characters"
+                  />
+
+                  <AuthInput
+                    id="confirm-password"
+                    name="confirm-password"
+                    type="password"
+                    label="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    placeholder="Enter your password"
+                  />
+                </div>
+
+                <AuthPrimaryButton type="submit" disabled={success} loading={loading}>
+                  {loading ? 'Updating password...' : 'Update Password'}
+                </AuthPrimaryButton>
+              </>
             )}
-
-            {success && (
-              <div className="bg-green-900/20 border border-green-500 text-green-400 px-4 py-3 rounded-lg">
-                <p className="font-medium mb-1">Password updated successfully!</p>
-                <p className="text-sm">Redirecting you to the home page...</p>
-              </div>
-            )}
-
-            <div className="space-y-5">
-              <div>
-                <label htmlFor="new-password" className="block text-sm font-medium text-gray-950 mb-2">
-                  New password
-                </label>
-                <input
-                  id="new-password"
-                  name="new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent text-sm"
-                  placeholder="Enter your password"
-                />
-                <p className="mt-1 text-xs text-slate-600">Must be at least 6 characters</p>
-              </div>
-
-              <div>
-                <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-950 mb-2">
-                  Confirm new password
-                </label>
-                <input
-                  id="confirm-password"
-                  name="confirm-password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent text-sm"
-                  placeholder="Enter your password"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || success}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              style={{ backgroundColor: '#077331' }}
-              onMouseEnter={(e) => !loading && !success && (e.currentTarget.style.backgroundColor = '#065a27')}
-              onMouseLeave={(e) => !loading && !success && (e.currentTarget.style.backgroundColor = '#077331')}
-            >
-              {loading ? 'Updating password...' : 'Update Password'}
-            </button>
           </form>
         </div>
       </div>

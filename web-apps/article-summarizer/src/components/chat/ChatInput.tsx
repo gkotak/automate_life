@@ -49,28 +49,23 @@ export default function ChatInput({
   return (
     <div className="border-t bg-white p-4">
       <div className="max-w-4xl mx-auto">
-        <div className="flex gap-2 items-end">
-          <div className="flex-1 relative">
-            <textarea
-              ref={textareaRef}
-              value={message}
-              onChange={handleInput}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              disabled={disabled}
-              rows={1}
-              className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#077331] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              style={{ minHeight: '48px', maxHeight: '200px' }}
-            />
-            <div className="absolute right-2 bottom-2 text-xs text-gray-400">
-              {message.length > 0 && `${message.length} chars`}
-            </div>
-          </div>
+        <div className="flex gap-2 items-center">
+          <textarea
+            ref={textareaRef}
+            value={message}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={1}
+            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#077331] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed text-sm placeholder:text-sm"
+            style={{ minHeight: '48px', maxHeight: '120px' }}
+          />
 
           {isStreaming ? (
             <button
               onClick={onStop}
-              className="px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 flex-shrink-0"
+              className="h-12 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 flex-shrink-0"
               title="Stop generating"
             >
               <Square size={18} fill="currentColor" />
@@ -80,7 +75,7 @@ export default function ChatInput({
             <button
               onClick={handleSend}
               disabled={!message.trim() || disabled}
-              className="px-4 py-3 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2 flex-shrink-0"
+              className="h-12 px-4 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2 flex-shrink-0"
               title="Send message (Enter)"
             >
               <Send size={18} />

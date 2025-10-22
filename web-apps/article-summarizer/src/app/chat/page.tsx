@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import ChatSidebar from '@/components/chat/ChatSidebar'
 import ChatMessages from '@/components/chat/ChatMessages'
 import ChatInput from '@/components/chat/ChatInput'
 import { useChat } from '@/hooks/useChat'
 import { Conversation } from '@/types/chat'
-import { ArrowLeft, Menu } from 'lucide-react'
+import { Menu } from 'lucide-react'
 
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -89,7 +88,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div
@@ -115,28 +114,16 @@ export default function ChatPage() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="bg-white border-b px-4 py-3 flex items-center gap-3">
-          {/* Hamburger Menu - Only visible on mobile */}
+        {/* Mobile Hamburger - Only visible on mobile, integrated with chat area */}
+        <div className="lg:hidden bg-gray-50 border-b px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             aria-label="Toggle sidebar"
           >
             <Menu size={20} className="text-gray-600" />
           </button>
-
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <ArrowLeft size={20} />
-            <span className="hidden sm:inline text-sm font-medium">Back to Articles</span>
-          </Link>
-          <div className="flex-1"></div>
-          <div className="text-sm text-gray-600">
-            <span className="hidden sm:inline">AI-powered chat with your articles</span>
-          </div>
+          <span className="text-sm text-gray-600">Chat History</span>
         </div>
 
         {/* Error notification */}
