@@ -167,7 +167,8 @@ class ArticleProcessor(BaseProcessor):
 
             # Check if we have transcript data
             transcript_method = None
-            if metadata.get('transcript'):
+            transcripts = metadata.get('transcripts', {})
+            if transcripts:
                 if media_type == 'video':
                     transcript_method = 'youtube'
                 elif media_type == 'audio':

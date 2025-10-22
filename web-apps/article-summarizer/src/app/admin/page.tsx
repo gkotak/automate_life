@@ -37,6 +37,7 @@ export default function AdminPage() {
     updated_at: string;
     url: string;
   } | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number | null>(null); // Duration in minutes
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -112,6 +113,7 @@ export default function AdminPage() {
     setLoading(true);
     setResult(null);
     setDuplicateWarning(null);
+    setAudioDuration(null); // Reset audio duration for new processing
     initializeSteps();
 
     try {
@@ -210,7 +212,7 @@ export default function AdminPage() {
         console.log('Event: processing_audio', data);
         updateStep('content', {
           status: 'complete',
-          detail: 'Content extracted'
+          detail: 'Media type: Audio'
         });
         updateStep('transcript', {
           status: 'processing',
@@ -252,6 +254,7 @@ export default function AdminPage() {
       eventSource.addEventListener('audio_split', (e) => {
         const data = JSON.parse(e.data);
         console.log('Event: audio_split', data);
+        setAudioDuration(data.duration_minutes); // Store duration for later use
         updateStep('transcript', {
           status: 'processing',
           detail: `Split into ${data.total_chunks} chunks (${data.duration_minutes?.toFixed(1)} minutes)`,
@@ -279,19 +282,22 @@ export default function AdminPage() {
 
         // Handle transcript step based on method
         if (transcriptMethod === 'youtube') {
+          const durationText = audioDuration ? ` (${audioDuration.toFixed(1)} min)` : '';
           updateStep('transcript', {
             status: 'complete',
-            detail: 'Extracted transcript from YouTube'
+            detail: `Extracted transcript from YouTube${durationText}`
           });
         } else if (transcriptMethod === 'chunked') {
+          const durationText = audioDuration ? ` (${audioDuration.toFixed(1)} min)` : '';
           updateStep('transcript', {
             status: 'complete',
-            detail: 'Transcribed audio (split into chunks)'
+            detail: `Transcribed audio${durationText}`
           });
         } else if (transcriptMethod === 'audio') {
+          const durationText = audioDuration ? ` (${audioDuration.toFixed(1)} min)` : '';
           updateStep('transcript', {
             status: 'complete',
-            detail: 'Transcribed audio successfully'
+            detail: `Transcribed audio${durationText}`
           });
         } else {
           updateStep('transcript', {
