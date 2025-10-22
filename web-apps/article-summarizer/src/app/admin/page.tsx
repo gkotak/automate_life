@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 // API configuration from environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://automatelife-production.up.railway.app';
@@ -17,6 +19,8 @@ interface ProcessingStep {
 }
 
 export default function AdminPage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
@@ -25,6 +29,13 @@ export default function AdminPage() {
     message: string;
     articleId?: number;
   } | null>(null);
+
+  // Protect this page - redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
 
   const updateStep = (id: string, updates: Partial<ProcessingStep>) => {
     setSteps(prev => prev.map(step =>
@@ -63,35 +74,18 @@ export default function AdminPage() {
     initializeSteps();
 
     try {
-      // Start article processing and get job_id
-      const response = await fetch(`${API_URL}/api/process-article-stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`
-        },
-        body: JSON.stringify({ url: url.trim() })
-      });
+      // Connect to SSE stream directly (generator-driven processing)
+      const encodedUrl = encodeURIComponent(url.trim());
 
-      if (!response.ok) {
-        const data = await response.json();
-        setResult({
-          status: 'error',
-          message: data.detail || 'Failed to start processing'
-        });
-        setLoading(false);
-        return;
+      // Build URL with user_id if authenticated
+      let streamUrl = `${API_URL}/api/process-direct?url=${encodedUrl}&api_key=${API_KEY}`;
+      if (user) {
+        streamUrl += `&user_id=${encodeURIComponent(user.id)}`;
       }
 
-      const { job_id } = await response.json();
-      console.log('Job started with ID:', job_id);
+      const eventSource = new EventSource(streamUrl);
 
-      // Connect to SSE stream immediately
-      const eventSource = new EventSource(
-        `${API_URL}/api/status/${job_id}?api_key=${API_KEY}`
-      );
-
-      console.log('EventSource connection opened for job:', job_id);
+      console.log('EventSource connection opened for URL:', url.trim());
 
       eventSource.addEventListener('ping', (e) => {
         const data = JSON.parse(e.data);
@@ -246,6 +240,20 @@ export default function AdminPage() {
       setLoading(false);
     }
   };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

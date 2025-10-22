@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase, Article } from '@/lib/supabase'
 import { Search, Trash2, ExternalLink, Calendar, Tag, X, CheckCircle, AlertCircle } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 
 type NotificationType = 'success' | 'error' | 'warning'
 
@@ -14,6 +15,7 @@ interface Notification {
 }
 
 export default function ArticleList() {
+  const { user } = useAuth()
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -35,7 +37,7 @@ export default function ArticleList() {
   useEffect(() => {
     fetchArticles()
     fetchAvailableSources()
-  }, [])
+  }, [user]) // Re-fetch when user changes
 
   const fetchAvailableSources = async () => {
     try {
@@ -82,10 +84,17 @@ export default function ArticleList() {
   const fetchArticles = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('articles')
         .select('*, key_insights, quotes, duration_minutes, word_count, topics')
-        .order('created_at', { ascending: false })
+
+      // Filter by user_id if authenticated (Phase 2: user isolation)
+      // Note: This will be enforced after SQL migration is run
+      if (user) {
+        query = query.eq('user_id', user.id)
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false })
 
       if (error) throw error
       setArticles(data || [])
@@ -97,6 +106,12 @@ export default function ArticleList() {
   }
 
   const deleteArticle = async (id: number) => {
+    // Phase 1: Only allow authenticated users to delete
+    if (!user) {
+      addNotification('error', 'You must be signed in to delete articles')
+      return
+    }
+
     if (!confirm('Are you sure you want to delete this article?')) return
 
     try {
@@ -557,13 +572,15 @@ export default function ArticleList() {
                     >
                       <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </a>
-                    <button
-                      onClick={() => deleteArticle(article.id)}
-                      className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 transition-colors"
-                      title="Delete article"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    </button>
+                    {user && (
+                      <button
+                        onClick={() => deleteArticle(article.id)}
+                        className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 transition-colors"
+                        title="Delete article"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
 

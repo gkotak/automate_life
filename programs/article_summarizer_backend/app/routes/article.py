@@ -8,6 +8,7 @@ import logging
 import uuid
 import asyncio
 import os
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
@@ -92,74 +93,186 @@ class ProcessArticleStreamResponse(BaseModel):
     message: str
 
 
-@router.post("/process-article-stream", response_model=ProcessArticleStreamResponse)
-async def process_article_stream(
-    request: ProcessArticleRequest,
-    api_key: str = Depends(verify_api_key)
+@router.get("/process-direct")
+async def process_article_direct(
+    url: str,
+    api_key: Optional[str] = None,
+    user_id: Optional[str] = None
 ):
     """
-    Start processing an article and return a job_id for SSE streaming
+    NEW APPROACH: Process article with generator-driven SSE streaming
 
-    This endpoint immediately returns a job_id that can be used to
-    stream real-time processing updates via the /status/{job_id} endpoint.
+    The generator itself does the processing and yields events in real-time.
+    No background tasks, no queues - just direct streaming.
 
     Args:
-        request: ProcessArticleRequest with URL
-        api_key: Validated API key from middleware
+        url: Article URL to process
+        api_key: API key as query parameter
+        user_id: Optional user ID for authentication (Supabase auth user)
 
     Returns:
-        ProcessArticleStreamResponse with job_id for streaming
+        EventSourceResponse with real-time processing events
     """
-    logger.info(f"📥 Starting streamed article processing: {request.url}")
+    # Validate API key
+    expected_api_key = os.getenv('API_KEY')
+    if not expected_api_key or api_key != expected_api_key:
+        logger.warning(f"🔒 Invalid or missing API key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key"
+        )
 
-    # Generate unique job ID
-    job_id = str(uuid.uuid4())
+    logger.info(f"📡 Starting direct SSE processing for: {url}")
 
-    # Create event emitter for this job
-    emitter = ProcessingEventEmitter(job_id)
+    async def process_and_stream():
+        """
+        Generator-driven processing: The generator itself does the work and yields events.
 
-    # Start processing in background
-    async def process_in_background():
+        This ensures real-time streaming because:
+        1. Generator does work step-by-step
+        2. Yields SSE event immediately after each step
+        3. No background tasks, no queues, no race conditions
+        """
+        from app.services.article_processor import ArticleProcessor
+        import time
+
+        start_time = time.time()
+
+        def elapsed():
+            return int(time.time() - start_time)
+
         try:
-            from app.services.article_processor import ArticleProcessor
+            # Send ping to establish connection
+            yield {
+                "event": "ping",
+                "data": json.dumps({"message": "SSE connection established", "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
 
-            # Small delay to ensure EventSource connection is established
-            await asyncio.sleep(0.5)
+            # Send started event
+            yield {
+                "event": "started",
+                "data": json.dumps({"url": url, "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
 
-            # Send initial event
-            await emitter.emit('started', {'url': str(request.url)})
+            # Initialize processor (no event emitter - we're streaming directly)
+            processor = ArticleProcessor(event_emitter=None)
 
-            # Initialize processor with event emitter
-            processor = ArticleProcessor(event_emitter=emitter)
+            # Step 1: Extract metadata (includes content fetch and transcription)
+            yield {
+                "event": "fetch_start",
+                "data": json.dumps({"url": url, "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
 
-            # Process the article
-            article_id = await processor.process_article(str(request.url))
+            logger.info(f"Starting metadata extraction for: {url}")
+            metadata = await processor._extract_metadata(url)
 
-            # Send completion event
-            await emitter.emit('completed', {
-                'article_id': article_id,
-                'url': f"/article/{article_id}"
-            })
+            yield {
+                "event": "fetch_complete",
+                "data": json.dumps({"title": metadata['title'], "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            # Step 2: Detect media type (just analyze metadata, no I/O)
+            yield {
+                "event": "media_detect_start",
+                "data": json.dumps({"elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            content_type = metadata.get('content_type')
+            media_type = 'text-only'
+            if content_type and hasattr(content_type, 'has_embedded_video') and content_type.has_embedded_video:
+                media_type = 'video'
+            elif content_type and hasattr(content_type, 'has_embedded_audio') and content_type.has_embedded_audio:
+                media_type = 'audio'
+
+            yield {
+                "event": "media_detected",
+                "data": json.dumps({"media_type": media_type, "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            # Step 3: Determine transcript method (just analyze metadata, no I/O)
+            yield {
+                "event": "content_extract_start",
+                "data": json.dumps({"elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            transcript_method = None
+            if metadata.get('transcript'):
+                if media_type == 'video':
+                    transcript_method = 'youtube'
+                elif media_type == 'audio':
+                    # Check if it was chunked
+                    if metadata.get('audio_chunks'):
+                        transcript_method = 'chunked'
+                    else:
+                        transcript_method = 'audio'
+
+            yield {
+                "event": "content_extracted",
+                "data": json.dumps({"transcript_method": transcript_method, "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            # Step 4: Generate AI summary
+            yield {
+                "event": "ai_start",
+                "data": json.dumps({"elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            logger.info("Starting AI summary generation...")
+            ai_summary = await processor._generate_summary_async(url, metadata)
+
+            yield {
+                "event": "ai_complete",
+                "data": json.dumps({"elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            # Step 5: Save to database
+            yield {
+                "event": "save_start",
+                "data": json.dumps({"elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            logger.info("Saving to database...")
+            article_id = processor._save_to_database(metadata, ai_summary)
+
+            yield {
+                "event": "save_complete",
+                "data": json.dumps({"article_id": article_id, "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
+            # Completion
+            yield {
+                "event": "completed",
+                "data": json.dumps({"article_id": article_id, "url": f"/article/{article_id}", "elapsed": elapsed()})
+            }
 
             logger.info(f"✅ Successfully processed article: ID={article_id}")
 
         except Exception as e:
-            logger.error(f"❌ Failed to process article {request.url}: {e}", exc_info=True)
-            await emitter.emit('error', {
-                'message': str(e),
-                'error': True
-            })
-        finally:
-            # Signal end of stream
-            await emitter.complete()
+            logger.error(f"❌ Processing failed: {e}", exc_info=True)
+            yield {
+                "event": "error",
+                "data": json.dumps({"message": str(e), "elapsed": elapsed()})
+            }
 
-    # Start background task
-    asyncio.create_task(process_in_background())
-
-    return ProcessArticleStreamResponse(
-        job_id=job_id,
-        status="processing",
-        message="Article processing started. Use job_id to stream progress."
+    return EventSourceResponse(
+        process_and_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
     )
 
 
@@ -171,11 +284,12 @@ async def stream_processing_status(
     """
     Stream real-time processing updates for a job via Server-Sent Events
 
-    Connect to this endpoint with EventSource to receive real-time
-    updates about article processing progress.
+    NOTE: This endpoint is deprecated. Use /process-direct instead for generator-driven streaming.
+
+    This endpoint uses the old background task + queue pattern and may have buffering issues.
 
     Args:
-        job_id: Job ID returned from /process-article-stream
+        job_id: Job ID from background processing task
         api_key: API key as query parameter (since EventSource can't send headers)
 
     Returns:

@@ -106,17 +106,23 @@ class ArticleProcessor(BaseProcessor):
         else:
             self.logger.warning("⚠️ OPENAI_API_KEY not found - embeddings will not be generated")
 
-    async def process_article(self, url: str) -> str:
+    async def process_article(self, url: str, user_id: Optional[str] = None) -> str:
         """
         Main processing pipeline for any article type
 
         Args:
             url: URL of the article to process
+            user_id: Optional user ID for authentication (Supabase auth user)
 
         Returns:
             Path to generated HTML file
         """
         self.logger.info(f"Processing article: {url}")
+        if user_id:
+            self.logger.info(f"   User ID: {user_id}")
+
+        # Store user_id for database save
+        self.current_user_id = user_id
 
         try:
             # Step 1: Extract metadata and detect content type
@@ -188,7 +194,7 @@ class ArticleProcessor(BaseProcessor):
                 await self.event_emitter.emit('save_start')
 
             self.logger.info("3. Saving to Supabase database...")
-            article_id = self._save_to_database(metadata, ai_summary)
+            article_id = self._save_to_database(metadata, ai_summary, self.current_user_id)
 
             if self.event_emitter:
                 await self.event_emitter.emit('save_complete', {
@@ -507,6 +513,18 @@ class ArticleProcessor(BaseProcessor):
             'article_text': article_text or 'Content not available',
             'images': images
         }
+
+    async def _generate_summary_async(self, url: str, metadata: Dict) -> Dict:
+        """
+        Async wrapper for AI summary generation.
+
+        Runs the synchronous Claude API call in a thread pool to avoid blocking
+        the event loop, enabling real-time SSE streaming.
+        """
+        import asyncio
+
+        # Run the synchronous method in a thread pool
+        return await asyncio.to_thread(self._generate_summary_with_ai, url, metadata)
 
     def _generate_summary_with_ai(self, url: str, metadata: Dict) -> Dict:
         """Generate AI summary based on content type"""
@@ -846,8 +864,14 @@ CRITICAL TIMESTAMP RULES:
 
         return "\n\n".join(parts)
 
-    def _save_to_database(self, metadata: Dict, ai_summary: Dict):
-        """Save article data to Supabase database"""
+    def _save_to_database(self, metadata: Dict, ai_summary: Dict, user_id: Optional[str] = None):
+        """Save article data to Supabase database
+
+        Args:
+            metadata: Article metadata
+            ai_summary: AI-generated summary
+            user_id: Optional user ID for authentication (Supabase auth user)
+        """
         if not self.supabase:
             self.logger.warning("   ⚠️ Supabase not initialized - skipping database save")
             return None
@@ -922,6 +946,10 @@ CRITICAL TIMESTAMP RULES:
                 'word_count': ai_summary.get('word_count'),
                 'topics': ai_summary.get('topics', []),
             }
+
+            # Add user_id if provided (for user-owned articles)
+            if user_id:
+                article_data['user_id'] = user_id
 
             # Add embedding if generated
             if embedding:
