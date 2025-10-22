@@ -71,8 +71,8 @@ export default function AdminPage() {
           return { ...step, ...updates, startTime: now, duration: 0 };
         }
 
-        // When completing, calculate final duration (minimum 1 second)
-        if (updates.status === 'complete' && step.startTime) {
+        // When completing or skipping, calculate final duration (minimum 1 second)
+        if ((updates.status === 'complete' || updates.status === 'skipped') && step.startTime) {
           const duration = Math.max(1, Math.floor((now - step.startTime) / 1000));
           return { ...step, ...updates, duration };
         }
@@ -91,7 +91,7 @@ export default function AdminPage() {
     const initialSteps: ProcessingStep[] = [
       { id: 'fetch', label: 'Fetching article', status: 'pending' },
       { id: 'content', label: 'Extracting content', status: 'pending' },
-      { id: 'transcript', label: 'Download audio and processing transcript', status: 'pending', substeps: [] },
+      { id: 'transcript', label: 'Downloading audio and processing transcript', status: 'pending', substeps: [] },
       { id: 'ai', label: 'Generating AI summary', status: 'pending' },
       { id: 'save', label: 'Saving to database', status: 'pending' },
     ];
@@ -111,6 +111,7 @@ export default function AdminPage() {
 
     setLoading(true);
     setResult(null);
+    setDuplicateWarning(null);
     initializeSteps();
 
     try {
@@ -197,6 +198,10 @@ export default function AdminPage() {
           status: 'complete',
           detail: 'Content type: Text-only'
         });
+        // Mark transcript as processing so it gets a startTime before being skipped
+        updateStep('transcript', {
+          status: 'processing'
+        });
       });
 
       // NEW: Listen for audio processing
@@ -261,7 +266,7 @@ export default function AdminPage() {
         updateStep('transcript', {
           status: 'processing',
           detail: `Transcribing chunk ${data.current} of ${data.total}...`,
-          substeps: [`Processing chunk ${data.current}/${data.total}`, `Elapsed: ${data.elapsed_minutes?.toFixed(1)} minutes`]
+          substeps: [`Processing chunk ${data.current}/${data.total}`]
         });
       });
 
@@ -517,7 +522,7 @@ export default function AdminPage() {
                       }`}>
                         {step.label}
                       </p>
-                      {(step.status === 'processing' || step.status === 'complete') && step.duration !== undefined && (
+                      {(step.status === 'processing' || step.status === 'complete' || step.status === 'skipped') && step.duration !== undefined && (
                         <span className="text-xs text-gray-400 ml-2">
                           ({step.duration}s)
                         </span>
