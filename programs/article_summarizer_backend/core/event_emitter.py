@@ -114,6 +114,7 @@ class ProcessingEventEmitter:
                 "_padding": padding  # Forces proxy to flush
             })
         }
+        await asyncio.sleep(0)  # Give control back to event loop
 
         # Keep-alive heartbeat to prevent connection timeout
         last_heartbeat = datetime.now()
@@ -133,6 +134,7 @@ class ProcessingEventEmitter:
                         "_padding": padding
                     })
                 }
+                await asyncio.sleep(0)  # Give control back to event loop
                 continue
 
             if event is None:  # Sentinel value means stream is done
@@ -153,3 +155,7 @@ class ProcessingEventEmitter:
                     '_padding': padding  # Forces nginx to flush immediately
                 })
             }
+
+            # CRITICAL: Give control back to event loop to actually send the event
+            # Without this, all events get consumed from queue instantly before sending
+            await asyncio.sleep(0)
