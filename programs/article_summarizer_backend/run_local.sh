@@ -34,6 +34,13 @@ echo "   Health: http://localhost:8000/health"
 echo ""
 echo "💡 Tip: Update frontend to use http://localhost:8000 instead of Railway URL"
 echo ""
+echo "📝 Logs are being saved to: logs/backend.log"
+echo "   View live logs: tail -f logs/backend.log"
+echo ""
+
+# Create logs directory if it doesn't exist
+mkdir -p logs
 
 # Run uvicorn with reload for development
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Output to both console AND log file using 'tee'
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 2>&1 | tee logs/backend.log
