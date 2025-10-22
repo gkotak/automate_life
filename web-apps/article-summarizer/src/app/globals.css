@@ -40,12 +40,13 @@
   }
 }
 
-body {
+html, body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  /* Full viewport height for consistent background */
-  min-height: 100vh;
+  /* Fixed viewport height to prevent page-level scroll */
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* Custom utility for text truncation */

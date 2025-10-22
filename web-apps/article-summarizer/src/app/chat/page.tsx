@@ -60,11 +60,6 @@ export default function ChatPage() {
     setIsSidebarOpen(false) // Close sidebar on mobile after selecting
   }
 
-  const handleNewChat = () => {
-    clearMessages()
-    setIsSidebarOpen(false) // Close sidebar on mobile after new chat
-  }
-
   const handleDeleteConversation = async (id: number) => {
     try {
       const response = await fetch(`/api/conversations/${id}`, {
@@ -88,7 +83,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div
@@ -107,8 +102,8 @@ export default function ChatPage() {
           conversations={conversations}
           currentConversationId={conversationId}
           onSelectConversation={handleSelectConversation}
-          onNewChat={handleNewChat}
           onDeleteConversation={handleDeleteConversation}
+          onClose={() => setIsSidebarOpen(false)}
         />
       </div>
 

@@ -1,23 +1,23 @@
 'use client'
 
 import { Conversation } from '@/types/chat'
-import { MessageSquarePlus, Trash2, MessageSquare } from 'lucide-react'
+import { Trash2, MessageSquare, X } from 'lucide-react'
 import { useState } from 'react'
 
 interface ChatSidebarProps {
   conversations: Conversation[]
   currentConversationId?: number
   onSelectConversation: (id: number) => void
-  onNewChat: () => void
   onDeleteConversation: (id: number) => void
+  onClose?: () => void
 }
 
 export default function ChatSidebar({
   conversations,
   currentConversationId,
   onSelectConversation,
-  onNewChat,
-  onDeleteConversation
+  onDeleteConversation,
+  onClose
 }: ChatSidebarProps) {
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
@@ -46,15 +46,17 @@ export default function ChatSidebar({
   }
 
   return (
-    <div className="w-64 sm:w-72 lg:w-80 bg-[#077331] text-white flex flex-col h-screen lg:h-full">
+    <div className="w-64 sm:w-72 lg:w-80 bg-[#077331] text-white flex flex-col h-full">
       {/* Header */}
-      <div className="p-4 border-b border-green-600">
+      <div className="p-4 border-b border-green-600 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Chat History</h2>
+        {/* Close button - only visible on mobile */}
         <button
-          onClick={onNewChat}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-[#077331] hover:bg-gray-100 rounded-lg transition-colors font-medium"
+          onClick={onClose}
+          className="lg:hidden p-1.5 hover:bg-green-600 rounded-lg transition-colors"
+          aria-label="Close sidebar"
         >
-          <MessageSquarePlus size={20} />
-          New Chat
+          <X size={20} />
         </button>
       </div>
 
@@ -100,12 +102,6 @@ export default function ChatSidebar({
             ))}
           </div>
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="p-4 border-t border-green-600 text-xs text-green-200">
-        <div className="mb-1">Article Chat</div>
-        <div>Ask questions about your articles</div>
       </div>
     </div>
   )
