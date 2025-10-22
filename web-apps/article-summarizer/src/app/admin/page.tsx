@@ -26,9 +26,16 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
   const [result, setResult] = useState<{
-    status: 'success' | 'error';
+    status: 'success' | 'error' | 'info';
     message: string;
     articleId?: number;
+  } | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    title: string;
+    articleId: number;
+    created_at: string;
+    updated_at: string;
+    url: string;
   } | null>(null);
 
   // Protect this page - redirect to login if not authenticated
@@ -128,6 +135,23 @@ export default function AdminPage() {
       eventSource.addEventListener('started', (e) => {
         const data = JSON.parse(e.data);
         console.log('Processing started:', data);
+      });
+
+      // Listen for duplicate detection
+      eventSource.addEventListener('duplicate_detected', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Duplicate detected:', data);
+
+        // Close connection and show inline warning
+        eventSource.close();
+        setLoading(false);
+        setDuplicateWarning({
+          title: data.title,
+          articleId: data.article_id,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          url: data.url
+        });
       });
 
       eventSource.addEventListener('fetch_start', (e) => {
@@ -404,8 +428,60 @@ export default function AdminPage() {
             </button>
           </form>
 
+          {/* Duplicate Warning - Inline */}
+          {duplicateWarning && (
+            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <svg className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-yellow-800 mb-2">Article already exists!</h3>
+                  <div className="text-sm text-yellow-700 space-y-1 mb-3">
+                    <p><span className="font-medium">Title:</span> {duplicateWarning.title}</p>
+                    <p><span className="font-medium">ID:</span> {duplicateWarning.articleId}</p>
+                    <p><span className="font-medium">Created:</span> {new Date(duplicateWarning.created_at).toLocaleString()}</p>
+                    <p className="mt-2 text-yellow-600">
+                      <a
+                        href={duplicateWarning.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-yellow-800"
+                      >
+                        View existing article →
+                      </a>
+                    </p>
+                  </div>
+                  <p className="text-sm text-yellow-700 mb-4">
+                    Reprocessing will cost API calls for transcription + AI summary.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setDuplicateWarning(null)}
+                      className="px-4 py-2 text-sm font-medium text-yellow-700 bg-white border border-yellow-300 rounded-md hover:bg-yellow-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDuplicateWarning(null);
+                        setResult({
+                          status: 'error',
+                          message: 'Reprocessing existing articles is not yet implemented. Please use the CLI for this feature.'
+                        });
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors"
+                    >
+                      Continue Anyway
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Processing Steps */}
-          {steps.length > 0 && (
+          {steps.length > 0 && !duplicateWarning && (
             <div className="mt-8 space-y-3">
               <h3 className="text-sm font-medium text-gray-700 mb-4">Processing Status</h3>
               {steps.map((step) => (

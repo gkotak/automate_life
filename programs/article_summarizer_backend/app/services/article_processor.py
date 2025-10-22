@@ -1053,6 +1053,29 @@ CRITICAL TIMESTAMP RULES:
 
         return "\n\n".join(parts)
 
+    def check_article_exists(self, url: str) -> Optional[Dict]:
+        """
+        Check if an article with the given URL already exists in the database
+
+        Args:
+            url: Article URL to check
+
+        Returns:
+            Dict with article info if exists (id, title, created_at), None otherwise
+        """
+        if not self.supabase:
+            return None
+
+        try:
+            result = self.supabase.table('articles').select('id, title, created_at, updated_at').eq('url', url).execute()
+
+            if result.data and len(result.data) > 0:
+                return result.data[0]
+            return None
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ Error checking for existing article: {e}")
+            return None
+
     def _save_to_database(self, metadata: Dict, ai_summary: Dict, user_id: Optional[str] = None):
         """Save article data to Supabase database
 
@@ -1983,9 +2006,28 @@ def main():
 
     try:
         processor = ArticleProcessor()
+
+        # Check if article already exists
+        existing = processor.check_article_exists(url)
+        if existing:
+            print(f"⚠️  Article already exists in database!")
+            print(f"   ID: {existing['id']}")
+            print(f"   Title: {existing['title']}")
+            print(f"   Created: {existing['created_at']}")
+            print(f"   Updated: {existing['updated_at']}")
+            print(f"   View at: http://localhost:3000/article/{existing['id']}")
+            print(f"\n❓ This will reprocess the article (costs API calls for transcription + AI summary)")
+            print(f"   Continue anyway? (y/n): ", end='')
+
+            response = input().strip().lower()
+            if response != 'y':
+                print("Cancelled. No processing performed.")
+                sys.exit(0)
+            print("\n🔄 Reprocessing article...")
+
         article_id = processor.process_article(url)
-        print(f"Success! Article ID: {article_id}")
-        print(f"View at: http://localhost:3000/article/{article_id}")
+        print(f"✅ Success! Article ID: {article_id}")
+        print(f"   View at: http://localhost:3000/article/{article_id}")
 
     except Exception as e:
         print(f"❌ ERROR: Processing failed - {e}")

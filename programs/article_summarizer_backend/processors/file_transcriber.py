@@ -37,8 +37,9 @@ class FileTranscriber(BaseProcessor):
             if not api_key:
                 raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable or add it to .env file")
 
-            self.client = OpenAI(api_key=api_key)
-            self.logger.info("✅ OpenAI client initialized successfully")
+            # Initialize with 3-minute timeout per request (applies to each chunk individually)
+            self.client = OpenAI(api_key=api_key, timeout=180.0)
+            self.logger.info("✅ OpenAI client initialized successfully (timeout: 180s per request)")
 
         except Exception as e:
             self.logger.error(f"❌ Error setting up OpenAI client: {e}")

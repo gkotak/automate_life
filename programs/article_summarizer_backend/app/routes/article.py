@@ -159,6 +159,28 @@ async def process_article_direct(
             # Initialize processor (no event emitter - we're streaming directly)
             processor = ArticleProcessor(event_emitter=None)
 
+            # Check if article already exists
+            existing = processor.check_article_exists(url)
+            if existing:
+                # Emit duplicate detected event
+                yield {
+                    "event": "duplicate_detected",
+                    "data": json.dumps({
+                        "article_id": existing['id'],
+                        "title": existing['title'],
+                        "created_at": existing['created_at'],
+                        "updated_at": existing['updated_at'],
+                        "url": f"/article/{existing['id']}",
+                        "elapsed": elapsed()
+                    })
+                }
+                await asyncio.sleep(0)
+
+                # Wait for confirmation (frontend should send a new request or cancel)
+                # For now, we'll just stop and let the frontend handle it
+                logger.info(f"⚠️  Article already exists (ID: {existing['id']}). Stopping processing.")
+                return
+
             # Create async queue for progress events (producer-consumer pattern)
             event_queue = asyncio.Queue()
             metadata_result = None
