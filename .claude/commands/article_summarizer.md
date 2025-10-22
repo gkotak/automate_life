@@ -1,17 +1,19 @@
 #article_summarizer
 
-Execute the Python script directly to process the article URL:
+Process an article URL and save to Supabase database:
 
 ```bash
-python3 programs/article_summarizer/scripts/article_summarizer.py "$ARGUMENTS"
+python3 programs/article_summarizer_backend/app/services/article_processor.py "$ARGUMENTS"
 ```
 
 This script will automatically:
-1. Extract metadata and video information from the article URL
-2. Generate a structured summary (max 1000 words) with bullet points
-3. Extract YouTube transcripts if available and create interactive video timestamps
-4. Create an HTML page in programs/video_summarizer/output/article_summaries/ with a sanitized filename
-5. Update programs/video_summarizer/output/article_summaries/index.html with the new article in reverse chronological order
-6. Commit and push the changes to GitHub
+1. Extract metadata and detect content type (video/audio/text)
+2. Handle authentication for paywalled content (Substack, Medium, etc.)
+3. Extract YouTube transcripts or transcribe audio using Whisper API
+4. Generate AI-powered summary with key insights and quotes using Claude
+5. Save structured data to Supabase database (articles, transcripts, insights, quotes, key_moments)
+6. Generate embeddings for semantic search
 
-The Python script handles all the processing internally using both deterministic operations and AI-powered analysis via Claude Code CLI. 
+View the processed article at: http://localhost:3000/article/{id}
+
+The script uses the article_summarizer_backend processing pipeline with database-first storage.

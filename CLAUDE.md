@@ -19,26 +19,44 @@ This is a Claude Code configuration repository that automates content analysis a
 
 ### Core System Components
 
-**Article Summarizer** (`programs/article_summarizer/`)
+**Article Summarizer Backend** (`programs/article_summarizer_backend/`)
+- FastAPI backend for article processing with SSE streaming support
 - Intelligent article content extraction with media detection
 - YouTube transcript extraction and analysis
-- AI-powered content summarization using Claude Code CLI
+- AI-powered content summarization using Claude API
 - Saves all data to Supabase database (no static files)
 - Smart authentication for protected content (Substack, Medium, etc.)
-- Next.js web app for viewing and managing summaries (http://localhost:3000)
+- Railway deployment support with Docker
 
 **File Organization**:
 ```
-programs/article_summarizer/
-├── scripts/                    # Core processing scripts
-├── logs/                       # Processing logs
-├── common/                     # Shared utilities
+programs/article_summarizer_backend/
+├── app/                        # FastAPI application
+│   ├── main.py                 # API server
+│   ├── routes/                 # API endpoints
+│   ├── services/               # Article processor
+│   └── middleware/             # Authentication
+├── core/                       # Shared utilities
+│   ├── authentication.py       # Playwright-based auth
+│   ├── content_detector.py     # Media detection
+│   └── event_emitter.py        # SSE events
 └── processors/                 # Content processors
 
 web-apps/article-summarizer/   # Next.js web interface (runs on port 3000)
 ├── src/                        # React components and pages
 ├── public/                     # Static assets
 └── package.json                # Dependencies
+
+supabase/                       # Database infrastructure
+├── migrations/                 # Historical schema changes
+├── schemas/                    # Table definitions
+├── functions/                  # SQL functions
+└── tools/                      # Migration utilities
+
+scripts/article_summarizer/     # Utility scripts
+├── backfill_embeddings.py      # Regenerate embeddings
+├── backfill_sources.py         # Fix source names
+└── fix_pocketcasts_sources.py  # Data cleanup
 ```
 
 **Check New Posts** (`programs/check_new_posts/`)

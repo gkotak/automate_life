@@ -68,8 +68,10 @@ export default function ResetPasswordPage() {
   // Show loading while checking for authentication
   if (isCheckingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <div className="text-white">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="border border-slate-200 rounded-2xl p-8">
+          <div className="text-gray-950">Loading...</div>
+        </div>
       </div>
     )
   }
@@ -77,10 +79,10 @@ export default function ResetPasswordPage() {
   // If no user after checking, show error with option to request new link
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
-        <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">
+      <div className="min-h-screen flex items-center justify-center bg-white px-8 py-8">
+        <div className="w-full max-w-lg border border-slate-200 rounded-2xl py-12 px-6">
+          <div className="text-center max-w-sm mx-auto">
+            <h2 className="text-3xl font-semibold text-gray-950 mb-4">
               Reset Link Expired
             </h2>
             <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg mb-6">
@@ -90,7 +92,10 @@ export default function ResetPasswordPage() {
             </div>
             <button
               onClick={() => router.push('/forgot-password')}
-              className="w-full py-3 px-4 bg-primary-green hover:bg-dark-green text-white rounded-lg transition-colors"
+              className="w-full py-2.5 px-4 text-white rounded-md transition-colors font-semibold text-sm"
+              style={{ backgroundColor: '#077331' }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#065a27')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#077331')}
             >
               Request New Reset Link
             </button>
@@ -101,76 +106,81 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="text-3xl font-bold text-center text-white">
-            Set new password
+    <div className="min-h-screen flex items-center justify-center bg-white px-8 py-8">
+      <div className="w-full max-w-lg border border-slate-200 rounded-2xl py-12 px-6">
+        <div className="mb-6 text-center">
+          <h2 className="text-3xl font-semibold text-gray-950 mb-2">
+            Set New Password
           </h2>
-          <p className="mt-2 text-center text-sm text-slate-400">
+          <p className="text-base text-gray-950">
             Enter your new password below
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
+        <div className="max-w-sm mx-auto">
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
+                {error}
+              </div>
+            )}
 
-          {success && (
-            <div className="bg-green-900/20 border border-green-500 text-green-400 px-4 py-3 rounded-lg">
-              <p className="font-medium mb-1">Password updated successfully!</p>
-              <p className="text-sm">Redirecting you to the home page...</p>
-            </div>
-          )}
+            {success && (
+              <div className="bg-green-900/20 border border-green-500 text-green-400 px-4 py-3 rounded-lg">
+                <p className="font-medium mb-1">Password updated successfully!</p>
+                <p className="text-sm">Redirecting you to the home page...</p>
+              </div>
+            )}
 
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="new-password" className="block text-sm font-medium text-slate-300 mb-2">
-                New password
-              </label>
-              <input
-                id="new-password"
-                name="new-password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
-                placeholder="••••••••"
-              />
-              <p className="mt-1 text-xs text-slate-500">Must be at least 6 characters</p>
+            <div className="space-y-5">
+              <div>
+                <label htmlFor="new-password" className="block text-sm font-medium text-gray-950 mb-2">
+                  New password
+                </label>
+                <input
+                  id="new-password"
+                  name="new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent text-sm"
+                  placeholder="Enter your password"
+                />
+                <p className="mt-1 text-xs text-slate-600">Must be at least 6 characters</p>
+              </div>
+
+              <div>
+                <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-950 mb-2">
+                  Confirm new password
+                </label>
+                <input
+                  id="confirm-password"
+                  name="confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent text-sm"
+                  placeholder="Enter your password"
+                />
+              </div>
             </div>
 
-            <div>
-              <label htmlFor="confirm-password" className="block text-sm font-medium text-slate-300 mb-2">
-                Confirm new password
-              </label>
-              <input
-                id="confirm-password"
-                name="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || success}
-            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg text-white bg-primary-green hover:bg-dark-green focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? 'Updating password...' : 'Update password'}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading || success}
+              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: '#077331' }}
+              onMouseEnter={(e) => !loading && !success && (e.currentTarget.style.backgroundColor = '#065a27')}
+              onMouseLeave={(e) => !loading && !success && (e.currentTarget.style.backgroundColor = '#077331')}
+            >
+              {loading ? 'Updating password...' : 'Update Password'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   )

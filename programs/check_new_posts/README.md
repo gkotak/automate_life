@@ -123,7 +123,7 @@ cd programs/check_new_posts/scripts
 
 ## Post Tracking
 
-Posts are tracked in the shared file: `programs/article_summarizer/output/processed_posts.json`
+Posts are tracked in Supabase database (content_queue table)
 
 Each post has:
 - **post_id**: Unique hash based on title and normalized URL
@@ -146,11 +146,11 @@ Each post has:
 
 ## Integration
 
-This program integrates with the article_summarizer:
+This program integrates with the article_summarizer backend:
 
-- **Shared Data**: Uses article_summarizer's processed_posts.json for tracking
-- **Processing**: Calls article_summarizer's summarize_article.sh script
-- **Output**: Processed summaries are stored in article_summarizer's output directory
+- **Shared Data**: Uses Supabase database (content_queue table) for tracking
+- **Processing**: Calls article_summarizer backend processor
+- **Output**: Processed summaries are stored in Supabase articles table
 
 ## Logs
 

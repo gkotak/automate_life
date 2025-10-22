@@ -1,1 +1,0 @@
-# Common utilities and base classes for video summarizer

@@ -63,6 +63,6 @@ SUPABASE_ANON_KEY=your-supabase-anon-key
 - Uses unofficial PocketCasts API to fetch in-progress episodes
 - Tracks episodes in: `programs/check_new_posts/output/processed_podcasts.json`
 - Checks Supabase `articles` table to find unprocessed podcasts
-- Processes via: `programs/article_summarizer/scripts/article_summarizer.py`
+- Processes via: `programs/article_summarizer_backend/app/services/article_processor.py`
 - Processed articles viewable at: http://localhost:3000
 - Does not require PocketCasts Plus subscription

@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import BrandPanel from '@/components/BrandPanel'
 
 export default function SignupPage() {
   const [email, setEmail] = useState('')
@@ -57,21 +58,17 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="text-3xl font-bold text-center text-white">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-slate-400">
-            Or{' '}
-            <Link href="/login" className="text-primary-green hover:text-dark-green">
-              sign in to existing account
-            </Link>
-          </p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-white px-8 py-8">
+      <div className="border border-slate-200 rounded-2xl p-12 flex gap-8" style={{ width: '876px', height: '654px' }}>
+        {/* Left column - Form */}
+        <div className="flex-1" style={{ width: '364px' }}>
+          <div className="mb-8">
+            <h2 className="text-3xl font-semibold text-gray-950 mb-2 text-center">
+              Create your account
+            </h2>
+          </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-6" onSubmit={handleSubmit}>
           {error && (
             <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
               {error}
@@ -84,9 +81,9 @@ export default function SignupPage() {
             </div>
           )}
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-950 mb-2">
                 Email address
               </label>
               <input
@@ -97,13 +94,13 @@ export default function SignupPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
-                placeholder="you@example.com"
+                className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-md text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
+                placeholder="name@email.com"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-950 mb-2">
                 Password
               </label>
               <input
@@ -114,14 +111,14 @@ export default function SignupPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
+                className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-md text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
                 placeholder="••••••••"
               />
-              <p className="mt-1 text-xs text-slate-500">Must be at least 6 characters</p>
+              <p className="mt-1 text-xs text-slate-600">Must be at least 6 characters</p>
             </div>
 
             <div>
-              <label htmlFor="confirm-password" className="block text-sm font-medium text-slate-300 mb-2">
+              <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-950 mb-2">
                 Confirm password
               </label>
               <input
@@ -132,7 +129,7 @@ export default function SignupPage() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
+                className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-md text-gray-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-green focus:border-transparent"
                 placeholder="••••••••"
               />
             </div>
@@ -141,46 +138,50 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={loading || success}
-            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg text-white bg-primary-green hover:bg-dark-green focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{ backgroundColor: '#077331' }}
+            onMouseEnter={(e) => !loading && !success && (e.currentTarget.style.backgroundColor = '#065a27')}
+            onMouseLeave={(e) => !loading && !success && (e.currentTarget.style.backgroundColor = '#077331')}
           >
-            {loading ? 'Creating account...' : 'Sign up'}
+            {loading ? 'Creating account...' : 'Sign Up'}
           </button>
+
+          <div className="text-center">
+            <span className="text-sm text-gray-600">Already have an account? </span>
+            <Link href="/login" className="text-sm text-primary-green hover:text-dark-green font-medium">
+              Sign In
+            </Link>
+          </div>
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-700"></div>
+              <div className="w-full border-t border-slate-300"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-gray-950 text-slate-400">Or continue with</span>
+              <span className="px-3 bg-white text-slate-500">or signup with</span>
             </div>
           </div>
 
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-slate-700 rounded-lg text-white bg-slate-800 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-colors"
+            className="w-full flex items-center justify-center gap-3 py-2 px-4 border border-slate-200 rounded-[10px] text-gray-950 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 transition-colors font-semibold text-sm"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="currentColor"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
+            <svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M47.532 24.5528C47.532 22.9214 47.3997 21.2811 47.1175 19.6761H24.48V28.9181H37.4434C36.9055 31.8988 35.177 34.5356 32.6461 36.2111V42.2078H40.3801C44.9217 38.0278 47.532 31.8547 47.532 24.5528Z" fill="#4285F4"/>
+              <path d="M24.48 48.0016C30.9529 48.0016 36.4116 45.8764 40.3888 42.2078L32.6549 36.2111C30.5031 37.675 27.7252 38.5039 24.4888 38.5039C18.2275 38.5039 12.9187 34.2798 11.0139 28.6006H3.03296V34.7825C7.10718 42.8868 15.4056 48.0016 24.48 48.0016Z" fill="#34A853"/>
+              <path d="M11.0051 28.6006C9.99973 25.6199 9.99973 22.3922 11.0051 19.4115V13.2296H3.03298C-0.371021 20.0112 -0.371021 28.0009 3.03298 34.7825L11.0051 28.6006Z" fill="#FBBC04"/>
+              <path d="M24.48 9.49932C27.9016 9.44641 31.2086 10.7339 33.6866 13.0973L40.5387 6.24523C36.2 2.17101 30.4414 -0.068932 24.48 0.00161733C15.4055 0.00161733 7.10718 5.11644 3.03296 13.2296L11.005 19.4115C12.901 13.7235 18.2187 9.49932 24.48 9.49932Z" fill="#EA4335"/>
             </svg>
-            Continue with Google
+            Google
           </button>
         </form>
+        </div>
+
+        {/* Right column - Brand Panel */}
+        <div className="flex-1" style={{ width: '364px' }}>
+          <BrandPanel />
+        </div>
       </div>
     </div>
   )
