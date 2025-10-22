@@ -159,6 +159,19 @@ async def process_article_direct(
             # Initialize processor (no event emitter - we're streaming directly)
             processor = ArticleProcessor(event_emitter=None)
 
+            # Create async queue for progress events (producer-consumer pattern)
+            event_queue = asyncio.Queue()
+            metadata_result = None
+            extraction_error = None
+
+            # Define progress callback to add events to queue
+            async def progress_callback(event_type: str, data: dict):
+                """Callback to add progress events to queue for streaming"""
+                await event_queue.put({
+                    "event": event_type,
+                    "data": {**data, "elapsed": elapsed()}
+                })
+
             # Step 1: Extract metadata (includes content fetch and transcription)
             yield {
                 "event": "fetch_start",
@@ -167,13 +180,42 @@ async def process_article_direct(
             await asyncio.sleep(0)
 
             logger.info(f"Starting metadata extraction for: {url}")
-            metadata = await processor._extract_metadata(url)
 
-            yield {
-                "event": "fetch_complete",
-                "data": json.dumps({"title": metadata['title'], "elapsed": elapsed()})
-            }
-            await asyncio.sleep(0)
+            # Run metadata extraction in background task
+            async def extract_metadata_task():
+                nonlocal metadata_result, extraction_error
+                try:
+                    metadata_result = await processor._extract_metadata(url, progress_callback=progress_callback)
+                    # Signal completion
+                    await event_queue.put(None)
+                except Exception as e:
+                    extraction_error = e
+                    await event_queue.put(None)
+
+            # Start extraction task
+            extraction_task = asyncio.create_task(extract_metadata_task())
+
+            # Stream progress events as they arrive
+            while True:
+                event = await event_queue.get()
+                if event is None:  # Completion signal
+                    break
+                yield {
+                    "event": event["event"],
+                    "data": json.dumps(event["data"])
+                }
+                await asyncio.sleep(0)
+
+            # Wait for extraction to complete
+            await extraction_task
+
+            # Check for errors
+            if extraction_error:
+                raise extraction_error
+
+            metadata = metadata_result
+
+            # NOTE: fetch_complete is now emitted from within _extract_metadata() immediately after HTML fetch
 
             # Step 2: Detect media type (just analyze metadata, no I/O)
             yield {

@@ -24,9 +24,10 @@ import sys
 import json
 import os
 import re
+import asyncio
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable, Awaitable
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
 from openai import OpenAI
@@ -45,6 +46,8 @@ from core.config import Config
 from core.content_detector import ContentTypeDetector, ContentType
 from core.authentication import AuthenticationManager
 from core.claude_client import ClaudeClient
+from core.source_extractor import extract_source, extract_domain, normalize_source_name
+from core.text_utils import sanitize_filename
 from processors.transcript_processor import TranscriptProcessor
 from processors.file_transcriber import FileTranscriber
 
@@ -144,7 +147,7 @@ class ArticleProcessor(BaseProcessor):
                 await self.event_emitter.emit('media_detect_start')
 
             # Step 2: Generate filename
-            filename = self._sanitize_filename(metadata['title']) + '.html'
+            filename = sanitize_filename(metadata['title']) + '.html'
             self.logger.info(f"   Filename: {filename}")
 
             # Emit media detection result
@@ -208,12 +211,17 @@ class ArticleProcessor(BaseProcessor):
             self.logger.error(f"❌ Processing failed: {e}")
             raise
 
-    async def _extract_metadata(self, url: str) -> Dict:
+    async def _extract_metadata(
+        self,
+        url: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
         """
         Extract metadata and detect content type
 
         Args:
             url: URL to analyze
+            progress_callback: Optional async callback for progress updates
 
         Returns:
             Dictionary containing metadata and content analysis
@@ -265,11 +273,15 @@ class ArticleProcessor(BaseProcessor):
                 response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
                 soup = self._get_soup(response.content)
 
+        # Extract basic metadata (title)
+        title = self._extract_title(soup, url)
+
+        # Emit fetch_complete callback immediately after HTML is fetched
+        if progress_callback:
+            await progress_callback("fetch_complete", {"title": title})
+
         # Detect content type
         content_type = self.content_detector.detect_content_type(soup, url)
-
-        # Extract basic metadata
-        title = self._extract_title(soup, url)
 
         # Build metadata based on content type
         metadata = {
@@ -283,10 +295,20 @@ class ArticleProcessor(BaseProcessor):
 
         # Handle different content types
         if content_type.has_embedded_video:
-            metadata.update(self._process_video_content(content_type.video_urls, soup, url))
+            if progress_callback:
+                await progress_callback("detecting_video", {"video_count": len(content_type.video_urls)})
+            metadata.update(await self._process_video_content_async(
+                content_type.video_urls, soup, url, progress_callback
+            ))
         elif content_type.has_embedded_audio:
-            metadata.update(self._process_audio_content(content_type.audio_urls, soup, url))
+            if progress_callback:
+                await progress_callback("detecting_audio", {"audio_count": len(content_type.audio_urls)})
+            metadata.update(await self._process_audio_content_async(
+                content_type.audio_urls, soup, url, progress_callback
+            ))
         else:
+            if progress_callback:
+                await progress_callback("detecting_text_only", {})
             metadata.update(self._process_text_content(soup, url))
 
         return metadata
@@ -448,6 +470,103 @@ class ArticleProcessor(BaseProcessor):
             'images': images
         }
 
+    async def _process_video_content_async(
+        self,
+        video_urls: List[Dict],
+        soup,
+        base_url: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
+        """
+        Async version: Process content with single validated video with progress callbacks
+
+        Args:
+            video_urls: List of video URLs detected
+            soup: BeautifulSoup object
+            base_url: Base URL for resolving relative links
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Dict with transcripts, article_text, and images
+        """
+        # Should only receive 1 validated video from detection logic
+        if not video_urls:
+            self.logger.info("   No validated videos to process")
+            return {'media_info': {'youtube_urls': []}, 'transcripts': {}}
+
+        if len(video_urls) > 1:
+            self.logger.warning(f"   ⚠️ [UNEXPECTED] Received {len(video_urls)} videos, expected 1. Using first video only.")
+
+        # Process only the first (and should be only) video
+        video = video_urls[0]
+        video_id = video.get('video_id', 'N/A')
+        score = video.get('relevance_score', 'N/A')
+        context = video.get('context', 'unknown')
+
+        self.logger.info(f"   Processing single validated video: ID={video_id} | Score={score} | Context={context}")
+
+        if progress_callback:
+            await progress_callback("processing_video", {"video_id": video_id})
+
+        # Extract transcript for the single video
+        transcripts = {}
+        self.logger.info(f"      🎥 [EXTRACTING] Video: {video_id}")
+
+        transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
+        if transcript_data and transcript_data.get('success'):
+            transcripts[video_id] = transcript_data
+            self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
+        else:
+            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
+            self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
+
+            # Fallback: Try to download and transcribe video audio using Whisper
+            self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
+
+            if progress_callback:
+                await progress_callback("video_fallback_whisper", {"video_id": video_id})
+
+            # Extract audio URL using yt-dlp
+            audio_url = self._extract_youtube_audio_url(video_id)
+            if audio_url:
+                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
+                transcript_data = await self._download_and_transcribe_media_async(
+                    audio_url,
+                    "video",
+                    progress_callback=progress_callback
+                )
+                if transcript_data:
+                    transcripts[video_id] = transcript_data
+                    self.logger.info(f"      ✓ Video transcription successful via Whisper")
+                else:
+                    self.logger.info(f"      ✗ Whisper transcription failed")
+            else:
+                self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
+
+        # Always extract article text content
+        self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
+        article_text = self._extract_article_text_content(soup)
+        if article_text:
+            word_count = len(article_text.split())
+            self.logger.info(f"   📄 [ARTICLE TEXT] Extracted {word_count} words of article content")
+
+            # Limit text size for prompt efficiency
+            if word_count > Config.MAX_ARTICLE_WORDS:
+                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
+                self.logger.info(f"   📄 [ARTICLE TEXT] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
+        else:
+            self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
+
+        # Extract images from article
+        images = self._extract_article_images(soup, base_url)
+
+        return {
+            'media_info': {'youtube_urls': video_urls},
+            'transcripts': transcripts,
+            'article_text': article_text or 'Content not available',
+            'images': images
+        }
+
     def _process_audio_content(self, audio_urls: List[Dict], soup, base_url: str) -> Dict:
         """Process content with embedded audio"""
         self.logger.info("   Found embedded audio content...")
@@ -460,6 +579,76 @@ class ArticleProcessor(BaseProcessor):
                 if audio_url:
                     self.logger.info(f"   🎵 [AUDIO {idx+1}] Attempting transcription...")
                     transcript_data = self._download_and_transcribe_media(audio_url, "audio")
+                    if transcript_data:
+                        transcripts[f"audio_{idx}"] = transcript_data
+                        self.logger.info(f"   ✓ Audio transcription successful")
+                    else:
+                        self.logger.info(f"   ✗ Audio transcription failed")
+
+        # Always extract article text content
+        self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
+        article_text = self._extract_article_text_content(soup)
+        if article_text:
+            word_count = len(article_text.split())
+            self.logger.info(f"   📄 [ARTICLE TEXT] Extracted {word_count} words of article content")
+
+            # Limit text size for prompt efficiency
+            if word_count > Config.MAX_ARTICLE_WORDS:
+                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
+                self.logger.info(f"   📄 [ARTICLE TEXT] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
+        else:
+            self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
+
+        # Extract images from article
+        images = self._extract_article_images(soup, base_url)
+
+        return {
+            'media_info': {'audio_urls': audio_urls},
+            'transcripts': transcripts if transcripts else {},
+            'article_text': article_text or 'Content not available',
+            'images': images
+        }
+
+    async def _process_audio_content_async(
+        self,
+        audio_urls: List[Dict],
+        soup,
+        base_url: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
+        """
+        Async version: Process content with embedded audio with progress callbacks
+
+        Args:
+            audio_urls: List of audio URLs detected
+            soup: BeautifulSoup object
+            base_url: Base URL for resolving relative links
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Dict with transcripts, article_text, and images
+        """
+        self.logger.info("   Found embedded audio content...")
+
+        # Try to transcribe audio if available
+        transcripts = {}
+        if audio_urls:
+            for idx, audio in enumerate(audio_urls):
+                audio_url = audio.get('url')
+                if audio_url:
+                    self.logger.info(f"   🎵 [AUDIO {idx+1}] Attempting transcription...")
+
+                    if progress_callback:
+                        await progress_callback("processing_audio", {
+                            "audio_index": idx + 1,
+                            "total_audios": len(audio_urls)
+                        })
+
+                    transcript_data = await self._download_and_transcribe_media_async(
+                        audio_url,
+                        "audio",
+                        progress_callback=progress_callback
+                    )
                     if transcript_data:
                         transcripts[f"audio_{idx}"] = transcript_data
                         self.logger.info(f"   ✓ Audio transcription successful")
@@ -920,7 +1109,7 @@ CRITICAL TIMESTAMP RULES:
                 embedding = self._generate_embedding(embedding_text)
 
             # Extract source name
-            source = self._extract_source(metadata['url'], metadata)
+            source = extract_source(metadata['url'], metadata, self.session)
 
             # Build article record
             article_data = {
@@ -1011,207 +1200,7 @@ CRITICAL TIMESTAMP RULES:
                     return title
 
         # Fallback to URL
-        return f"Article from {self._extract_domain(url)}"
-
-    def _extract_domain(self, url: str) -> str:
-        """Extract domain from URL"""
-        from urllib.parse import urlparse
-        return urlparse(url).netloc
-
-    def _extract_source(self, url: str, metadata: Dict) -> str:
-        """
-        Extract source name from URL
-
-        For YouTube: Extract channel name
-        For PocketCasts: Extract podcast name
-        For other URLs: Format domain name nicely
-
-        Args:
-            url: Article URL
-            metadata: Article metadata containing platform info
-
-        Returns:
-            Formatted source name (normalized)
-        """
-        from urllib.parse import urlparse
-
-        # YouTube - try to extract channel name
-        if 'youtube.com' in url or 'youtu.be' in url:
-            channel_name = self._extract_youtube_channel_name(url)
-            if channel_name:
-                return self._normalize_source_name(channel_name)
-            return "YouTube"
-
-        # PocketCasts - extract podcast name from metadata
-        if 'pocketcasts.com' in url:
-            podcast_name = metadata.get('podcast_title') or metadata.get('podcast_name')
-            if podcast_name:
-                return self._normalize_source_name(podcast_name)
-            return "Pocket Casts"
-
-        # For other URLs, format domain nicely
-        domain = self._extract_domain(url)
-
-        # Remove common prefixes
-        domain = domain.replace('www.', '')
-
-        # Special case mappings for common domains
-        domain_mappings = {
-            'substack.com': lambda d: self._format_substack_name(d),
-            'medium.com': 'Medium',
-            'nytimes.com': 'New York Times',
-            'wsj.com': 'Wall Street Journal',
-            'ft.com': 'Financial Times',
-            'bloomberg.com': 'Bloomberg',
-            'techcrunch.com': 'TechCrunch',
-            'theverge.com': 'The Verge',
-            'arstechnica.com': 'Ars Technica',
-            'wired.com': 'Wired',
-            'stratechery.com': 'Stratechery',
-            'lennysnewsletter.com': "Lenny",
-            'akashbajwa.co': 'Akash Bajwa',
-        }
-
-        # Check domain mappings
-        for key, value in domain_mappings.items():
-            if key in domain:
-                if callable(value):
-                    return self._normalize_source_name(value(domain))
-                return value
-
-        # Default: Capitalize domain name
-        return self._normalize_source_name(self._format_domain_name(domain))
-
-    def _normalize_source_name(self, source: str) -> str:
-        """
-        Normalize source name by removing common suffixes like Newsletter, Podcast, Journal, etc.
-
-        Args:
-            source: Raw source name
-
-        Returns:
-            Normalized source name
-        """
-        import re
-
-        # List of suffixes to remove (case-insensitive)
-        suffixes_to_remove = [
-            'Newsletter',
-            'Podcast',
-            'Journal',
-            'Magazine',
-            'Blog',
-            'Daily',
-            'Weekly',
-            'Show',
-            'Network',
-            'Media',
-            'News'
-        ]
-
-        # Build regex pattern to match suffixes at the end
-        # Pattern matches: optional space/colon/dash/apostrophe+s, then suffix
-        # This will match patterns like:
-        # - "Lenny's Newsletter" -> "Lenny's"
-        # - "Lenny's Podcast" -> "Lenny's"
-        # - "TechCrunch Daily" -> "TechCrunch"
-        pattern = r"\s*[-:,]?\s*(?:'s\s+)?(" + '|'.join(suffixes_to_remove) + r")\s*$"
-
-        # Remove matched suffixes (case-insensitive)
-        normalized = re.sub(pattern, '', source, flags=re.IGNORECASE)
-
-        # Clean up any trailing whitespace, colons, or dashes
-        normalized = normalized.rstrip(' :-,')
-
-        return normalized.strip()
-
-    def _format_substack_name(self, domain: str) -> str:
-        """Format Substack subdomain as source name"""
-        # Extract subdomain from domain like 'example.substack.com'
-        parts = domain.split('.')
-        if len(parts) >= 3 and parts[-2] == 'substack':
-            subdomain = parts[0]
-            # Capitalize and replace hyphens with spaces
-            return subdomain.replace('-', ' ').title()
-        return "Substack"
-
-    def _format_domain_name(self, domain: str) -> str:
-        """Format domain name nicely (capitalize, spaces)"""
-        # Remove TLD
-        name = domain.rsplit('.', 1)[0]
-        # Replace hyphens/underscores with spaces
-        name = name.replace('-', ' ').replace('_', ' ')
-        # Capitalize words
-        return name.title()
-
-    def _extract_youtube_channel_name(self, url: str) -> Optional[str]:
-        """
-        Extract YouTube channel name from video URL
-
-        Args:
-            url: YouTube video URL
-
-        Returns:
-            Channel name or None if not found
-        """
-        try:
-            import requests
-            from bs4 import BeautifulSoup
-
-            # Fetch the YouTube page
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.content, 'html.parser')
-
-            # Try to find channel name from meta tags
-            # Method 1: og:site_name sometimes contains channel
-            channel_link = soup.find('link', {'itemprop': 'name'})
-            if channel_link and channel_link.get('content'):
-                return channel_link['content']
-
-            # Method 2: Look for channel name in metadata
-            channel_meta = soup.find('meta', {'name': 'author'})
-            if channel_meta and channel_meta.get('content'):
-                return channel_meta['content']
-
-            # Method 3: Look in structured data (JSON-LD)
-            scripts = soup.find_all('script', type='application/ld+json')
-            for script in scripts:
-                try:
-                    data = json.loads(script.string)
-                    if isinstance(data, dict):
-                        # Look for author/creator info
-                        if 'author' in data and isinstance(data['author'], dict):
-                            if 'name' in data['author']:
-                                return data['author']['name']
-                        if 'creator' in data and isinstance(data['creator'], dict):
-                            if 'name' in data['creator']:
-                                return data['creator']['name']
-                except:
-                    continue
-
-            return None
-
-        except Exception as e:
-            self.logger.debug(f"Could not extract YouTube channel name: {e}")
-            return None
-
-    def _sanitize_filename(self, title: str) -> str:
-        """Sanitize title for use as filename"""
-        import re
-        # Replace em dashes and en dashes with regular hyphens
-        sanitized = title.replace('–', '-').replace('—', '-').replace('−', '-')
-        # Remove or replace invalid characters
-        sanitized = re.sub(r'[<>:"/\\|?*]', '', sanitized)
-        # Replace spaces and multiple spaces with underscores
-        sanitized = re.sub(r'\s+', '_', sanitized)
-        # Remove any remaining problematic Unicode characters and keep only ASCII
-        sanitized = ''.join(char if ord(char) < 128 else '_' for char in sanitized)
-        # Clean up multiple underscores
-        sanitized = re.sub(r'_{2,}', '_', sanitized)
-        # Limit length
-        return sanitized[:100] if len(sanitized) > 100 else sanitized
+        return f"Article from {extract_domain(url)}"
 
     def _extract_youtube_audio_url(self, video_id: str) -> Optional[str]:
         """
@@ -1347,6 +1336,119 @@ CRITICAL TIMESTAMP RULES:
             self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
             return None
 
+    async def _download_and_transcribe_media_async(
+        self,
+        media_url: str,
+        media_type: str = "audio",
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Optional[Dict]:
+        """
+        Async version: Download and transcribe audio/video file using Whisper with progress callbacks
+
+        Args:
+            media_url: URL of the audio/video file
+            media_type: Type of media (audio or video)
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Transcript data dict or None if transcription fails
+        """
+        if not self.file_transcriber:
+            self.logger.warning("   ⚠️ File transcriber not available")
+            return None
+
+        try:
+            import tempfile
+            import requests
+            import os
+
+            self.logger.info(f"   🎵 [WHISPER] Attempting to transcribe {media_type} from URL...")
+
+            if progress_callback:
+                await progress_callback("downloading_audio", {"media_type": media_type})
+
+            # Download media file to temp location (run in thread pool - blocking I/O)
+            def download_file():
+                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                    temp_path = temp_file.name
+                    self.logger.info(f"   📥 [DOWNLOAD] Downloading {media_type} file...")
+
+                    response = requests.get(media_url, stream=True, timeout=60)
+                    response.raise_for_status()
+
+                    # Write to temp file
+                    for chunk in response.iter_content(chunk_size=8192):
+                        temp_file.write(chunk)
+
+                    return temp_path
+
+            temp_path = await asyncio.to_thread(download_file)
+
+            # Check file size (OpenAI Whisper limit is 25MB)
+            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+            self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
+            self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
+
+            # If file exceeds 25MB, split into chunks
+            if file_size_mb > 25:
+                self.logger.info(f"   ✂️ [CHUNKING] File exceeds 25MB limit, splitting into chunks...")
+                if progress_callback:
+                    await progress_callback("audio_chunking_required", {
+                        "file_size_mb": file_size_mb
+                    })
+                return await self._transcribe_large_audio_file_async(
+                    temp_path,
+                    media_type,
+                    progress_callback=progress_callback
+                )
+
+            # Transcribe the file (run in thread pool - blocking I/O)
+            if progress_callback:
+                await progress_callback("transcribing_audio", {"file_size_mb": file_size_mb})
+
+            result = await asyncio.to_thread(
+                self.file_transcriber.transcribe_file,
+                temp_path
+            )
+            transcript_data = result['transcript_data']
+            transcript_json_file = result['output_file']
+
+            # Format for our use - convert to same format as YouTube transcripts
+            segments = transcript_data.get('segments', [])
+            transcript_list = []
+            for segment in segments:
+                transcript_list.append({
+                    'start': segment.get('start', 0),
+                    'text': segment.get('text', ''),
+                    'duration': segment.get('end', 0) - segment.get('start', 0)
+                })
+
+            formatted_transcript = {
+                'success': True,
+                'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
+                'text': transcript_data.get('text', ''),
+                'language': transcript_data.get('language', 'unknown'),
+                'type': 'whisper_transcription',
+                'source': media_type,
+                'total_entries': len(transcript_list)
+            }
+
+            self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
+
+            # Clean up temp files
+            try:
+                await asyncio.to_thread(os.unlink, temp_path)  # Delete downloaded audio file
+                await asyncio.to_thread(os.unlink, transcript_json_file)  # Delete transcript JSON file
+                self.logger.info(f"   🧹 Cleaned up temp files")
+            except Exception as cleanup_error:
+                self.logger.warning(f"   ⚠️ Could not clean up temp files: {cleanup_error}")
+
+            return formatted_transcript
+
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
+            return None
+
     def _transcribe_large_audio_file(self, audio_path: str, media_type: str, max_duration_minutes: int = 30) -> Optional[Dict]:
         """
         Transcribe large audio files by splitting into chunks with timeout handling
@@ -1446,6 +1548,159 @@ CRITICAL TIMESTAMP RULES:
 
             # Clean up original file
             os.unlink(audio_path)
+
+            if not all_segments:
+                self.logger.warning(f"   ❌ [CHUNKING] No segments transcribed successfully")
+                return None
+
+            # Combine all transcripts
+            is_partial = chunks_completed < len(chunks)
+            formatted_transcript = {
+                'success': True,
+                'transcript': all_segments,
+                'text': ' '.join(all_text),
+                'language': 'unknown',
+                'type': 'whisper_transcription_chunked' + ('_partial' if is_partial else ''),
+                'source': media_type,
+                'total_entries': len(all_segments),
+                'chunks_processed': chunks_completed,
+                'total_chunks': len(chunks),
+                'is_partial': is_partial
+            }
+
+            if is_partial:
+                self.logger.warning(f"   ⚠️ [PARTIAL] Transcription incomplete: {chunks_completed}/{len(chunks)} chunks processed")
+                self.logger.info(f"   📊 [PARTIAL] Returning partial transcript ({len(formatted_transcript['text'])} chars)")
+            else:
+                self.logger.info(f"   ✅ [WHISPER] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
+
+            return formatted_transcript
+
+        except ImportError:
+            self.logger.error(f"   ❌ [CHUNKING] pydub library not installed. Install with: pip install pydub")
+            self.logger.error(f"   ❌ [CHUNKING] Also requires ffmpeg: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")
+            return None
+        except Exception as e:
+            self.logger.error(f"   ❌ [CHUNKING] Failed to process large audio file: {e}")
+            return None
+
+    async def _transcribe_large_audio_file_async(
+        self,
+        audio_path: str,
+        media_type: str,
+        max_duration_minutes: int = 30,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Optional[Dict]:
+        """
+        Async version: Transcribe large audio files by splitting into chunks with progress callbacks
+
+        Args:
+            audio_path: Path to the audio file
+            media_type: Type of media (audio or video)
+            max_duration_minutes: Maximum time to spend on transcription (default: 30 minutes)
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Transcript data dict or None if transcription fails
+        """
+        try:
+            from pydub import AudioSegment
+            import tempfile
+            import os
+            import time
+
+            self.logger.info(f"   🎵 [CHUNKING] Loading audio file for splitting...")
+            start_time = time.time()
+            timeout_seconds = max_duration_minutes * 60
+
+            # Load audio file (run in thread pool since it's I/O bound)
+            audio = await asyncio.to_thread(AudioSegment.from_file, audio_path)
+            duration_ms = len(audio)
+            duration_min = duration_ms / 1000 / 60
+
+            self.logger.info(f"   ⏱️ [DURATION] Audio is {duration_min:.1f} minutes")
+            self.logger.info(f"   ⏰ [TIMEOUT] Will process for max {max_duration_minutes} minutes")
+
+            # Split into 20-minute chunks
+            chunk_length_ms = 20 * 60 * 1000  # 20 minutes
+            chunks = []
+
+            for i in range(0, duration_ms, chunk_length_ms):
+                chunk = audio[i:i + chunk_length_ms]
+                chunks.append((i / 1000, chunk))  # Store start time in seconds
+
+            self.logger.info(f"   ✂️ [CHUNKS] Split into {len(chunks)} chunks of ~20 minutes each")
+
+            if progress_callback:
+                await progress_callback("audio_split", {
+                    "total_chunks": len(chunks),
+                    "duration_minutes": duration_min
+                })
+
+            # Transcribe each chunk
+            all_segments = []
+            all_text = []
+            chunks_completed = 0
+
+            for chunk_idx, (start_offset, chunk) in enumerate(chunks):
+                # Check if we've exceeded timeout
+                elapsed = time.time() - start_time
+                if elapsed > timeout_seconds:
+                    self.logger.warning(f"   ⏰ [TIMEOUT] Reached {max_duration_minutes} minute limit after {chunk_idx}/{len(chunks)} chunks")
+                    self.logger.info(f"   📦 [PARTIAL] Processing {chunks_completed} completed chunks...")
+                    break
+
+                self.logger.info(f"   🎙️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Transcribing... ({elapsed/60:.1f}/{max_duration_minutes} min elapsed)")
+
+                if progress_callback:
+                    await progress_callback("transcribing_chunk", {
+                        "current": chunk_idx + 1,
+                        "total": len(chunks),
+                        "elapsed_minutes": elapsed / 60
+                    })
+
+                # Save chunk to temp file
+                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as chunk_file:
+                    chunk_path = chunk_file.name
+                    await asyncio.to_thread(chunk.export, chunk_path, format='mp3')
+
+                try:
+                    # Transcribe this chunk (run in thread pool - blocking I/O)
+                    result = await asyncio.to_thread(
+                        self.file_transcriber.transcribe_file,
+                        chunk_path
+                    )
+                    transcript_data = result['transcript_data']
+                    transcript_json_file = result['output_file']
+
+                    # Adjust timestamps to account for chunk offset
+                    segments = transcript_data.get('segments', [])
+                    for segment in segments:
+                        all_segments.append({
+                            'start': segment.get('start', 0) + start_offset,
+                            'text': segment.get('text', ''),
+                            'duration': segment.get('end', 0) - segment.get('start', 0)
+                        })
+
+                    all_text.append(transcript_data.get('text', ''))
+                    chunks_completed += 1
+
+                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments)")
+
+                    # Clean up chunk files
+                    await asyncio.to_thread(os.unlink, chunk_path)
+                    await asyncio.to_thread(os.unlink, transcript_json_file)
+
+                except Exception as chunk_error:
+                    self.logger.warning(f"   ⚠️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Failed: {chunk_error}")
+                    # Continue with other chunks even if one fails
+                    try:
+                        await asyncio.to_thread(os.unlink, chunk_path)
+                    except:
+                        pass
+
+            # Clean up original file
+            await asyncio.to_thread(os.unlink, audio_path)
 
             if not all_segments:
                 self.logger.warning(f"   ❌ [CHUNKING] No segments transcribed successfully")

@@ -14,7 +14,8 @@ interface ProcessingStep {
   status: 'pending' | 'processing' | 'complete' | 'skipped';
   detail?: string;
   link?: string;
-  elapsed?: number; // seconds elapsed for this step
+  startTime?: number; // timestamp when step started (for calculating duration)
+  duration?: number; // duration in seconds for completed/processing steps
   substeps?: string[]; // for showing chunked audio processing
 }
 
@@ -37,23 +38,55 @@ export default function AdminPage() {
     }
   }, [user, authLoading, router]);
 
+  // Real-time counter: Update duration every second for steps that are processing
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSteps(prev => prev.map(step => {
+        if (step.status === 'processing' && step.startTime) {
+          const now = Date.now();
+          const duration = Math.floor((now - step.startTime) / 1000);
+          return { ...step, duration };
+        }
+        return step;
+      }));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const updateStep = (id: string, updates: Partial<ProcessingStep>) => {
-    setSteps(prev => prev.map(step =>
-      step.id === id ? { ...step, ...updates } : step
-    ));
+    setSteps(prev => prev.map(step => {
+      if (step.id === id) {
+        const now = Date.now();
+
+        // When starting processing, record start time
+        if (updates.status === 'processing' && !step.startTime) {
+          return { ...step, ...updates, startTime: now, duration: 0 };
+        }
+
+        // When completing, calculate final duration (minimum 1 second)
+        if (updates.status === 'complete' && step.startTime) {
+          const duration = Math.max(1, Math.floor((now - step.startTime) / 1000));
+          return { ...step, ...updates, duration };
+        }
+
+        // For other updates, preserve startTime if it exists
+        return { ...step, ...updates };
+      }
+      return step;
+    }));
   };
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const initializeSteps = () => {
-    // Initialize steps
+    // Initialize steps - COLLAPSED: media + content into one
     const initialSteps: ProcessingStep[] = [
-      { id: 'fetch', label: 'Fetching article', status: 'pending', elapsed: 0 },
-      { id: 'media', label: 'Detecting media content', status: 'pending', elapsed: 0 },
-      { id: 'content', label: 'Extracting content', status: 'pending', elapsed: 0 },
-      { id: 'transcript', label: 'Download audio and processing transcript', status: 'pending', elapsed: 0, substeps: [] },
-      { id: 'ai', label: 'Generating AI summary', status: 'pending', elapsed: 0 },
-      { id: 'save', label: 'Saving to database', status: 'pending', elapsed: 0 },
+      { id: 'fetch', label: 'Fetching article', status: 'pending' },
+      { id: 'content', label: 'Extracting content', status: 'pending' },
+      { id: 'transcript', label: 'Download audio and processing transcript', status: 'pending', substeps: [] },
+      { id: 'ai', label: 'Generating AI summary', status: 'pending' },
+      { id: 'save', label: 'Saving to database', status: 'pending' },
     ];
     setSteps(initialSteps);
   };
@@ -100,7 +133,7 @@ export default function AdminPage() {
       eventSource.addEventListener('fetch_start', (e) => {
         const data = JSON.parse(e.data);
         console.log('Event: fetch_start', data);
-        updateStep('fetch', { status: 'processing', elapsed: data.elapsed });
+        updateStep('fetch', { status: 'processing' });
       });
 
       eventSource.addEventListener('fetch_complete', (e) => {
@@ -108,95 +141,160 @@ export default function AdminPage() {
         console.log('Event: fetch_complete', data);
         updateStep('fetch', {
           status: 'complete',
-          detail: `Article fetched successfully`,
-          elapsed: data.elapsed
+          detail: `Article fetched successfully`
         });
       });
 
-      eventSource.addEventListener('media_detect_start', (e) => {
+      // NEW: Listen for audio detection - update content step with content type
+      eventSource.addEventListener('detecting_audio', (e) => {
         const data = JSON.parse(e.data);
-        updateStep('media', { status: 'processing', elapsed: data.elapsed });
+        console.log('Event: detecting_audio', data);
+        updateStep('content', {
+          status: 'processing',
+          detail: `Content type: Audio (${data.audio_count} file${data.audio_count > 1 ? 's' : ''})`
+        });
       });
 
-      eventSource.addEventListener('media_detected', (e) => {
+      // NEW: Listen for video detection - update content step with content type
+      eventSource.addEventListener('detecting_video', (e) => {
         const data = JSON.parse(e.data);
-        const mediaType = data.media_type || 'text-only';
-        const displayType = mediaType.charAt(0).toUpperCase() + mediaType.slice(1);
-        updateStep('media', {
+        console.log('Event: detecting_video', data);
+        updateStep('content', {
+          status: 'processing',
+          detail: `Content type: Video (${data.video_count} video${data.video_count > 1 ? 's' : ''})`
+        });
+      });
+
+      // NEW: Listen for text-only detection - update content step with content type
+      eventSource.addEventListener('detecting_text_only', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Event: detecting_text_only', data);
+        updateStep('content', {
           status: 'complete',
-          detail: `Content type: ${displayType}`,
-          elapsed: data.elapsed
+          detail: 'Content type: Text-only'
         });
       });
 
-      eventSource.addEventListener('content_extract_start', (e) => {
+      // NEW: Listen for audio processing
+      eventSource.addEventListener('processing_audio', (e) => {
         const data = JSON.parse(e.data);
-        updateStep('content', { status: 'processing', elapsed: data.elapsed });
+        console.log('Event: processing_audio', data);
+        updateStep('content', {
+          status: 'complete',
+          detail: 'Content extracted'
+        });
+        updateStep('transcript', {
+          status: 'processing',
+          detail: `Processing audio ${data.audio_index} of ${data.total_audios}...`
+        });
+      });
+
+      // NEW: Listen for audio download
+      eventSource.addEventListener('downloading_audio', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Event: downloading_audio', data);
+        updateStep('transcript', {
+          status: 'processing',
+          detail: 'Downloading audio file...'
+        });
+      });
+
+      // NEW: Listen for audio transcription
+      eventSource.addEventListener('transcribing_audio', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Event: transcribing_audio', data);
+        updateStep('transcript', {
+          status: 'processing',
+          detail: `Transcribing audio (${data.file_size_mb?.toFixed(1)}MB)...`
+        });
+      });
+
+      // NEW: Listen for audio chunking
+      eventSource.addEventListener('audio_chunking_required', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Event: audio_chunking_required', data);
+        updateStep('transcript', {
+          status: 'processing',
+          detail: `Audio file is large (${data.file_size_mb?.toFixed(1)}MB), splitting into chunks...`
+        });
+      });
+
+      // NEW: Listen for audio split
+      eventSource.addEventListener('audio_split', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Event: audio_split', data);
+        updateStep('transcript', {
+          status: 'processing',
+          detail: `Split into ${data.total_chunks} chunks (${data.duration_minutes?.toFixed(1)} minutes)`,
+          substeps: []
+        });
+      });
+
+      // NEW: Listen for chunk transcription
+      eventSource.addEventListener('transcribing_chunk', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Event: transcribing_chunk', data);
+        updateStep('transcript', {
+          status: 'processing',
+          detail: `Transcribing chunk ${data.current} of ${data.total}...`,
+          substeps: [`Processing chunk ${data.current}/${data.total}`, `Elapsed: ${data.elapsed_minutes?.toFixed(1)} minutes`]
+        });
       });
 
       eventSource.addEventListener('content_extracted', (e) => {
         const data = JSON.parse(e.data);
         const transcriptMethod = data.transcript_method;
 
-        updateStep('content', {
-          status: 'complete',
-          detail: 'Content extracted',
-          elapsed: data.elapsed
-        });
+        // Don't update content step here - it's already complete from processing_audio or detecting_text_only
+        // Only handle transcript step completion
 
         // Handle transcript step based on method
         if (transcriptMethod === 'youtube') {
           updateStep('transcript', {
             status: 'complete',
-            detail: 'Transcript found via YouTube',
-            elapsed: data.elapsed
+            detail: 'Extracted transcript from YouTube'
           });
         } else if (transcriptMethod === 'chunked') {
           updateStep('transcript', {
-            status: 'processing',
-            detail: 'Processing audio chunks...',
-            elapsed: data.elapsed
+            status: 'complete',
+            detail: 'Transcribed audio (split into chunks)'
           });
         } else if (transcriptMethod === 'audio') {
           updateStep('transcript', {
-            status: 'processing',
-            detail: 'Processing audio transcript...',
-            elapsed: data.elapsed
+            status: 'complete',
+            detail: 'Transcribed audio successfully'
           });
         } else {
           updateStep('transcript', {
             status: 'skipped',
-            detail: 'No audio found',
-            elapsed: data.elapsed
+            detail: 'No audio/video found'
           });
         }
       });
 
       eventSource.addEventListener('ai_start', (e) => {
         const data = JSON.parse(e.data);
-        updateStep('ai', { status: 'processing', elapsed: data.elapsed });
+        updateStep('ai', { status: 'processing' });
       });
 
       eventSource.addEventListener('ai_complete', (e) => {
         const data = JSON.parse(e.data);
         updateStep('ai', {
           status: 'complete',
-          detail: 'Summary generated by Claude',
-          elapsed: data.elapsed
+          detail: 'Summary generated by Claude'
         });
       });
 
       eventSource.addEventListener('save_start', (e) => {
         const data = JSON.parse(e.data);
-        updateStep('save', { status: 'processing', elapsed: data.elapsed });
+        updateStep('save', { status: 'processing' });
       });
 
       eventSource.addEventListener('save_complete', (e) => {
         const data = JSON.parse(e.data);
         updateStep('save', {
           status: 'complete',
-          detail: 'Article saved to Supabase',
-          elapsed: data.elapsed
+          detail: 'Article saved to Supabase'
         });
       });
 
@@ -343,9 +441,9 @@ export default function AdminPage() {
                       }`}>
                         {step.label}
                       </p>
-                      {(step.status === 'processing' || step.status === 'complete') && step.elapsed !== undefined && (
+                      {(step.status === 'processing' || step.status === 'complete') && step.duration !== undefined && (
                         <span className="text-xs text-gray-400 ml-2">
-                          ({step.elapsed}s)
+                          ({step.duration}s)
                         </span>
                       )}
                     </div>
