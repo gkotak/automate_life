@@ -51,7 +51,10 @@ class ProcessingEventEmitter:
         }
 
         await self.queue.put(event)
-        logger.debug(f"📡 [SSE] Emitted {event_type} for job {self.job_id}")
+        logger.info(f"📡 [SSE] Emitted {event_type} for job {self.job_id}")
+
+        # CRITICAL: Give control to event loop so generator can consume
+        await asyncio.sleep(0)
 
     async def complete(self):
         """Mark processing as complete and close the event stream"""
