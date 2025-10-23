@@ -267,7 +267,8 @@ async def process_article_direct(
             await asyncio.sleep(0)
 
             transcript_method = None
-            if metadata.get('transcript'):
+            transcripts = metadata.get('transcripts', {})
+            if transcripts:
                 if media_type == 'video':
                     transcript_method = 'youtube'
                 elif media_type == 'audio':

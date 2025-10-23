@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -37,7 +37,7 @@ export default function AdminPage() {
     updated_at: string;
     url: string;
   } | null>(null);
-  const [audioDuration, setAudioDuration] = useState<number | null>(null); // Duration in minutes
+  const audioDurationRef = useRef<number | null>(null); // Duration in minutes - using ref to avoid stale closure in event listeners
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -113,7 +113,7 @@ export default function AdminPage() {
     setLoading(true);
     setResult(null);
     setDuplicateWarning(null);
-    setAudioDuration(null); // Reset audio duration for new processing
+    audioDurationRef.current = null; // Reset audio duration for new processing
     initializeSteps();
 
     try {
@@ -254,7 +254,7 @@ export default function AdminPage() {
       eventSource.addEventListener('audio_split', (e) => {
         const data = JSON.parse(e.data);
         console.log('Event: audio_split', data);
-        setAudioDuration(data.duration_minutes); // Store duration for later use
+        audioDurationRef.current = data.duration_minutes; // Store duration for later use
         updateStep('transcript', {
           status: 'processing',
           detail: `Split into ${data.total_chunks} chunks (${data.duration_minutes?.toFixed(1)} minutes)`,
@@ -282,19 +282,19 @@ export default function AdminPage() {
 
         // Handle transcript step based on method
         if (transcriptMethod === 'youtube') {
-          const durationText = audioDuration ? ` (${audioDuration.toFixed(1)} min)` : '';
+          const durationText = audioDurationRef.current ? ` (${audioDurationRef.current.toFixed(1)} min)` : '';
           updateStep('transcript', {
             status: 'complete',
             detail: `Extracted transcript from YouTube${durationText}`
           });
         } else if (transcriptMethod === 'chunked') {
-          const durationText = audioDuration ? ` (${audioDuration.toFixed(1)} min)` : '';
+          const durationText = audioDurationRef.current ? ` (${audioDurationRef.current.toFixed(1)} min)` : '';
           updateStep('transcript', {
             status: 'complete',
             detail: `Transcribed audio${durationText}`
           });
         } else if (transcriptMethod === 'audio') {
-          const durationText = audioDuration ? ` (${audioDuration.toFixed(1)} min)` : '';
+          const durationText = audioDurationRef.current ? ` (${audioDurationRef.current.toFixed(1)} min)` : '';
           updateStep('transcript', {
             status: 'complete',
             detail: `Transcribed audio${durationText}`
