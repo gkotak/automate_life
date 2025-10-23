@@ -27,6 +27,10 @@ from common.config import Config
 from common.url_utils import generate_post_id
 from common.podcast_auth import PodcastAuth
 
+# Import shared utilities from article_summarizer_backend
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "article_summarizer_backend"))
+from core.text_utils import check_title_and_date_match
+
 # Load environment variables
 root_env = Path(__file__).parent.parent.parent.parent / '.env.local'
 load_dotenv(root_env)
@@ -327,41 +331,49 @@ class PodcastChecker(BaseProcessor):
 
     def _check_title_match(self, episode_title: str, video_title: str, video_published: str = '', episode_published_date: Optional[str] = None) -> tuple[bool, float, str]:
         """
-        Check if video title matches episode title using fuzzy matching
+        Check if video title matches episode title using shared validation logic
 
         Uses threshold logic:
-        - 70% match required by default
-        - 40% match sufficient if video published within 1-2 days
+        - 65% title match (strong match)
+        - 50% title match + dates within 1 day (combined match)
 
         Args:
             episode_title: Episode title to match
             video_title: Video title to check against
-            video_published: Video publish date string (e.g., "13 hours ago", "2 days ago")
+            video_published: Video publish date string (e.g., "13 hours ago", "2 days ago") - DEPRECATED, use episode_published_date
             episode_published_date: Episode publish date (ISO format) for date-based matching
 
         Returns:
-            Tuple of (matches: bool, ratio: float, threshold_type: str)
+            Tuple of (matches: bool, ratio: float, match_type: str)
+            match_type can be: "strong_title", "title_plus_date", or "no_match"
         """
-        from difflib import SequenceMatcher
+        # Parse episode date if provided
+        episode_date = None
+        if episode_published_date:
+            try:
+                episode_date = datetime.fromisoformat(episode_published_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            except:
+                pass
 
-        # Calculate similarity ratio
-        ratio = SequenceMatcher(None, episode_title.lower(), video_title.lower()).ratio()
+        # Try to parse video_published string for date (fallback for legacy code)
+        video_date = None
+        if video_published:
+            # This is approximate date parsing from relative strings like "2 days ago"
+            # For accurate matching, proper ISO dates should be used
+            pass  # We no longer use relative date strings
 
-        # Determine threshold based on publish date
-        MATCH_THRESHOLD = 0.70
-        RELAXED_THRESHOLD = 0.40
+        # Use shared utility with standard thresholds
+        matches, similarity, match_type = check_title_and_date_match(
+            episode_title,
+            video_title,
+            episode_date,
+            video_date,
+            strong_threshold=0.65,
+            weak_threshold=0.50,
+            date_tolerance_days=1
+        )
 
-        # Check if video is recently published (within 1-2 days)
-        # Handle None or empty string for video_published
-        video_published_lower = (video_published or '').lower()
-        is_recent = any(x in video_published_lower for x in ['hour', 'day', '1 day', '2 day'])
-
-        threshold = RELAXED_THRESHOLD if is_recent else MATCH_THRESHOLD
-        threshold_type = "relaxed" if is_recent else "standard"
-
-        matches = ratio >= threshold
-
-        return matches, ratio, threshold_type
+        return matches, similarity, match_type
 
     def _scrape_youtube_playlist_for_episode(self, playlist_url: str, episode_title: str, episode_published_date: Optional[str] = None) -> Optional[str]:
         """

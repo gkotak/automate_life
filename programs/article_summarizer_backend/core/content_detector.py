@@ -5,11 +5,16 @@ Determines if content has embedded video, embedded audio, or is text-only.
 """
 
 import logging
+import json
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 from bs4 import BeautifulSoup
 import re
 import requests
+
+# Import shared utilities
+from core.text_utils import check_title_and_date_match
 
 logger = logging.getLogger(__name__)
 
@@ -245,9 +250,18 @@ class ContentTypeDetector:
 
     def _validate_video_against_content(self, video: Dict, soup: BeautifulSoup) -> bool:
         """
-        Validate video by checking YouTube page title/duration against embedded audio
-        Returns True if video title matches article (50%+) OR duration matches embedded audio
-        OR if there's embedded audio with similar duration (likely same content)
+        Validate video by checking title and publication date matching
+
+        Uses shared validation logic:
+        - Strong match: 65% title similarity
+        - Combined match: 50% title similarity + dates within 1 day
+
+        Args:
+            video: Video dict with video_id
+            soup: BeautifulSoup of article page
+
+        Returns:
+            True if video matches article content, False otherwise
         """
         video_id = video.get('video_id')
         if not video_id:
@@ -259,57 +273,58 @@ class ContentTypeDetector:
             response = self.session.get(youtube_url, timeout=10)
             youtube_soup = BeautifulSoup(response.content, 'html.parser')
 
-            # Extract video title from YouTube page
+            # Extract video title and date from YouTube page
             video_title = self._extract_youtube_title(youtube_soup)
             if not video_title:
                 self.logger.warning(f"⚠️ [VALIDATION] Could not extract title for video {video_id}")
                 return False
 
-            # Get article title for comparison
+            video_date = self._extract_youtube_date(youtube_soup)
+
+            # Extract article title and date
             article_title = self._extract_article_title(soup)
+            if not article_title:
+                self.logger.warning(f"⚠️ [VALIDATION] Could not extract article title")
+                return False
 
-            # Check title similarity (lowered from 65% to 50% for better detection)
-            title_similarity = 0.0
-            if article_title:
-                title_similarity = self._calculate_title_similarity(video_title, article_title)
-                self.logger.info(f"📊 [TITLE MATCH] {title_similarity:.1f}% similarity: '{video_title}' vs '{article_title}'")
+            article_date = self._extract_article_date(soup)
 
-                if title_similarity >= 50.0:
-                    self.logger.info(f"✅ [TITLE MATCH] Title similarity {title_similarity:.1f}% >= 50%")
-                    return True
+            # Use shared utility for validation
+            matches, similarity, match_type = check_title_and_date_match(
+                video_title,
+                article_title,
+                video_date,
+                article_date,
+                strong_threshold=0.65,
+                weak_threshold=0.50,
+                date_tolerance_days=1
+            )
 
-            # Check duration against embedded audio (if available)
-            video_duration = self._extract_youtube_duration(youtube_soup)
-            audio_duration = self._get_embedded_audio_duration(soup)
+            # Log detailed info
+            self.logger.info(f"📊 [TITLE MATCH] {similarity*100:.1f}% similarity")
+            self.logger.info(f"   Video:   '{video_title}'")
+            self.logger.info(f"   Article: '{article_title}'")
 
-            # If we have both video and audio with durations, be more lenient
-            if video_duration and audio_duration:
-                duration_diff = abs(video_duration - audio_duration)
+            if video_date:
+                self.logger.info(f"📅 [VIDEO DATE] {video_date.strftime('%Y-%m-%d')}")
+            else:
+                self.logger.info(f"⚠️ [VIDEO DATE] Could not extract")
 
-                # Calculate flexible threshold: 10% of audio duration OR 2 minutes, whichever is larger
-                # This handles cases where video/audio are same content but slightly different lengths
-                threshold_10_percent = audio_duration * 0.10
-                threshold = max(threshold_10_percent, 120)
+            if article_date:
+                self.logger.info(f"📅 [ARTICLE DATE] {article_date.strftime('%Y-%m-%d')}")
+            else:
+                self.logger.info(f"⚠️ [ARTICLE DATE] Could not extract")
 
-                self.logger.info(f"📊 [DURATION CHECK] Video: {video_duration}s, Audio: {audio_duration}s, Diff: {duration_diff}s")
-                self.logger.info(f"📊 [THRESHOLD] 10% of audio: {threshold_10_percent:.1f}s, Min: 120s, Using: {threshold:.1f}s")
-
-                if duration_diff <= threshold:
-                    self.logger.info(f"✅ [DURATION MATCH] Duration difference {duration_diff}s <= {threshold:.1f}s (likely same content)")
-                    return True
-
-                # Special case: If title similarity is decent (30%+) AND durations are reasonable close (within 20%)
-                # This catches cases like Lenny's podcast where video/audio are clearly the same content
-                if title_similarity >= 30.0:
-                    duration_diff_percent = (duration_diff / audio_duration) * 100
-                    if duration_diff_percent <= 20.0:
-                        self.logger.info(f"✅ [COMBINED MATCH] Title: {title_similarity:.1f}% + Duration diff: {duration_diff_percent:.1f}% - likely same content")
-                        return True
-
-            # Calculate threshold for error message
-            threshold_for_msg = max(audio_duration * 0.10, 120) if audio_duration else 120
-            self.logger.info(f"❌ [NO MATCH] Title: {title_similarity:.1f}% (need 50%+), Duration: Video={video_duration}s Audio={audio_duration}s (need ≤{threshold_for_msg:.1f}s diff)")
-            return False
+            if matches:
+                if match_type == "strong_title":
+                    self.logger.info(f"✅ [STRONG MATCH] Title {similarity*100:.1f}% >= 65%")
+                elif match_type == "title_plus_date":
+                    date_diff = abs((video_date - article_date).days)
+                    self.logger.info(f"✅ [COMBINED MATCH] Title {similarity*100:.1f}% >= 50% + Date diff {date_diff} day(s) <= 1")
+                return True
+            else:
+                self.logger.info(f"❌ [NO MATCH] Title {similarity*100:.1f}% (need 65% or 50%+date)")
+                return False
 
         except Exception as e:
             self.logger.error(f"❌ [VALIDATION ERROR] {video_id}: {str(e)}")
@@ -377,6 +392,92 @@ class ContentTypeDetector:
             cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
 
         return cleaned.strip()
+
+    def _extract_youtube_date(self, youtube_soup: BeautifulSoup) -> Optional[datetime]:
+        """Extract publication date from YouTube video page"""
+        try:
+            # Look for uploadDate in meta tags or JSON-LD
+            date_patterns = [
+                r'"uploadDate":"([^"]+)"',
+                r'"datePublished":"([^"]+)"',
+                r'"publishDate":"([^"]+)"'
+            ]
+
+            page_text = str(youtube_soup)
+            for pattern in date_patterns:
+                match = re.search(pattern, page_text)
+                if match:
+                    date_str = match.group(1)
+                    try:
+                        # Parse ISO format date (e.g., "2024-10-23" or "2024-10-23T10:30:00Z")
+                        return datetime.fromisoformat(date_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                    except:
+                        continue
+
+            # Fallback: Try meta tags
+            meta_date = youtube_soup.find('meta', property='uploadDate')
+            if meta_date and meta_date.get('content'):
+                try:
+                    date_str = meta_date.get('content')
+                    return datetime.fromisoformat(date_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                except:
+                    pass
+
+            self.logger.debug("🔍 [YOUTUBE DATE] Could not extract publication date")
+            return None
+
+        except Exception as e:
+            self.logger.debug(f"⚠️ [YOUTUBE DATE ERROR] {str(e)}")
+            return None
+
+    def _extract_article_date(self, soup: BeautifulSoup) -> Optional[datetime]:
+        """Extract publication date from article page"""
+        try:
+            # Try multiple selectors for article date
+            date_selectors = [
+                ('meta', {'property': 'article:published_time'}),
+                ('meta', {'property': 'og:published_time'}),
+                ('meta', {'name': 'publish_date'}),
+                ('meta', {'name': 'publication_date'}),
+                ('meta', {'name': 'datePublished'}),
+                ('time', {'itemprop': 'datePublished'}),
+                ('time', {'class': 'published'}),
+            ]
+
+            for tag, attrs in date_selectors:
+                element = soup.find(tag, attrs)
+                if element:
+                    date_str = element.get('content') or element.get('datetime') or element.get_text(strip=True)
+                    if date_str:
+                        try:
+                            # Try parsing various date formats
+                            # ISO format
+                            return datetime.fromisoformat(date_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                        except:
+                            try:
+                                # Try common formats
+                                from dateutil import parser
+                                return parser.parse(date_str).replace(tzinfo=None)
+                            except:
+                                continue
+
+            # Fallback: Look for date patterns in JSON-LD
+            scripts = soup.find_all('script', type='application/ld+json')
+            for script in scripts:
+                try:
+                    data = json.loads(script.string)
+                    date_str = data.get('datePublished') or data.get('uploadDate')
+                    if date_str:
+                        return datetime.fromisoformat(date_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                except:
+                    continue
+
+            self.logger.debug("🔍 [ARTICLE DATE] Could not extract publication date")
+            return None
+
+        except Exception as e:
+            self.logger.debug(f"⚠️ [ARTICLE DATE ERROR] {str(e)}")
+            return None
 
     def _calculate_title_similarity(self, title1: str, title2: str) -> float:
         """Calculate similarity percentage between two titles using token overlap"""
