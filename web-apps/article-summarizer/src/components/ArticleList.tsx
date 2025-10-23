@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { supabase, Article } from '@/lib/supabase'
 import { Search, Trash2, ExternalLink, Calendar, Tag, X, CheckCircle, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -16,6 +17,7 @@ interface Notification {
 
 export default function ArticleList() {
   const { user } = useAuth()
+  const pathname = usePathname()
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -34,10 +36,11 @@ export default function ArticleList() {
   const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
   const [showAllSources, setShowAllSources] = useState(false)
 
+  // Fetch articles on mount, when user changes, or when pathname changes (navigation)
   useEffect(() => {
     fetchArticles()
     fetchAvailableSources()
-  }, [user]) // Re-fetch when user changes
+  }, [user, pathname]) // Re-fetch when navigating back to homepage
 
   const fetchAvailableSources = async () => {
     try {
