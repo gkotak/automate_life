@@ -1,0 +1,6 @@
+# Ignore authentication session files (contain sensitive cookies)
+storage_state.json
+*.json
+
+# Allow the SQL schema file
+!create_sessions_table.sql

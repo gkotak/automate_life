@@ -18,7 +18,7 @@ Run this script on your **local machine** (NOT on Railway):
 
 ```bash
 cd programs/article_summarizer_backend
-python create_session.py
+python auth/create_session.py
 ```
 
 **What this does:**
@@ -26,7 +26,7 @@ python create_session.py
 2. Navigates to Substack login page
 3. Waits for you to manually log in
 4. Press Enter after you've logged in
-5. Saves your authenticated session to `storage/storage_state.json`
+5. Saves your authenticated session to `auth/storage_state.json`
 
 **Important:**
 - The browser window will open on your screen
@@ -40,11 +40,11 @@ After creating the session file, upload it to Supabase:
 
 ```bash
 cd programs/article_summarizer_backend
-python scripts/upload_session_to_supabase.py --platform all
+python auth/upload_session_to_supabase.py --platform all
 ```
 
 **What this does:**
-1. Reads `storage/storage_state.json`
+1. Reads `auth/storage_state.json`
 2. Uploads cookies and session data to Supabase `browser_sessions` table
 3. Railway backend will automatically load these cookies on startup
 
@@ -69,21 +69,24 @@ You need to re-export and upload cookies when:
 
 ## Files Involved
 
-### Active Files:
-- `create_session.py` - Creates local browser session (run this first)
-- `scripts/upload_session_to_supabase.py` - Uploads session to Supabase (run this second)
+### Active Files (all in `auth/` folder):
+- `auth/create_session.py` - Creates local browser session (run this first)
+- `auth/upload_session_to_supabase.py` - Uploads session to Supabase (run this second)
+- `auth/create_sessions_table.sql` - Database schema
+- `auth/storage_state.json` - Local session file (gitignored)
+
+### Core Code:
 - `core/authentication.py` - Loads cookies on Railway startup
-- `storage/storage_state.json` - Local session file (gitignored)
 
 ### Database:
 - Supabase table: `browser_sessions`
-- Schema: See `scripts/create_sessions_table.sql`
+- Schema: See `auth/create_sessions_table.sql`
 
 ## Troubleshooting
 
 ### "No active browser session found"
 - You need to create and upload a session first
-- Run: `python create_session.py` then `python scripts/upload_session_to_supabase.py`
+- Run: `python auth/create_session.py` then `python auth/upload_session_to_supabase.py`
 
 ### "Authentication failed" or "Paywall detected"
 - Your session may have expired

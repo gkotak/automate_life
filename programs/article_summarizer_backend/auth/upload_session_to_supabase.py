@@ -39,11 +39,11 @@ def upload_session(platform: str = 'all'):
     supabase: Client = create_client(supabase_url, supabase_key)
 
     # Load storage_state.json
-    storage_file = Path(__file__).parent.parent / 'storage' / 'storage_state.json'
+    storage_file = Path(__file__).parent / 'storage_state.json'
 
     if not storage_file.exists():
         print(f"❌ Storage state file not found: {storage_file}")
-        print("   Run: python scripts/create_storage_state.py first")
+        print("   Run: python auth/create_session.py first")
         sys.exit(1)
 
     with open(storage_file, 'r') as f:

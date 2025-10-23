@@ -8,8 +8,8 @@ from playwright.sync_api import sync_playwright
 import os
 
 def create_session():
-    storage_dir = './storage'
-    os.makedirs(storage_dir, exist_ok=True)
+    auth_dir = './auth'
+    os.makedirs(auth_dir, exist_ok=True)
 
     with sync_playwright() as p:
         # Launch visible browser
@@ -25,13 +25,13 @@ def create_session():
         input()
 
         # Save session
-        session_file = f'{storage_dir}/storage_state.json'
+        session_file = f'{auth_dir}/storage_state.json'
         context.storage_state(path=session_file)
 
         print(f'\n✅ Session saved to {session_file}')
         print('\nNext steps:')
-        print('1. Upload this file to Railway using: railway run cp storage/storage_state.json /app/storage/')
-        print('2. Or use the Railway web interface to upload it')
+        print('1. Run: python auth/upload_session_to_supabase.py')
+        print('2. Session will be uploaded to Supabase for Railway to use')
 
         browser.close()
 
