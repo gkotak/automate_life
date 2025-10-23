@@ -47,6 +47,7 @@ class Config:
         return {
             'openai': os.getenv('OPENAI_API_KEY'),
             'claude': os.getenv('ANTHROPIC_API_KEY'),
+            'deepgram': os.getenv('DEEPGRAM_API_KEY'),
         }
 
     @staticmethod

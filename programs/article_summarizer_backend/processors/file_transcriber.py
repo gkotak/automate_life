@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 File Transcriber - Refactored version using BaseProcessor
-Transcribes audio/video files using OpenAI Whisper API
+Transcribes audio/video files using DeepGram API
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
-from openai import OpenAI
+from deepgram import DeepgramClient, PrerecordedOptions
 
 # Import our base class and config
 import sys
@@ -24,25 +24,25 @@ class FileTranscriber(BaseProcessor):
         self.transcriptions_dir = self.base_dir / "programs" / "article_summarizer" / "logs" / "transcriptions"
         self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize OpenAI client
-        self._setup_openai()
+        # Initialize DeepGram client
+        self._setup_deepgram()
 
-    def _setup_openai(self):
-        """Setup OpenAI client with API key"""
+    def _setup_deepgram(self):
+        """Setup DeepGram client with API key"""
         try:
             # Get API key from config
             api_keys = Config.get_api_keys()
-            api_key = api_keys.get('openai')
+            api_key = api_keys.get('deepgram')
 
             if not api_key:
-                raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable or add it to .env file")
+                raise ValueError("DeepGram API key not found. Please set DEEPGRAM_API_KEY environment variable or add it to .env file")
 
-            # Initialize with 3-minute timeout per request (applies to each chunk individually)
-            self.client = OpenAI(api_key=api_key, timeout=180.0)
-            self.logger.info("✅ OpenAI client initialized successfully (timeout: 180s per request)")
+            # Initialize DeepGram client
+            self.client = DeepgramClient(api_key)
+            self.logger.info("✅ DeepGram client initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"❌ Error setting up OpenAI client: {e}")
+            self.logger.error(f"❌ Error setting up DeepGram client: {e}")
             raise
 
     def _validate_file(self, file_path):
@@ -52,12 +52,12 @@ class FileTranscriber(BaseProcessor):
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Check file size (OpenAI Whisper limit)
+        # Check file size (DeepGram can handle larger files than Whisper)
         file_size = file_path.stat().st_size
         max_size = Config.MAX_WHISPER_FILE_SIZE_MB * 1024 * 1024
 
         if file_size > max_size:
-            raise ValueError(f"File size ({file_size / 1024 / 1024:.1f}MB) exceeds OpenAI Whisper limit of {Config.MAX_WHISPER_FILE_SIZE_MB}MB")
+            self.logger.warning(f"⚠️ File size ({file_size / 1024 / 1024:.1f}MB) is large. DeepGram can handle it but processing may take time.")
 
         # Check supported formats
         supported_formats = Config.get_supported_audio_formats()
@@ -72,75 +72,87 @@ class FileTranscriber(BaseProcessor):
         return file_path
 
     def transcribe_file(self, file_path, language=None):
-        """Transcribe audio/video file using OpenAI Whisper"""
+        """Transcribe audio/video file using DeepGram"""
         try:
             file_path = self._validate_file(file_path)
 
             self.logger.info(f"🚀 Starting transcription...")
             self.logger.info(f"🎯 Language: {language or 'auto-detect'}")
 
-            # Prepare transcription parameters
-            transcribe_params = {
-                "model": Config.WHISPER_MODEL,
-                "response_format": "verbose_json",
-                "timestamp_granularities": ["word", "segment"]
-            }
+            # Prepare transcription options
+            options = PrerecordedOptions(
+                model="nova-2",
+                smart_format=True,
+                utterances=True,
+                punctuate=True,
+                paragraphs=True,
+                diarize=False
+            )
 
             if language:
-                transcribe_params["language"] = language
+                options.language = language
 
-            # Open and transcribe file
+            # Read and transcribe file
             with open(file_path, "rb") as audio_file:
-                self.logger.info("📡 Sending file to OpenAI Whisper API...")
+                buffer_data = audio_file.read()
 
-                transcript = self.client.audio.transcriptions.create(
-                    file=audio_file,
-                    **transcribe_params
-                )
+            self.logger.info("📡 Sending file to DeepGram API...")
+
+            response = self.client.listen.rest.v("1").transcribe_file(
+                {"buffer": buffer_data},
+                options
+            )
 
             self.logger.info("✅ Transcription completed successfully")
 
-            # Process the transcript data - convert OpenAI objects to dicts
-            segments = getattr(transcript, 'segments', [])
-            words = getattr(transcript, 'words', [])
+            # Extract transcript data from DeepGram response
+            result = response.results.channels[0].alternatives[0]
 
-            # Convert segments to serializable format
+            # Get full transcript text
+            transcript_text = result.transcript
+
+            # Extract words with timestamps
+            words_data = []
+            if hasattr(result, 'words') and result.words:
+                for word in result.words:
+                    word_dict = {
+                        'word': word.word,
+                        'start': word.start,
+                        'end': word.end,
+                        'confidence': word.confidence
+                    }
+                    words_data.append(word_dict)
+
+            # Extract paragraphs (similar to segments)
             segments_data = []
-            if segments:
-                for segment in segments:
+            if hasattr(result, 'paragraphs') and result.paragraphs:
+                for idx, paragraph in enumerate(result.paragraphs.paragraphs):
                     seg_dict = {
-                        'id': getattr(segment, 'id', None),
-                        'start': getattr(segment, 'start', 0),
-                        'end': getattr(segment, 'end', 0),
-                        'text': getattr(segment, 'text', ''),
-                        'tokens': getattr(segment, 'tokens', []),
-                        'temperature': getattr(segment, 'temperature', None),
-                        'avg_logprob': getattr(segment, 'avg_logprob', None),
-                        'compression_ratio': getattr(segment, 'compression_ratio', None),
-                        'no_speech_prob': getattr(segment, 'no_speech_prob', None)
+                        'id': idx,
+                        'start': paragraph.start,
+                        'end': paragraph.end,
+                        'text': ' '.join([sentence.text for sentence in paragraph.sentences]),
+                        'num_words': paragraph.num_words
                     }
                     segments_data.append(seg_dict)
 
-            # Convert words to serializable format
-            words_data = []
-            if words:
-                for word in words:
-                    word_dict = {
-                        'word': getattr(word, 'word', ''),
-                        'start': getattr(word, 'start', 0),
-                        'end': getattr(word, 'end', 0)
-                    }
-                    words_data.append(word_dict)
+            # Get detected language and duration
+            metadata = response.results.channels[0]
+            detected_language = getattr(metadata, 'detected_language', language or 'en')
+
+            # Calculate duration from last word
+            duration = words_data[-1]['end'] if words_data else 0
 
             transcript_data = {
                 "source_file": str(file_path),
                 "file_size_mb": file_path.stat().st_size / 1024 / 1024,
                 "transcribed_at": datetime.now().isoformat(),
-                "language": transcript.language,
-                "duration": getattr(transcript, 'duration', None),
-                "text": transcript.text,
+                "language": detected_language,
+                "duration": duration,
+                "text": transcript_text,
                 "segments": segments_data,
-                "words": words_data
+                "words": words_data,
+                "provider": "deepgram"
             }
 
             # Save transcript to file (temporarily for logging)
@@ -149,9 +161,9 @@ class FileTranscriber(BaseProcessor):
             # Log summary using base class method
             self.log_session_summary(
                 source_file=file_path.name,
-                language=transcript.language,
-                text_length=f"{len(transcript.text):,} characters",
-                segments_count=len(getattr(transcript, 'segments', [])),
+                language=detected_language,
+                text_length=f"{len(transcript_text):,} characters",
+                segments_count=len(segments_data),
                 output_file=str(output_file)
             )
 
