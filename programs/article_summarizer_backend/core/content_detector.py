@@ -246,7 +246,8 @@ class ContentTypeDetector:
     def _validate_video_against_content(self, video: Dict, soup: BeautifulSoup) -> bool:
         """
         Validate video by checking YouTube page title/duration against embedded audio
-        Returns True if video title matches article (90%+) OR duration matches embedded audio
+        Returns True if video title matches article (50%+) OR duration matches embedded audio
+        OR if there's embedded audio with similar duration (likely same content)
         """
         video_id = video.get('video_id')
         if not video_id:
@@ -267,37 +268,47 @@ class ContentTypeDetector:
             # Get article title for comparison
             article_title = self._extract_article_title(soup)
 
-            # Check title similarity (65%+ match)
+            # Check title similarity (lowered from 65% to 50% for better detection)
             title_similarity = 0.0
             if article_title:
                 title_similarity = self._calculate_title_similarity(video_title, article_title)
                 self.logger.info(f"📊 [TITLE MATCH] {title_similarity:.1f}% similarity: '{video_title}' vs '{article_title}'")
 
-                if title_similarity >= 65.0:
-                    self.logger.info(f"✅ [TITLE MATCH] Title similarity {title_similarity:.1f}% >= 65%")
+                if title_similarity >= 50.0:
+                    self.logger.info(f"✅ [TITLE MATCH] Title similarity {title_similarity:.1f}% >= 50%")
                     return True
 
             # Check duration against embedded audio (if available)
             video_duration = self._extract_youtube_duration(youtube_soup)
             audio_duration = self._get_embedded_audio_duration(soup)
 
+            # If we have both video and audio with durations, be more lenient
             if video_duration and audio_duration:
                 duration_diff = abs(video_duration - audio_duration)
 
-                # Calculate flexible threshold: 5% of audio duration OR 45 seconds, whichever is smaller
-                threshold_5_percent = audio_duration * 0.05
-                threshold = min(threshold_5_percent, 45)
+                # Calculate flexible threshold: 10% of audio duration OR 2 minutes, whichever is larger
+                # This handles cases where video/audio are same content but slightly different lengths
+                threshold_10_percent = audio_duration * 0.10
+                threshold = max(threshold_10_percent, 120)
 
                 self.logger.info(f"📊 [DURATION CHECK] Video: {video_duration}s, Audio: {audio_duration}s, Diff: {duration_diff}s")
-                self.logger.info(f"📊 [THRESHOLD] 5% of audio: {threshold_5_percent:.1f}s, Max: 45s, Using: {threshold:.1f}s")
+                self.logger.info(f"📊 [THRESHOLD] 10% of audio: {threshold_10_percent:.1f}s, Min: 120s, Using: {threshold:.1f}s")
 
                 if duration_diff <= threshold:
-                    self.logger.info(f"✅ [DURATION MATCH] Duration difference {duration_diff}s <= {threshold:.1f}s")
+                    self.logger.info(f"✅ [DURATION MATCH] Duration difference {duration_diff}s <= {threshold:.1f}s (likely same content)")
                     return True
 
+                # Special case: If title similarity is decent (30%+) AND durations are reasonable close (within 20%)
+                # This catches cases like Lenny's podcast where video/audio are clearly the same content
+                if title_similarity >= 30.0:
+                    duration_diff_percent = (duration_diff / audio_duration) * 100
+                    if duration_diff_percent <= 20.0:
+                        self.logger.info(f"✅ [COMBINED MATCH] Title: {title_similarity:.1f}% + Duration diff: {duration_diff_percent:.1f}% - likely same content")
+                        return True
+
             # Calculate threshold for error message
-            threshold_for_msg = min(audio_duration * 0.05, 45) if audio_duration else 45
-            self.logger.info(f"❌ [NO MATCH] Title: {title_similarity:.1f}% (need 65%+), Duration: Video={video_duration}s Audio={audio_duration}s (need ≤{threshold_for_msg:.1f}s diff)")
+            threshold_for_msg = max(audio_duration * 0.10, 120) if audio_duration else 120
+            self.logger.info(f"❌ [NO MATCH] Title: {title_similarity:.1f}% (need 50%+), Duration: Video={video_duration}s Audio={audio_duration}s (need ≤{threshold_for_msg:.1f}s diff)")
             return False
 
         except Exception as e:
