@@ -561,6 +561,13 @@ class ArticleProcessor(BaseProcessor):
         # Extract images from article
         images = self._extract_article_images(soup, base_url)
 
+        # Emit completion event
+        if progress_callback:
+            await progress_callback("extract_complete", {
+                "has_transcript": bool(transcripts),
+                "video_count": len(video_urls)
+            })
+
         return {
             'media_info': {'youtube_urls': video_urls},
             'transcripts': transcripts,
@@ -672,6 +679,13 @@ class ArticleProcessor(BaseProcessor):
 
         # Extract images from article
         images = self._extract_article_images(soup, base_url)
+
+        # Emit completion event
+        if progress_callback:
+            await progress_callback("extract_complete", {
+                "has_transcript": bool(transcripts),
+                "audio_count": len(audio_urls)
+            })
 
         return {
             'media_info': {'audio_urls': audio_urls},
