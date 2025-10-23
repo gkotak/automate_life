@@ -1,6 +1,6 @@
 # Article Summarizer Backend - Railway Dockerfile
 # Includes Playwright + Chromium for authentication and anti-bot protection
-# Deployment trigger
+# Deployment trigger - Updated with DeepGram SDK v5.2.0
 
 FROM python:3.11-slim
 

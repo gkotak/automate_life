@@ -7,7 +7,7 @@ Transcribes audio/video files using DeepGram API
 import json
 from datetime import datetime
 from pathlib import Path
-from deepgram import DeepgramClient, PrerecordedOptions
+from deepgram import DeepgramClient
 
 # Import our base class and config
 import sys
@@ -38,7 +38,7 @@ class FileTranscriber(BaseProcessor):
                 raise ValueError("DeepGram API key not found. Please set DEEPGRAM_API_KEY environment variable or add it to .env file")
 
             # Initialize DeepGram client
-            self.client = DeepgramClient(api_key)
+            self.client = DeepgramClient(api_key=api_key)
             self.logger.info("✅ DeepGram client initialized successfully")
 
         except Exception as e:
@@ -79,28 +79,29 @@ class FileTranscriber(BaseProcessor):
             self.logger.info(f"🚀 Starting transcription...")
             self.logger.info(f"🎯 Language: {language or 'auto-detect'}")
 
-            # Prepare transcription options
-            options = PrerecordedOptions(
-                model="nova-2",
-                smart_format=True,
-                utterances=True,
-                punctuate=True,
-                paragraphs=True,
-                diarize=False
-            )
-
-            if language:
-                options.language = language
-
-            # Read and transcribe file
+            # Read file
             with open(file_path, "rb") as audio_file:
                 buffer_data = audio_file.read()
 
             self.logger.info("📡 Sending file to DeepGram API...")
 
-            response = self.client.listen.rest.v("1").transcribe_file(
-                {"buffer": buffer_data},
-                options
+            # Prepare transcription options
+            options = {
+                "model": "nova-2",
+                "smart_format": True,
+                "utterances": True,
+                "punctuate": True,
+                "paragraphs": True,
+                "diarize": False
+            }
+
+            if language:
+                options["language"] = language
+
+            # Transcribe using DeepGram
+            response = self.client.listen.v1.media.transcribe_file(
+                request=buffer_data,
+                **options
             )
 
             self.logger.info("✅ Transcription completed successfully")
