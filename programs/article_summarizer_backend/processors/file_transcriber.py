@@ -21,7 +21,7 @@ class FileTranscriber(BaseProcessor):
         super().__init__("file_transcriber")
 
         # Setup specific directories for this processor - use logs dir for temp files
-        self.transcriptions_dir = self.base_dir / "programs" / "article_summarizer" / "logs" / "transcriptions"
+        self.transcriptions_dir = self.base_dir / "programs" / "article_summarizer_backend" / "logs" / "transcriptions"
         self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize DeepGram client

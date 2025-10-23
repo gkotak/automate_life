@@ -25,7 +25,7 @@ class ClaudeClient:
         self.claude_cmd = claude_cmd
         self.base_dir = base_dir
         self.logger = logger
-        self.logs_dir = base_dir / "programs" / "article_summarizer" / "logs"
+        self.logs_dir = base_dir / "programs" / "article_summarizer_backend" / "logs"
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
     def call_api(self, prompt: str) -> str:
