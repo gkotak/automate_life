@@ -338,13 +338,14 @@ class ContentTypeDetector:
     def _extract_article_title(self, soup: BeautifulSoup) -> Optional[str]:
         """Extract article title from page"""
         # Try multiple selectors for article title in priority order
+        # og:title and h1 are usually cleaner than <title> tag
         title_selectors = [
-            'title',  # Highest priority - usually most complete
-            'h1',
-            'meta[property="og:title"]',
+            'meta[property="og:title"]',  # Clean title without site name
+            'h1',                          # Main heading
             'meta[name="title"]',
             '.post-title',
-            '.entry-title'
+            '.entry-title',
+            'title'                        # Last resort - often has extra text
         ]
 
         for selector in title_selectors:
@@ -352,9 +353,30 @@ class ContentTypeDetector:
             if element:
                 title = element.get('content') or element.get_text(strip=True)
                 if title and len(title) > 10:  # Basic validation
+                    # Clean common suffixes/prefixes
+                    title = self._clean_article_title(title)
                     return title.strip()
 
         return None
+
+    def _clean_article_title(self, title: str) -> str:
+        """Remove common site names, author info from article titles"""
+        import re
+
+        # Common patterns to remove (case insensitive)
+        patterns = [
+            r'\s*[-–|]\s*by\s+.*$',           # " - by Author Name"
+            r'\s*[-–|]\s*.*Newsletter.*$',     # " - Newsletter Name"
+            r'\s*[-–|]\s*.*Blog.*$',           # " - Blog Name"
+            r'\s*[-–|]\s*Medium$',             # " - Medium"
+            r'\s*[-–|]\s*Substack$',           # " - Substack"
+        ]
+
+        cleaned = title
+        for pattern in patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+        return cleaned.strip()
 
     def _calculate_title_similarity(self, title1: str, title2: str) -> float:
         """Calculate similarity percentage between two titles using token overlap"""
