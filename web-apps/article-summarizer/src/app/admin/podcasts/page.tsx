@@ -8,6 +8,12 @@ import { useRouter } from 'next/navigation';
 const CONTENT_CHECKER_API_URL = process.env.NEXT_PUBLIC_CONTENT_CHECKER_API_URL || 'http://localhost:8001';
 const CONTENT_CHECKER_API_KEY = process.env.NEXT_PUBLIC_CONTENT_CHECKER_API_KEY || '';
 
+// Debug: Log environment variables (only in browser console)
+if (typeof window !== 'undefined') {
+  console.log('Content Checker API URL:', CONTENT_CHECKER_API_URL);
+  console.log('Content Checker API Key exists:', !!CONTENT_CHECKER_API_KEY);
+}
+
 interface PodcastEpisode {
   id: string;
   episode_title: string;
@@ -451,3 +457,4 @@ export default function PodcastsAdminPage() {
     </div>
   );
 }
+// Trigger rebuild Fri Oct 24 18:02:08 BST 2025
