@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 // API configuration from environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://automatelife-production.up.railway.app';
@@ -22,6 +22,7 @@ interface ProcessingStep {
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
@@ -38,6 +39,8 @@ export default function AdminPage() {
     url: string;
   } | null>(null);
   const audioDurationRef = useRef<number | null>(null); // Duration in minutes - using ref to avoid stale closure in event listeners
+  const formRef = useRef<HTMLFormElement>(null);
+  const hasAutoSubmittedRef = useRef(false); // Track if we've already auto-submitted
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -45,6 +48,22 @@ export default function AdminPage() {
       router.push('/login');
     }
   }, [user, authLoading, router]);
+
+  // Read URL parameter and auto-populate/submit
+  useEffect(() => {
+    if (user && !hasAutoSubmittedRef.current) {
+      const urlParam = searchParams.get('url');
+      if (urlParam) {
+        setUrl(urlParam);
+        hasAutoSubmittedRef.current = true;
+
+        // Auto-submit after a short delay to ensure the form is ready
+        setTimeout(() => {
+          formRef.current?.requestSubmit();
+        }, 100);
+      }
+    }
+  }, [user, searchParams]);
 
   // Real-time counter: Update duration every second for steps that are processing
   useEffect(() => {
@@ -399,7 +418,7 @@ export default function AdminPage() {
             Submit article URLs to process and summarize
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-2">
                 Article URL

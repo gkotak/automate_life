@@ -1,0 +1,3 @@
+"""
+Content Checker Backend Application
+"""
