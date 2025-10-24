@@ -28,6 +28,9 @@ interface PodcastEpisode {
   duration_seconds: number | null;
 }
 
+type SortField = 'title' | 'published_date' | 'found_at' | 'duration_seconds' | 'status';
+type SortDirection = 'asc' | 'desc';
+
 export default function PodcastsAdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -42,6 +45,8 @@ export default function PodcastsAdminPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 25;
+  const [sortField, setSortField] = useState<SortField>('found_at');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -152,6 +157,53 @@ export default function PodcastsAdminPage() {
     router.push(`/admin?url=${encodeURIComponent(url)}`);
   };
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction if clicking the same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field with default descending for dates, ascending for others
+      setSortField(field);
+      setSortDirection(field === 'published_date' || field === 'found_at' ? 'desc' : 'asc');
+    }
+  };
+
+  const sortPodcasts = (podcastsList: PodcastEpisode[]) => {
+    return [...podcastsList].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'title':
+          aValue = a.episode_title.toLowerCase();
+          bValue = b.episode_title.toLowerCase();
+          break;
+        case 'published_date':
+          aValue = a.published_date ? new Date(a.published_date).getTime() : 0;
+          bValue = b.published_date ? new Date(b.published_date).getTime() : 0;
+          break;
+        case 'found_at':
+          aValue = a.found_at ? new Date(a.found_at).getTime() : 0;
+          bValue = b.found_at ? new Date(b.found_at).getTime() : 0;
+          break;
+        case 'duration_seconds':
+          aValue = a.duration_seconds || 0;
+          bValue = b.duration_seconds || 0;
+          break;
+        case 'status':
+          aValue = a.status.toLowerCase();
+          bValue = b.status.toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A';
     try {
@@ -190,16 +242,35 @@ export default function PodcastsAdminPage() {
     }
   };
 
-  // Pagination logic
-  const totalPages = Math.ceil(totalCount / itemsPerPage);
+  // Sort and paginate
+  const sortedPodcasts = sortPodcasts(podcasts);
+  const totalPages = Math.ceil(sortedPodcasts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedPodcasts = podcasts.slice(startIndex, endIndex);
+  const paginatedPodcasts = sortedPodcasts.slice(startIndex, endIndex);
 
   const goToPage = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Sortable column header component
+  const SortableHeader = ({ field, label, className = "" }: { field: SortField; label: string; className?: string }) => (
+    <th
+      scope="col"
+      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors ${className}`}
+      onClick={() => handleSort(field)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {sortField === field && (
+          <span className="text-[#077331]">
+            {sortDirection === 'asc' ? '↑' : '↓'}
+          </span>
+        )}
+      </div>
+    </th>
+  );
 
   // Show loading while checking auth
   if (authLoading) {
@@ -294,18 +365,11 @@ export default function PodcastsAdminPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '60%' }}>
-                        Title
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Duration
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
+                      <SortableHeader field="title" label="Title" className="w-[45%]" />
+                      <SortableHeader field="published_date" label="Release Date" />
+                      <SortableHeader field="found_at" label="Listened Date" />
+                      <SortableHeader field="duration_seconds" label="Duration" />
+                      <SortableHeader field="status" label="Status" />
                       <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Action
                       </th>
@@ -323,7 +387,7 @@ export default function PodcastsAdminPage() {
 
                       return (
                         <tr key={podcast.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4" style={{ width: '60%' }}>
+                          <td className="px-6 py-4">
                             <div className="flex items-start gap-3">
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-medium text-gray-900 break-words" title={podcast.episode_title}>
@@ -342,6 +406,9 @@ export default function PodcastsAdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatDate(podcast.published_date)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDate(podcast.found_at)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatDuration(podcast.duration_seconds)}
@@ -370,7 +437,7 @@ export default function PodcastsAdminPage() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-6 px-4">
                   <div className="text-sm text-gray-700">
-                    Showing {startIndex + 1} to {Math.min(endIndex, totalCount)} of {totalCount} results
+                    Showing {startIndex + 1} to {Math.min(endIndex, sortedPodcasts.length)} of {sortedPodcasts.length} results
                   </div>
                   <div className="flex items-center gap-2">
                     <button

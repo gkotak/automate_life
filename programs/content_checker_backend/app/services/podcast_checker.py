@@ -44,15 +44,15 @@ class PodcastCheckerService:
         in_progress_episodes = self._fetch_in_progress_episodes()
 
         if not in_progress_episodes:
-            self.logger.warning("No in-progress episodes found")
+            self.logger.warning("No episodes found in PocketCasts history")
             return {
                 "new_podcasts_found": 0,
                 "total_episodes_checked": 0,
-                "message": "No in-progress episodes found",
+                "message": "No episodes found in PocketCasts history",
                 "newly_discovered_ids": []
             }
 
-        self.logger.info(f"Processing {len(in_progress_episodes)} in-progress episodes...")
+        self.logger.info(f"Processing {len(in_progress_episodes)} episodes from history...")
 
         new_podcasts_found = 0
         total_episodes_checked = 0
@@ -98,7 +98,7 @@ class PodcastCheckerService:
         Fetch listening history from PocketCasts
 
         Returns:
-            List of episodes with playback progress
+            List of all episodes from history
         """
         headers = self.podcast_auth.get_headers()
         if not headers:
@@ -120,12 +120,11 @@ class PodcastCheckerService:
             episodes = data.get('episodes', [])
             total = data.get('total', 0)
 
-            # Filter for episodes that have been started
-            in_progress = [ep for ep in episodes if ep.get('playedUpTo', 0) > 0]
+            # Return ALL episodes from history (not just in-progress)
+            # This includes both completed and partially-listened episodes
+            self.logger.info(f"Retrieved {total} total episodes from history")
 
-            self.logger.info(f"Retrieved {total} total episodes, {len(in_progress)} with progress")
-
-            return in_progress
+            return episodes
 
         except Exception as e:
             self.logger.error(f"Error fetching history: {e}")
