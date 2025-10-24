@@ -503,11 +503,37 @@ class BrowserFetcher:
     # Async helper methods for async Playwright API
 
     async def _inject_cookies_async(self, context, cookies: Dict, url: str):
-        """Async version of _inject_cookies"""
+        """
+        Async version of _inject_cookies
+        Only injects cookies relevant to the target URL domain
+        """
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
-        domain = parsed.netloc
+        target_domain = parsed.hostname or parsed.netloc  # Use hostname to strip port
+
+        # Extract base domain (e.g., "tegus.co" from "app.tegus.co")
+        domain_parts = target_domain.split('.')
+        base_domain = '.'.join(domain_parts[-2:]) if len(domain_parts) >= 2 else target_domain
+
+        def is_cookie_relevant(cookie_domain: Optional[str]) -> bool:
+            """Check if cookie domain matches target domain"""
+            if not cookie_domain:
+                return False
+
+            # Strip leading dot
+            cookie_domain = cookie_domain.lstrip('.')
+
+            # Match if:
+            # 1. Exact match (tegus.co == tegus.co)
+            # 2. Cookie is for parent domain (tegus.co cookie works on app.tegus.co)
+            # 3. Cookie is for subdomain (app.tegus.co cookie works on app.tegus.co)
+            return (
+                cookie_domain == target_domain or
+                cookie_domain == base_domain or
+                target_domain.endswith('.' + cookie_domain) or
+                target_domain.endswith(cookie_domain)
+            )
 
         # Handle both dict and requests.cookies.RequestsCookieJar
         if isinstance(cookies, dict):
@@ -516,7 +542,7 @@ class BrowserFetcher:
                 cookie_list.append({
                     'name': name,
                     'value': value,
-                    'domain': domain,
+                    'domain': target_domain,
                     'path': '/',
                     'secure': True,
                     'httpOnly': False,
@@ -525,6 +551,10 @@ class BrowserFetcher:
         else:
             cookie_list = []
             for c in cookies:
+                # Filter: only include cookies for this domain
+                if not is_cookie_relevant(c.domain):
+                    continue
+
                 cookie_dict = {
                     'name': c.name,
                     'value': c.value,
@@ -539,15 +569,19 @@ class BrowserFetcher:
                 cookie_list.append(cookie_dict)
 
         cookie_count = 0
+        failed_count = 0
         for cookie_dict in cookie_list:
             try:
                 await context.add_cookies([cookie_dict])
                 cookie_count += 1
             except Exception as e:
+                failed_count += 1
                 self.logger.debug(f"Could not inject cookie {cookie_dict.get('name')}: {e}")
 
         if cookie_count > 0:
-            self.logger.info(f"🍪 [BROWSER FETCH ASYNC] Injected {cookie_count} cookies into browser context")
+            self.logger.info(f"🍪 [BROWSER FETCH ASYNC] Injected {cookie_count} cookies for {target_domain} (filtered from {cookie_count + failed_count} total)")
+        else:
+            self.logger.warning(f"⚠️ [BROWSER FETCH ASYNC] No cookies injected for {target_domain}")
 
     async def _wait_for_content_async(self, page: 'AsyncPage') -> bool:
         """Async version of _wait_for_content"""
