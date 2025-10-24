@@ -22,9 +22,5 @@ COPY . .
 # Expose port (Railway will use $PORT environment variable)
 EXPOSE 8001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8001/health')"
-
 # Run FastAPI with uvicorn (Railway provides $PORT)
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1"]
