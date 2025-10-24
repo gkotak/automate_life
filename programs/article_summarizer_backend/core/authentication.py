@@ -460,41 +460,6 @@ class AuthenticationManager:
         # Generic authentication implementation
         return False, "Generic authentication not yet implemented"
 
-    def fetch_with_browser(self, url: str) -> Tuple[bool, Optional[str], str]:
-        """
-        Fetch content using browser automation (Playwright)
-
-        This method is used as a fallback when:
-        - Standard requests fail due to anti-bot measures
-        - Cloudflare or similar protection is detected
-        - JavaScript is required to load content
-
-        Args:
-            url: The URL to fetch
-
-        Returns:
-            Tuple of (success, html_content, message)
-        """
-        if not self.browser_fetcher.is_available():
-            return False, None, "Playwright not available - install with: pip install playwright && playwright install chromium"
-
-        self.logger.info(f"🌐 [BROWSER AUTH] Using Playwright to fetch: {url}")
-
-        # Convert session cookies to dictionary for Playwright
-        cookies_dict = {}
-        for cookie in self.session.cookies:
-            cookies_dict[cookie.name] = cookie.value
-
-        # Fetch using Playwright with injected cookies
-        success, html_content, message = self.browser_fetcher.fetch_with_playwright(url, self.session.cookies)
-
-        if success:
-            self.logger.info(f"✅ [BROWSER AUTH] Successfully fetched content via browser")
-        else:
-            self.logger.error(f"❌ [BROWSER AUTH] Browser fetch failed: {message}")
-
-        return success, html_content, message
-
     async def fetch_with_browser_async(self, url: str) -> Tuple[bool, Optional[str], str]:
         """
         Async version of fetch_with_browser for use with FastAPI/async contexts

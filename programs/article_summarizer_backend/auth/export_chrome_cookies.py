@@ -109,23 +109,14 @@ def convert_to_playwright_format(chrome_cookies_by_domain):
 
     for domain, cookies in chrome_cookies_by_domain.items():
         for name, value in cookies.items():
-            # Detect host-only cookies by naming convention
-            # Cookies with __Host- prefix MUST be host-only (no domain attribute)
-            # Cookies with __Secure- prefix must be secure but can have domain
-            is_host_only = name.startswith('__Host-')
-
             # Build cookie object
             cookie = {
                 "name": name,
                 "value": value,
+                "domain": f".{domain}",  # Prefix with . for subdomain matching
                 "path": "/",
                 "expires": (datetime.now() + timedelta(days=30)).timestamp(),
             }
-
-            # Only add domain for non-host-only cookies
-            # Host-only cookies must NOT have a domain attribute
-            if not is_host_only:
-                cookie["domain"] = f".{domain}"  # Prefix with . for subdomain matching
 
             # Set security attributes based on cookie prefix
             if name.startswith('__Secure-') or name.startswith('__Host-'):

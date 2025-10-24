@@ -1120,6 +1120,16 @@ CRITICAL TIMESTAMP RULES:
                 if transcript_parts:
                     transcript_text = "\n\n".join(transcript_parts)
 
+            # For text-only articles, use the article text as transcript
+            # This ensures UI consistency - all articles show original source content
+            article_text = metadata.get('article_text', '')
+            if (not transcript_text and
+                article_text and
+                article_text != 'Content not available' and
+                not content_type.has_embedded_video and
+                not content_type.has_embedded_audio):
+                transcript_text = article_text
+
             # Get video ID if available
             video_id = None
             if content_type.has_embedded_video and metadata.get('media_info', {}).get('youtube_urls'):
@@ -1776,7 +1786,7 @@ CRITICAL TIMESTAMP RULES:
             return None
 
     def _extract_article_text_content(self, soup) -> str:
-        """Extract main article text content"""
+        """Extract main article text content with preserved structure"""
         # Try multiple content selectors (including Substack-specific)
         content_selectors = [
             '.available-content',  # Substack main content
@@ -1788,19 +1798,75 @@ CRITICAL TIMESTAMP RULES:
         for selector in content_selectors:
             element = soup.select_one(selector)
             if element:
-                # Remove script and style elements
-                for script in element(["script", "style"]):
-                    script.decompose()
-                return element.get_text(strip=True)
+                return self._extract_readable_text(element)
 
         # Fallback to body
         body = soup.find('body')
         if body:
-            for script in body(["script", "style"]):
-                script.decompose()
-            return body.get_text(strip=True)
+            return self._extract_readable_text(body)
 
         return ""
+
+    def _extract_readable_text(self, element) -> str:
+        """
+        Extract text with preserved structure and filtered UI elements.
+
+        Removes:
+        - Navigation, header, footer, sidebar elements
+        - Buttons, forms, and interactive UI
+        - Script and style tags
+
+        Preserves:
+        - Paragraph breaks
+        - Heading hierarchy
+        - List structure
+        """
+        from bs4 import BeautifulSoup
+        from copy import copy
+
+        # Create a copy to avoid modifying original
+        element = copy(element)
+
+        # Remove unwanted elements
+        unwanted_tags = [
+            'script', 'style', 'nav', 'header', 'footer', 'aside',
+            'form', 'button', 'input', 'select', 'textarea',
+            'iframe', 'noscript', 'svg'
+        ]
+        for tag in unwanted_tags:
+            for el in element.find_all(tag):
+                el.decompose()
+
+        # Remove common UI class patterns
+        ui_patterns = [
+            'nav', 'menu', 'header', 'footer', 'sidebar', 'widget',
+            'button', 'btn', 'toolbar', 'modal', 'popup', 'dropdown',
+            'search', 'filter', 'pagination', 'breadcrumb',
+            'social', 'share', 'comment', 'reply', 'subscribe',
+            'advertisement', 'promo', 'banner'
+        ]
+
+        for pattern in ui_patterns:
+            # Find by class
+            for el in element.find_all(class_=lambda x: x and pattern in x.lower()):
+                el.decompose()
+            # Find by id
+            for el in element.find_all(id=lambda x: x and pattern in x.lower()):
+                el.decompose()
+
+        # Extract text with paragraph breaks preserved
+        # Use separator to add double line breaks between block elements
+        text = element.get_text(separator='\n\n', strip=True)
+
+        # Clean up excessive whitespace
+        import re
+        # Replace 3+ newlines with 2 newlines
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        # Remove lines that are just whitespace
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        text = '\n'.join(lines)
+
+        return text
 
     def _extract_article_images(self, soup, base_url: str) -> list:
         """Extract image URLs from article content"""
