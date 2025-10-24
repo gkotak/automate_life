@@ -5,8 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 // API configuration from environment variables
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://automatelife-production.up.railway.app';
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'article-summarizer-production-key-2025';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || '';
 
 interface ProcessingStep {
   id: string;
