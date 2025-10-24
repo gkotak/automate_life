@@ -11,6 +11,10 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(Path(__file__).parent.parent / '.env.local')
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
