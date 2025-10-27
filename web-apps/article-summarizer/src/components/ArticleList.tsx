@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { supabase, Article } from '@/lib/supabase'
 import { Search, Trash2, ExternalLink, Calendar, Tag, X, CheckCircle, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -16,13 +17,14 @@ interface Notification {
 
 export default function ArticleList() {
   const { user } = useAuth()
+  const pathname = usePathname()
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'summary' | 'transcript' | 'article'>('all')
   const [searchMode, setSearchMode] = useState<'keyword' | 'hybrid'>('hybrid')
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [isSearching, setIsSearching] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
   // Filter states
   const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([])
@@ -35,11 +37,13 @@ export default function ArticleList() {
   const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
   const [showAllSources, setShowAllSources] = useState(false)
 
-  // Fetch articles on mount and when user changes
+  // Fetch articles on mount, when user changes, or when pathname changes (navigation)
   useEffect(() => {
-    fetchArticles()
-    fetchAvailableSources()
-  }, [user])
+    if (pathname === '/') {
+      fetchArticles()
+      fetchAvailableSources()
+    }
+  }, [user, pathname])
 
   const fetchAvailableSources = async () => {
     try {
@@ -86,22 +90,32 @@ export default function ArticleList() {
   const fetchArticles = async () => {
     try {
       setLoading(true)
+
       let query = supabase
         .from('articles')
         .select('*, key_insights, quotes, duration_minutes, word_count, topics')
 
-      // Filter by user_id if authenticated (Phase 2: user isolation)
-      // Note: This will be enforced after SQL migration is run
-      if (user) {
-        query = query.eq('user_id', user.id)
-      }
+      // NOTE: User filtering disabled - articles don't have user_id set yet
+      // TODO: Implement user isolation when ready:
+      // 1. Run migration to add user_id to existing articles
+      // 2. Update article processor to set user_id on new articles
+      // 3. Re-enable the filter below:
+      // if (user) {
+      //   query = query.eq('user_id', user.id)
+      // }
 
       const { data, error } = await query.order('created_at', { ascending: false })
 
       if (error) throw error
-      setArticles(data || [])
+
+      // Only update articles after we have the data
+      if (data) {
+        setArticles(data)
+      }
+      setHasLoaded(true)
     } catch (error) {
       console.error('Error fetching articles:', error)
+      setHasLoaded(true)
     } finally {
       setLoading(false)
     }
@@ -150,14 +164,12 @@ export default function ArticleList() {
 
     // If no search query and no filters, just fetch all articles
     if (!query.trim() && !hasFilters) {
-      setIsSearching(false)
       fetchArticles()
       return
     }
 
     try {
       setLoading(true)
-      setIsSearching(true)
 
       // Build filters object
       const filters: any = {}
@@ -185,13 +197,16 @@ export default function ArticleList() {
       }
 
       const { results } = await response.json()
-      setArticles(results || [])
+
+      // Only update articles if we got results
+      if (results) {
+        setArticles(results)
+      }
     } catch (error) {
       console.error('Error searching articles:', error)
       addNotification('error', 'Search failed. Please try again.')
     } finally {
       setLoading(false)
-      setIsSearching(false)
     }
   }
 
@@ -352,7 +367,6 @@ export default function ArticleList() {
                     <button
                       onClick={() => {
                         setSearchQuery('')
-                        setIsSearching(false)
                         fetchArticles()
                       }}
                       className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
@@ -523,10 +537,10 @@ export default function ArticleList() {
       </div>
 
       {/* Articles List */}
-      {loading || isSearching ? (
+      {loading && articles.length === 0 ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">{isSearching ? 'Searching...' : 'Loading articles...'}</p>
+          <p className="mt-4 text-gray-600">Loading articles...</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:gap-6">
@@ -596,7 +610,7 @@ export default function ArticleList() {
             </div>
           ))}
 
-          {articles.length === 0 && !loading && !isSearching && (
+          {articles.length === 0 && !loading && hasLoaded && (
             <div className="text-center py-12">
               <p className="text-gray-600">No articles found</p>
             </div>
