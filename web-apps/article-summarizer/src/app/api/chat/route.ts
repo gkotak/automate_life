@@ -2,6 +2,26 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 import { searchArticlesBySemantic } from '@/lib/search';
 import { Message, ArticleSource } from '@/types/chat';
+import { wrapOpenAI, initLogger } from 'braintrust';
+import OpenAI from 'openai';
+
+// Initialize Braintrust logger once
+let braintrustLogger: ReturnType<typeof initLogger> | null = null;
+
+function getBraintrustLogger() {
+  if (!braintrustLogger && process.env.BRAINTRUST_API_KEY) {
+    try {
+      braintrustLogger = initLogger({
+        apiKey: process.env.BRAINTRUST_API_KEY,
+        projectName: 'automate-life',
+      });
+      console.log('✅ [BRAINTRUST] Logger initialized for chat');
+    } catch (error) {
+      console.warn('⚠️ [BRAINTRUST] Failed to initialize logger:', error);
+    }
+  }
+  return braintrustLogger;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -101,75 +121,37 @@ Guidelines:
       { role: 'user', content: message }
     ];
 
-    // Step 5: Call OpenAI Chat API with streaming
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4-turbo-preview',
-        messages,
-        stream: true,
-        temperature: 0.7,
-        max_tokens: 1500
-      })
-    });
+    // Step 5: Call OpenAI Chat API with streaming (using Braintrust wrapper)
+    getBraintrustLogger();
 
-    if (!openaiResponse.ok) {
-      const error = await openaiResponse.json().catch(() => ({}));
-      console.error('OpenAI API error:', error);
-      return new Response(
-        JSON.stringify({ error: 'Failed to generate response' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
+    const client = wrapOpenAI(new OpenAI({
+      apiKey: openaiApiKey,
+    }));
+
+    const stream = await client.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages,
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 1500
+    });
 
     // Step 6: Create a streaming response
     const encoder = new TextEncoder();
     let fullResponse = '';
     let currentConversationId = conversationId;
 
-    const stream = new ReadableStream({
+    const responseStream = new ReadableStream({
       async start(controller) {
         try {
-          const reader = openaiResponse.body?.getReader();
-          if (!reader) {
-            throw new Error('No response body');
-          }
+          // OpenAI SDK returns an async iterable for streaming
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content;
 
-          const decoder = new TextDecoder();
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-
-                if (data === '[DONE]') {
-                  continue;
-                }
-
-                try {
-                  const parsed = JSON.parse(data);
-                  const content = parsed.choices[0]?.delta?.content;
-
-                  if (content) {
-                    fullResponse += content;
-                    // Send content chunk to client
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'content', content })}\n\n`));
-                  }
-                } catch (e) {
-                  // Skip parsing errors for non-JSON lines
-                  continue;
-                }
-              }
+            if (content) {
+              fullResponse += content;
+              // Send content chunk to client
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'content', content })}\n\n`));
             }
           }
 
@@ -242,7 +224,7 @@ Guidelines:
       }
     });
 
-    return new Response(stream, {
+    return new Response(responseStream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 File Transcriber - Refactored version using BaseProcessor
-Transcribes audio/video files using DeepGram API
+Transcribes audio/video files using DeepGram API with Braintrust logging
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
 from deepgram import DeepgramClient
+import braintrust
 
 # Import our base class and config
 import sys
@@ -23,6 +24,14 @@ class FileTranscriber(BaseProcessor):
         # Setup specific directories for this processor - use logs dir for temp files
         self.transcriptions_dir = self.base_dir / "programs" / "article_summarizer_backend" / "logs" / "transcriptions"
         self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize Braintrust
+        try:
+            braintrust.login()
+            self.logger.info("✅ Braintrust initialized successfully")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Braintrust failed to initialize: {e}")
+            self.logger.warning("⚠️ Continuing without Braintrust logging")
 
         # Initialize DeepGram client
         self._setup_deepgram()
@@ -71,8 +80,9 @@ class FileTranscriber(BaseProcessor):
 
         return file_path
 
+    @braintrust.traced
     def transcribe_file(self, file_path, language=None):
-        """Transcribe audio/video file using DeepGram"""
+        """Transcribe audio/video file using DeepGram with Braintrust logging"""
         try:
             file_path = self._validate_file(file_path)
 
@@ -97,6 +107,20 @@ class FileTranscriber(BaseProcessor):
 
             if language:
                 options["language"] = language
+
+            # Log input to Braintrust
+            braintrust.current_span().log(
+                input={
+                    "file_path": str(file_path),
+                    "file_size_mb": len(buffer_data) / 1024 / 1024,
+                    "language": language or "auto",
+                    "options": options
+                },
+                metadata={
+                    "provider": "deepgram",
+                    "model": "nova-2"
+                }
+            )
 
             # Transcribe using DeepGram
             response = self.client.listen.v1.media.transcribe_file(
@@ -158,6 +182,17 @@ class FileTranscriber(BaseProcessor):
 
             # Save transcript to file (temporarily for logging)
             output_file = self._save_transcript(transcript_data, file_path)
+
+            # Log output to Braintrust
+            braintrust.current_span().log(
+                output={
+                    "transcript_length": len(transcript_text),
+                    "duration_seconds": duration,
+                    "segments_count": len(segments_data),
+                    "words_count": len(words_data),
+                    "detected_language": detected_language
+                }
+            )
 
             # Log summary using base class method
             self.log_session_summary(

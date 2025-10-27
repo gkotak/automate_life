@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { generateEmbedding } from '@/lib/embeddings';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,34 +50,8 @@ export async function POST(request: NextRequest) {
     } else {
       // We have a query, perform search
       if (mode === 'semantic' || mode === 'hybrid') {
-        // Generate embedding for semantic search
-        const openaiApiKey = process.env.OPENAI_API_KEY;
-        if (!openaiApiKey) {
-          return NextResponse.json(
-            { error: 'OpenAI API key not configured' },
-            { status: 500 }
-          );
-        }
-
-        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            input: query,
-            model: 'text-embedding-3-small',
-            dimensions: 384,
-          }),
-        });
-
-        if (!embeddingResponse.ok) {
-          throw new Error('Failed to generate embedding');
-        }
-
-        const embeddingData = await embeddingResponse.json();
-        const queryEmbedding = embeddingData.data[0].embedding;
+        // Generate embedding for semantic search using wrapped OpenAI client
+        const queryEmbedding = await generateEmbedding(query);
 
         // Semantic search
         const { data: semanticResults, error } = await supabase.rpc('search_articles', {

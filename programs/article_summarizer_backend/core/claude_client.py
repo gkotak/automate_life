@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 Claude CLI Client
-Handles all interactions with Claude CLI
+Handles all interactions with Claude CLI (via Braintrust proxy)
 """
 
 import subprocess
 import logging
 from pathlib import Path
 from typing import Optional
+import braintrust
+from openai import OpenAI
 
 
 class ClaudeClient:
@@ -15,7 +17,7 @@ class ClaudeClient:
 
     def __init__(self, claude_cmd: str, base_dir: Path, logger: logging.Logger):
         """
-        Initialize Claude client
+        Initialize Claude client with Braintrust logging
 
         Args:
             claude_cmd: Path to Claude CLI executable
@@ -27,6 +29,14 @@ class ClaudeClient:
         self.logger = logger
         self.logs_dir = base_dir / "programs" / "article_summarizer_backend" / "logs"
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize Braintrust (will use BRAINTRUST_API_KEY env var)
+        try:
+            braintrust.login()
+            self.logger.info("   ✅ [BRAINTRUST] Initialized successfully")
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ [BRAINTRUST] Failed to initialize: {e}")
+            self.logger.warning("   ⚠️ [BRAINTRUST] Continuing without Braintrust logging")
 
     def call_api(self, prompt: str) -> str:
         """
@@ -49,12 +59,11 @@ class ClaudeClient:
                 f.write(prompt)
             self.logger.info(f"   💾 [DEBUG] Full prompt saved to: {debug_file}")
 
-            # Use Anthropic Python SDK directly instead of CLI
-            # Claude CLI has issues with large prompts via stdin
-            self.logger.info(f"   🔧 [DEBUG] Using Anthropic Python SDK")
+            # Use OpenAI client with Braintrust proxy for Claude API
+            # This automatically logs all calls to Braintrust dashboard
+            self.logger.info(f"   🔧 [DEBUG] Using OpenAI client with Braintrust proxy")
             self.logger.info(f"   🔧 [DEBUG] Prompt length: {len(prompt)} chars")
 
-            import anthropic
             import os
             from dotenv import load_dotenv
 
@@ -62,14 +71,22 @@ class ClaudeClient:
             env_file = self.base_dir / '.env.local'
             load_dotenv(env_file)
 
-            # Get API key from environment
+            # Get API key from environment (Anthropic key for proxy)
             api_key = os.getenv('ANTHROPIC_API_KEY')
             if not api_key:
                 raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
-            client = anthropic.Anthropic(api_key=api_key)
+            # Create OpenAI client with Braintrust proxy
+            # The proxy translates OpenAI API calls to Anthropic API calls
+            client = braintrust.wrap_openai(
+                OpenAI(
+                    base_url="https://api.braintrust.dev/v1/proxy",
+                    api_key=api_key  # Anthropic API key
+                )
+            )
 
-            message = client.messages.create(
+            # Use OpenAI-style chat completions (proxy converts to Anthropic format)
+            message = client.chat.completions.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=8000,
                 messages=[{
@@ -78,7 +95,7 @@ class ClaudeClient:
                 }]
             )
 
-            response = message.content[0].text
+            response = message.choices[0].message.content
 
             result = type('Result', (), {
                 'returncode': 0,

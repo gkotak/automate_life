@@ -1,8 +1,11 @@
 /**
- * OpenAI Embeddings Utilities
+ * OpenAI Embeddings Utilities (with Braintrust logging)
  *
  * Shared functions for generating text embeddings used by both search and chat features.
  */
+
+import { wrapOpenAI, initLogger } from 'braintrust';
+import OpenAI from 'openai';
 
 export interface EmbeddingOptions {
   model?: string
@@ -12,6 +15,43 @@ export interface EmbeddingOptions {
 const DEFAULT_OPTIONS: EmbeddingOptions = {
   model: 'text-embedding-3-small',
   dimensions: 384
+}
+
+// Initialize Braintrust logger
+let braintrustLogger: ReturnType<typeof initLogger> | null = null;
+
+function getBraintrustLogger() {
+  if (!braintrustLogger && process.env.BRAINTRUST_API_KEY) {
+    try {
+      braintrustLogger = initLogger({
+        apiKey: process.env.BRAINTRUST_API_KEY,
+        projectName: 'automate-life',
+      });
+      console.log('✅ [BRAINTRUST] Logger initialized for embeddings');
+    } catch (error) {
+      console.warn('⚠️ [BRAINTRUST] Failed to initialize logger:', error);
+    }
+  }
+  return braintrustLogger;
+}
+
+// Create wrapped OpenAI client for Braintrust logging
+let cachedClient: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (!cachedClient) {
+    // Initialize logger first
+    getBraintrustLogger();
+
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      throw new Error('OpenAI API key not configured');
+    }
+    cachedClient = wrapOpenAI(new OpenAI({
+      apiKey: openaiApiKey,
+    }));
+  }
+  return cachedClient;
 }
 
 /**
@@ -26,34 +66,17 @@ export async function generateEmbedding(
   text: string,
   options: EmbeddingOptions = {}
 ): Promise<number[]> {
-  const openaiApiKey = process.env.OPENAI_API_KEY
-
-  if (!openaiApiKey) {
-    throw new Error('OpenAI API key not configured')
-  }
-
   const { model, dimensions } = { ...DEFAULT_OPTIONS, ...options }
 
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openaiApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: text,
-      model,
-      dimensions,
-    }),
-  })
+  const client = getClient();
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(`Failed to generate embedding: ${response.statusText} - ${JSON.stringify(error)}`)
-  }
+  const response = await client.embeddings.create({
+    input: text,
+    model: model!,
+    dimensions,
+  });
 
-  const data = await response.json()
-  return data.data[0].embedding
+  return response.data[0].embedding;
 }
 
 /**
@@ -67,32 +90,15 @@ export async function generateEmbeddings(
   texts: string[],
   options: EmbeddingOptions = {}
 ): Promise<number[][]> {
-  const openaiApiKey = process.env.OPENAI_API_KEY
-
-  if (!openaiApiKey) {
-    throw new Error('OpenAI API key not configured')
-  }
-
   const { model, dimensions } = { ...DEFAULT_OPTIONS, ...options }
 
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openaiApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: texts,
-      model,
-      dimensions,
-    }),
-  })
+  const client = getClient();
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(`Failed to generate embeddings: ${response.statusText} - ${JSON.stringify(error)}`)
-  }
+  const response = await client.embeddings.create({
+    input: texts,
+    model: model!,
+    dimensions,
+  });
 
-  const data = await response.json()
-  return data.data.map((item: any) => item.embedding)
+  return response.data.map((item) => item.embedding);
 }

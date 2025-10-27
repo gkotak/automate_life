@@ -299,6 +299,48 @@ web-apps/article-summarizer/
 - [x] Research completed
 - [x] Architecture designed
 - [x] Documentation created
-- [ ] Python backend implementation
-- [ ] TypeScript frontend implementation
+- [x] Python backend implementation
+  - [x] `claude_client.py` - Using OpenAI client with Braintrust proxy
+  - [x] `file_transcriber.py` - Using custom `@braintrust.traced` for Deepgram API
+  - [x] `requirements.txt` - Added braintrust>=0.3.5
+- [x] TypeScript frontend implementation
+  - [x] `chat/route.ts` - Wrapped OpenAI client with Braintrust
+  - [x] `embeddings.ts` - Wrapped OpenAI client with caching
+  - [x] `search/route.ts` - Using shared embeddings utility
+  - [x] `package.json` - Added braintrust and openai dependencies
 - [ ] Testing and validation
+
+## Implementation Notes
+
+### Deepgram Integration
+Since the project uses **Deepgram** (not OpenAI Whisper) for speech-to-text transcription, the integration approach differs:
+
+**Method**: Custom tracing with `@braintrust.traced` decorator
+- Deepgram doesn't have a native Braintrust wrapper
+- Added `@braintrust.traced` decorator to `transcribe_file()` method
+- Manual logging of inputs/outputs using `braintrust.current_span().log()`
+- Captures: file metadata, transcription options, output statistics
+
+**Implementation in `file_transcriber.py`**:
+```python
+@braintrust.traced
+def transcribe_file(self, file_path, language=None):
+    # Log input
+    braintrust.current_span().log(
+        input={...},
+        metadata={"provider": "deepgram", "model": "nova-2"}
+    )
+
+    # Perform transcription
+    response = self.client.listen.v1.media.transcribe_file(...)
+
+    # Log output
+    braintrust.current_span().log(
+        output={...}
+    )
+```
+
+### Frontend Optimization
+- Implemented cached OpenAI client in `embeddings.ts` to avoid recreating client on each request
+- Converted all direct `fetch()` calls to use OpenAI SDK for consistency
+- All embedding generation now goes through shared utility with Braintrust logging
