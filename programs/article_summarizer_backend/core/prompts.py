@@ -19,7 +19,7 @@ from typing import Dict, Optional
 
 class ArticleAnalysisPrompt:
     """
-    Main prompt for analyzing articles and generating structured summaries
+    Main  prompt for analyzing articles and generating structured summaries
 
     This prompt handles three content types:
     - Video content (with YouTube transcripts)

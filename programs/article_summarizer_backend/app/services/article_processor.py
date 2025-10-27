@@ -1756,6 +1756,21 @@ class ArticleProcessor(BaseProcessor):
                     # Take the last one (usually highest resolution)
                     largest = srcset_parts[-1].strip().split()[0]
                     if largest:
+                        # Clean up CDN transformations (e.g., Substack's fl_progressive:steep/)
+                        # and decode URL-encoded URLs
+                        from urllib.parse import unquote
+
+                        # Remove CDN transformation prefixes
+                        if '/' in largest and not largest.startswith(('http://', 'https://', '//', '/')):
+                            # Check if it has a CDN prefix like "fl_progressive:steep/https%3A..."
+                            parts = largest.split('/', 1)
+                            if len(parts) == 2 and (':' in parts[0] or parts[1].startswith('http')):
+                                largest = parts[1]
+
+                        # Decode URL-encoded URLs (e.g., https%3A%2F%2F -> https://)
+                        if '%' in largest and not largest.startswith(('http://', 'https://', '//')):
+                            largest = unquote(largest)
+
                         src = largest
                         # Make absolute if needed
                         if src.startswith('//'):
