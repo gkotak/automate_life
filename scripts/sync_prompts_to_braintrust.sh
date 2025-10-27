@@ -50,6 +50,14 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+# Load environment variables from .env.local if it exists
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+    log_info "Loading environment from .env.local"
+    set -a  # Automatically export all variables
+    source "$PROJECT_ROOT/.env.local"
+    set +a
+fi
+
 # Check if we should skip sync
 if [ "$SKIP_PROMPT_SYNC" = "1" ]; then
     log_warning "SKIP_PROMPT_SYNC is set, skipping sync"
