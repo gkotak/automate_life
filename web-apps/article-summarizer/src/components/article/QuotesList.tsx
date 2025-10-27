@@ -1,12 +1,14 @@
 import { Quote } from '@/lib/supabase'
 import { Quote as QuoteIcon, User } from 'lucide-react'
+import HighlightedText from '../HighlightedText'
 
 interface QuotesListProps {
   quotes: Quote[]
   onTimestampClick?: (seconds: number) => void
+  searchQuery?: string
 }
 
-export default function QuotesList({ quotes, onTimestampClick }: QuotesListProps) {
+export default function QuotesList({ quotes, onTimestampClick, searchQuery }: QuotesListProps) {
   if (!quotes || quotes.length === 0) {
     return null
   }
@@ -38,7 +40,7 @@ export default function QuotesList({ quotes, onTimestampClick }: QuotesListProps
 
             <div className="pl-6">
               <blockquote className="text-gray-800 italic leading-relaxed">
-                "{quote.quote}"
+                "<HighlightedText text={quote.quote} query={searchQuery} />"
               </blockquote>
 
               <div className="flex items-center justify-between mt-3">
@@ -63,7 +65,9 @@ export default function QuotesList({ quotes, onTimestampClick }: QuotesListProps
               </div>
 
               {quote.context && (
-                <p className="text-xs text-gray-500 mt-2">{quote.context}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  <HighlightedText text={quote.context} query={searchQuery} />
+                </p>
               )}
             </div>
           </div>

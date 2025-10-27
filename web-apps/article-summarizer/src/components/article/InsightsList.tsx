@@ -1,12 +1,14 @@
 import { Insight } from '@/lib/supabase'
 import { Clock, Play } from 'lucide-react'
+import HighlightedText from '../HighlightedText'
 
 interface InsightsListProps {
   insights: Insight[]
   onTimestampClick?: (seconds: number) => void
+  searchQuery?: string
 }
 
-export default function InsightsList({ insights, onTimestampClick }: InsightsListProps) {
+export default function InsightsList({ insights, onTimestampClick, searchQuery }: InsightsListProps) {
   if (!insights || insights.length === 0) {
     return null
   }
@@ -31,7 +33,11 @@ export default function InsightsList({ insights, onTimestampClick }: InsightsLis
             className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-[#e2e8f0]"
           >
             <div className="flex-1">
-              <p className="text-[#030712] leading-relaxed">{insight.insight}</p>
+              <HighlightedText
+                text={insight.insight}
+                query={searchQuery}
+                className="text-[#030712] leading-relaxed"
+              />
             </div>
 
             {insight.timestamp_seconds && insight.time_formatted && (

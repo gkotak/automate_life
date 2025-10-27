@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase, Article } from '@/lib/supabase'
 import { ArrowLeft, ExternalLink, Calendar, Tag, Play, FileText, Headphones } from 'lucide-react'
 import ArticleSummary from '@/components/article/ArticleSummary'
 import ImageGallery from '@/components/article/ImageGallery'
 import RelatedArticles from '@/components/RelatedArticles'
+import HighlightedText from '@/components/HighlightedText'
 
 // YouTube API type declarations
 declare global {
@@ -20,11 +21,29 @@ declare global {
 export default function ArticlePage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const searchQuery = searchParams.get('q') || ''
+  const searchMode = searchParams.get('mode') || 'keyword'
+  const termsParam = searchParams.get('terms') || ''
   const [article, setArticle] = useState<Article | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'original'>('summary')
   const [jumpToTimeFunc, setJumpToTimeFunc] = useState<((seconds: number) => void) | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const [highlightTerms, setHighlightTerms] = useState<string>('')
+
+  // Use extracted terms from URL (passed from search results)
+  useEffect(() => {
+    if (termsParam) {
+      // Terms were extracted at search time and passed via URL
+      const terms = termsParam.split(',').map(t => t.trim()).filter(t => t.length > 0)
+      setHighlightTerms(terms.join(' '))
+      console.log('Using pre-extracted terms from URL:', terms)
+    } else if (searchQuery) {
+      // Fallback: use the search query directly (for keyword search or direct navigation)
+      setHighlightTerms(searchQuery)
+    }
+  }, [searchQuery, termsParam])
 
   useEffect(() => {
     if (params.id) {
@@ -382,6 +401,7 @@ export default function ArticlePage() {
               <ArticleSummary
                 article={article}
                 onTimestampClick={jumpToTimeFunc || undefined}
+                searchQuery={highlightTerms}
               />
               {/* Image Gallery - show extracted images */}
               {article.images && article.images.length > 0 && (
@@ -431,14 +451,16 @@ export default function ArticlePage() {
                         >
                           [{timeDisplay}]
                         </button>
-                        <span className="text-gray-700 leading-relaxed">{text}</span>
+                        <span className="text-gray-700 leading-relaxed">
+                          <HighlightedText text={text} query={highlightTerms} />
+                        </span>
                       </div>
                     )
                   }
 
                   return (
                     <div key={index} className="text-gray-700 leading-relaxed">
-                      {line}
+                      <HighlightedText text={line} query={highlightTerms} />
                     </div>
                   )
                 })}

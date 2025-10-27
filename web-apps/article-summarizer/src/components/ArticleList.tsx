@@ -25,6 +25,7 @@ export default function ArticleList() {
   const [searchMode, setSearchMode] = useState<'keyword' | 'hybrid'>('hybrid')
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [hasLoaded, setHasLoaded] = useState(false)
+  const [extractedTerms, setExtractedTerms] = useState<string[]>([])
 
   // Filter states
   const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([])
@@ -37,10 +38,46 @@ export default function ArticleList() {
   const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
   const [showAllSources, setShowAllSources] = useState(false)
 
+  // Restore search state from sessionStorage on mount
+  useEffect(() => {
+    const savedState = sessionStorage.getItem('articleSearchState')
+    if (savedState) {
+      try {
+        const {
+          query,
+          mode,
+          articles: savedArticles,
+          extractedTerms: savedTerms,
+          contentTypes,
+          sources,
+          dateFrom: savedDateFrom,
+          dateTo: savedDateTo
+        } = JSON.parse(savedState)
+
+        setSearchQuery(query || '')
+        setSearchMode(mode || 'hybrid')
+        setArticles(savedArticles || [])
+        setExtractedTerms(savedTerms || [])
+        setSelectedContentTypes(contentTypes || [])
+        setSelectedSources(sources || [])
+        setDateFrom(savedDateFrom || '')
+        setDateTo(savedDateTo || '')
+        setHasLoaded(true)
+        setLoading(false) // Ensure we're not in loading state
+        console.log('Restored search state from session storage')
+      } catch (error) {
+        console.error('Failed to restore search state:', error)
+        setLoading(false)
+      }
+    }
+  }, [])
+
   // Fetch articles on mount, when user changes, or when pathname changes (navigation)
   useEffect(() => {
-    if (pathname === '/') {
+    if (pathname === '/' && !sessionStorage.getItem('articleSearchState')) {
       fetchArticles()
+      fetchAvailableSources()
+    } else if (pathname === '/') {
       fetchAvailableSources()
     }
   }, [user, pathname])
@@ -90,6 +127,10 @@ export default function ArticleList() {
   const fetchArticles = async () => {
     try {
       setLoading(true)
+      // Clear search state when fetching all articles
+      sessionStorage.removeItem('articleSearchState')
+      setSearchQuery('')
+      setExtractedTerms([])
 
       let query = supabase
         .from('articles')
@@ -196,12 +237,33 @@ export default function ArticleList() {
         throw new Error('Search failed')
       }
 
-      const { results } = await response.json()
+      const { results, extractedTerms: terms } = await response.json()
 
       // Only update articles if we got results
       if (results) {
         setArticles(results)
       }
+
+      // Store extracted terms for highlighting
+      if (terms && Array.isArray(terms)) {
+        setExtractedTerms(terms)
+        console.log('Received extracted terms:', terms)
+      } else {
+        setExtractedTerms([])
+      }
+
+      // Save search state to sessionStorage for persistence
+      const searchState = {
+        query: query || '',
+        mode: searchMode,
+        articles: results || [],
+        extractedTerms: terms || [],
+        contentTypes,
+        sources,
+        dateFrom: from,
+        dateTo: to
+      }
+      sessionStorage.setItem('articleSearchState', JSON.stringify(searchState))
     } catch (error) {
       console.error('Error searching articles:', error)
       addNotification('error', 'Search failed. Please try again.')
@@ -389,9 +451,13 @@ export default function ArticleList() {
                 </button>
                 <button
                   onClick={searchArticles}
-                  className="flex-1 sm:flex-none px-4 sm:px-6 py-2 text-white rounded-md focus:ring-2 transition-colors text-xs sm:text-sm bg-[#077331] hover:bg-[#055a24] focus:ring-[#077331]"
+                  disabled={loading}
+                  className="flex-1 sm:flex-none px-4 sm:px-6 py-2 text-white rounded-md focus:ring-2 transition-colors text-xs sm:text-sm bg-[#077331] hover:bg-[#055a24] focus:ring-[#077331] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Search
+                  {loading && (
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  )}
+                  {loading ? 'Searching...' : 'Search'}
                 </button>
               </div>
             </div>
@@ -537,18 +603,32 @@ export default function ArticleList() {
       </div>
 
       {/* Articles List */}
-      {loading && articles.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading articles...</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:gap-6">
+      <div className="relative">
+        {/* Loading overlay when searching with existing results */}
+        {loading && articles.length > 0 && (
+          <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#077331] mx-auto"></div>
+              <p className="mt-4 text-gray-600 font-medium">Searching...</p>
+            </div>
+          </div>
+        )}
+
+        {loading && articles.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading articles...</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:gap-6">
           {articles.map((article) => (
             <div key={article.id} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-[#e2e8f0]">
               <div className="p-4 sm:p-6">
                 <div className="flex justify-between items-start mb-3 sm:mb-4 gap-2">
-                  <Link href={`/article/${article.id}`} className="flex-1 min-w-0">
+                  <Link
+                    href={`/article/${article.id}${searchQuery ? `?q=${encodeURIComponent(searchQuery)}&mode=${searchMode}${extractedTerms.length > 0 ? `&terms=${encodeURIComponent(extractedTerms.join(','))}` : ''}` : ''}`}
+                    className="flex-1 min-w-0"
+                  >
                     <h2 className="text-base sm:text-lg lg:text-xl font-semibold text-[#030712] hover:text-[#077331] transition-colors cursor-pointer line-clamp-2">
                       {article.title}
                     </h2>
@@ -616,7 +696,8 @@ export default function ArticleList() {
             </div>
           )}
         </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

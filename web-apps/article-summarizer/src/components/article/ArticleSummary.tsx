@@ -1,13 +1,21 @@
 import { Article } from '@/lib/supabase'
 import InsightsList from './InsightsList'
 import QuotesList from './QuotesList'
+import { highlightKeywords } from '@/lib/textHighlight'
+import { useMemo } from 'react'
 
 interface ArticleSummaryProps {
   article: Article
   onTimestampClick?: (seconds: number) => void
+  searchQuery?: string
 }
 
-export default function ArticleSummary({ article, onTimestampClick }: ArticleSummaryProps) {
+export default function ArticleSummary({ article, onTimestampClick, searchQuery }: ArticleSummaryProps) {
+  const highlightedSummary = useMemo(() => {
+    if (!searchQuery || !article.summary_text) return article.summary_text
+    return highlightKeywords(article.summary_text, searchQuery)
+  }, [article.summary_text, searchQuery])
+
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Summary Text (Paragraph Form) */}
@@ -16,7 +24,7 @@ export default function ArticleSummary({ article, onTimestampClick }: ArticleSum
           <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Summary</h3>
           <div
             className="prose prose-sm sm:prose-base lg:prose-lg max-w-none text-gray-700 leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: article.summary_text }}
+            dangerouslySetInnerHTML={{ __html: highlightedSummary }}
           />
         </div>
       )}
@@ -26,6 +34,7 @@ export default function ArticleSummary({ article, onTimestampClick }: ArticleSum
         <InsightsList
           insights={article.key_insights}
           onTimestampClick={onTimestampClick}
+          searchQuery={searchQuery}
         />
       )}
 
@@ -34,6 +43,7 @@ export default function ArticleSummary({ article, onTimestampClick }: ArticleSum
         <QuotesList
           quotes={article.quotes}
           onTimestampClick={onTimestampClick}
+          searchQuery={searchQuery}
         />
       )}
 

@@ -1,17 +1,77 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateEmbedding } from '@/lib/embeddings';
+import Anthropic from '@anthropic-ai/sdk';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
 );
 
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
 interface SearchFilters {
   contentTypes?: string[]
   sources?: string[]
   dateFrom?: string
   dateTo?: string
+}
+
+/**
+ * Extract key terms from search query for highlighting
+ */
+async function extractKeyTerms(query: string): Promise<string[]> {
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 500,
+      messages: [
+        {
+          role: 'user',
+          content: `Extract key terms and their common synonyms/variations from this search query for text highlighting purposes.
+
+Search query: "${query}"
+
+Return ONLY a JSON array of strings containing:
+1. The main keywords from the query
+2. Common synonyms and variations
+3. Common abbreviations/acronyms
+4. Related terms that would be semantically relevant
+
+Keep terms concise (1-3 words max each). Focus on terms that would actually appear in article text.
+
+Example input: "How does AI impact healthcare?"
+Example output: ["AI", "artificial intelligence", "machine learning", "healthcare", "health", "medical", "medicine", "clinical", "patient care"]
+
+Output format: Just the JSON array, nothing else.`
+        }
+      ]
+    });
+
+    const content = message.content[0];
+    if (content.type !== 'text') {
+      return query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    }
+
+    // Parse JSON from Claude's response
+    let jsonText = content.text.trim();
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+
+    const terms = JSON.parse(jsonText);
+
+    if (!Array.isArray(terms) || !terms.every(t => typeof t === 'string')) {
+      return query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    }
+
+    // Deduplicate and limit
+    return [...new Set(terms.map(t => t.toLowerCase()))].slice(0, 20);
+  } catch (error) {
+    console.error('Failed to extract terms:', error);
+    // Fallback to simple word splitting
+    return query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -29,6 +89,13 @@ export async function POST(request: NextRequest) {
     } = await request.json();
 
     let results: any[] = []
+    let extractedTerms: string[] = []
+
+    // Extract key terms for hybrid search mode (do this once at search time)
+    if (query && query.trim().length > 0 && mode === 'hybrid') {
+      extractedTerms = await extractKeyTerms(query);
+      console.log('Extracted terms for highlighting:', extractedTerms);
+    }
 
     // If no query but we have filters, fetch all articles and apply filters
     if (!query || query.trim().length === 0) {
@@ -135,7 +202,11 @@ export async function POST(request: NextRequest) {
     // Limit final results
     results = results.slice(0, limit)
 
-    return NextResponse.json({ results, count: results.length });
+    return NextResponse.json({
+      results,
+      count: results.length,
+      extractedTerms: extractedTerms.length > 0 ? extractedTerms : undefined
+    });
   } catch (error) {
     console.error('Search API error:', error);
     return NextResponse.json(
