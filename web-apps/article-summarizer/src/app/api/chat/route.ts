@@ -4,6 +4,7 @@ import { searchArticlesBySemantic } from '@/lib/search';
 import { Message, ArticleSource } from '@/types/chat';
 import { wrapOpenAI, initLogger } from 'braintrust';
 import OpenAI from 'openai';
+import { buildChatSystemPrompt, CHAT_ASSISTANT_METADATA, ArticleContext } from '@/lib/prompts';
 
 // Initialize Braintrust logger once
 let braintrustLogger: ReturnType<typeof initLogger> | null = null;
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     const topArticles = articles.slice(0, 5);
 
     // Step 2: Build context from articles
-    const context = topArticles.map(article => ({
+    const context: ArticleContext[] = topArticles.map(article => ({
       title: article.title,
       source: article.source || article.platform,
       summary: article.summary_text,
@@ -101,19 +102,8 @@ export async function POST(request: NextRequest) {
       conversationHistory = messages || [];
     }
 
-    // Step 4: Build messages array for OpenAI
-    const systemPrompt = `You are a helpful AI assistant that answers questions based on article summaries and transcripts.
-
-Context from relevant articles:
-${JSON.stringify(context, null, 2)}
-
-Guidelines:
-- Answer questions based on the provided context from articles
-- Cite articles by their title when referencing specific information
-- If the context doesn't contain relevant information to answer the question, politely say so
-- Be conversational, helpful, and concise
-- Use markdown formatting for better readability
-- If asked about sources, refer to the article titles provided in context`;
+    // Step 4: Build messages array for OpenAI (using prompt from prompts.ts)
+    const systemPrompt = buildChatSystemPrompt(context);
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -129,11 +119,11 @@ Guidelines:
     }));
 
     const stream = await client.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: CHAT_ASSISTANT_METADATA.model,
       messages,
       stream: true,
-      temperature: 0.7,
-      max_tokens: 1500
+      temperature: CHAT_ASSISTANT_METADATA.temperature,
+      max_tokens: CHAT_ASSISTANT_METADATA.maxTokens
     });
 
     // Step 6: Create a streaming response

@@ -48,6 +48,13 @@ from core.authentication import AuthenticationManager
 from core.claude_client import ClaudeClient
 from core.source_extractor import extract_source, extract_domain, normalize_source_name
 from core.text_utils import sanitize_filename
+from core.prompts import (
+    ArticleAnalysisPrompt,
+    VideoContextBuilder,
+    AudioContextBuilder,
+    TextContextBuilder,
+    create_metadata_for_prompt
+)
 from processors.transcript_processor import TranscriptProcessor
 from processors.file_transcriber import FileTranscriber
 
@@ -734,16 +741,17 @@ class ArticleProcessor(BaseProcessor):
         """Generate AI summary based on content type"""
         content_type = metadata['content_type']
 
-        # Build context based on content type
+        # Build context based on content type using prompt builders
         if content_type.has_embedded_video:
-            media_context = self._build_video_context(metadata)
+            media_context = VideoContextBuilder.build(metadata, Config.MAX_TRANSCRIPT_CHARS)
         elif content_type.has_embedded_audio:
-            media_context = self._build_audio_context(metadata)
+            media_context = AudioContextBuilder.build(metadata, Config.MAX_TRANSCRIPT_CHARS)
         else:
-            media_context = self._build_text_context(metadata)
+            media_context = TextContextBuilder.build(metadata)
 
-        # Generate prompt
-        prompt = self._build_analysis_prompt(url, metadata, media_context)
+        # Generate prompt using ArticleAnalysisPrompt
+        simplified_metadata = create_metadata_for_prompt(metadata)
+        prompt = ArticleAnalysisPrompt.build(url, media_context, simplified_metadata)
 
         # Call Claude API
         response = self._call_claude_api(prompt)
@@ -773,197 +781,8 @@ class ArticleProcessor(BaseProcessor):
                 "summary_sections": []
             }
 
-    def _build_video_context(self, metadata: Dict) -> str:
-        """Build context string for video content"""
-        video_urls = metadata['media_info']['youtube_urls']
-        transcripts = metadata.get('transcripts', {})
-
-        # Check if we have any successful transcripts
-        has_transcript_data = False
-        transcript_content = ""
-
-        if transcripts:
-            for video_id, transcript_data in transcripts.items():
-                if transcript_data.get('success'):
-                    formatted_transcript = self._format_transcript_for_analysis(transcript_data)
-                    if formatted_transcript:
-                        has_transcript_data = True
-                        transcript_content += f"""
-
-VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
-{formatted_transcript[:Config.MAX_TRANSCRIPT_CHARS]}{'...' if len(formatted_transcript) > Config.MAX_TRANSCRIPT_CHARS else ''}
-"""
-
-        # Get article text content
-        article_text = metadata.get('article_text', 'Content not available')
-
-        # Build context based on whether we have transcript data
-        if has_transcript_data:
-            context = f"""
-IMPORTANT: This article contains video content. Video URLs found: {video_urls}
-Please focus on extracting video timestamps with the following format:
-- Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
-- Provide detailed descriptions of what happens at each timestamp
-- Aim for 5-8 key timestamps that represent the most valuable content
-- Include timestamps for: key insights, important discussions, actionable advice, demonstrations
-{transcript_content}
-
-ARTICLE TEXT CONTENT:
-{article_text}
-
-Please analyze both the article text and the video transcript to provide comprehensive insights.
-"""
-        else:
-            context = f"""
-IMPORTANT: This article contains video content. Video URLs found: {video_urls}
-Note: No video transcripts are available, so please focus on the article content itself.
-DO NOT include any timestamps or time-based references in your response.
-- Focus on key insights and takeaways mentioned in the article text
-- Extract actionable advice from the article content
-- Identify main themes and discussion points referenced in the article
-- Base your analysis only on the article text, not on video content
-
-ARTICLE TEXT CONTENT:
-{article_text}
-"""
-
-        return context
-
-    def _build_audio_context(self, metadata: Dict) -> str:
-        """Build context string for audio content"""
-        audio_urls = metadata['media_info']['audio_urls']
-        transcripts = metadata.get('transcripts', {})
-
-        # Check if we have any successful transcripts
-        has_transcript_data = False
-        transcript_content = ""
-
-        if transcripts:
-            for audio_id, transcript_data in transcripts.items():
-                if transcript_data.get('success'):
-                    formatted_transcript = self._format_transcript_for_analysis(transcript_data)
-                    if formatted_transcript:
-                        has_transcript_data = True
-                        transcript_content += f"""
-
-AUDIO TRANSCRIPT for {audio_id} ({transcript_data.get('type', 'unknown')} transcript):
-{formatted_transcript[:Config.MAX_TRANSCRIPT_CHARS]}{'...' if len(formatted_transcript) > Config.MAX_TRANSCRIPT_CHARS else ''}
-"""
-
-        # Get article text content
-        article_text = metadata.get('article_text', 'Content not available')
-
-        # Build context based on whether we have transcript data
-        if has_transcript_data:
-            context = f"""
-IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
-Please focus on extracting audio timestamps with the following format:
-- Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
-- Provide detailed descriptions of what is discussed at each timestamp
-- Aim for 5-8 key timestamps that represent the most valuable content
-- Include timestamps for: key insights, important discussions, actionable advice, main themes
-Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
-{transcript_content}
-
-ARTICLE TEXT CONTENT:
-{article_text}
-
-Please analyze both the article text and the audio transcript to provide comprehensive insights.
-"""
-        else:
-            context = f"""
-IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
-Note: No audio transcripts are available, so please focus on the article content itself.
-DO NOT include any timestamps or time-based references in your response.
-- Focus on key insights and takeaways mentioned in the article text
-- Extract actionable advice from the article content
-- Identify main themes and discussion points referenced in the article
-- Note the participants/speakers if mentioned in the content
-- Base your analysis only on the article text, not on audio content
-Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
-
-ARTICLE TEXT CONTENT:
-{article_text}
-
-Please analyze the article text to provide comprehensive insights about the audio content.
-"""
-
-        return context
-
-    def _build_text_context(self, metadata: Dict) -> str:
-        """Build context string for text-only content"""
-        article_text = metadata.get('article_text', 'Content not available')
-
-        return f"""
-IMPORTANT: This is a TEXT-ONLY article with no video or audio content.
-For text-only articles, please focus on:
-- Extracting key insights from the written content
-- Identifying main themes and arguments
-- Summarizing actionable takeaways
-- Highlighting important quotes or data points
-- Structuring the content logically with clear headings
-- NO timestamps should be included (since there's no media)
-
-Article text content: {article_text}
-"""
-
-    def _build_analysis_prompt(self, url: str, metadata: Dict, media_context: str) -> str:
-        """Build the complete analysis prompt"""
-        content_type = metadata['content_type']
-
-        # Determine media type for prompt
-        if content_type.has_embedded_video:
-            media_type_indicator = "video"
-            jump_function = "jumpToTime"
-        elif content_type.has_embedded_audio:
-            media_type_indicator = "audio"
-            jump_function = "jumpToAudioTime"
-        else:
-            media_type_indicator = "content"
-            jump_function = "jumpToTime"
-
-        return f"""
-Analyze this article: {url}
-
-Create a comprehensive summary with the following structure:
-1. Write a clear, structured summary (2-4 paragraphs) in HTML format as paragraphs (NOT bullets)
-2. Extract 8-12 key insights combining main points, insights, and actionable takeaways
-3. If video/audio content exists, identify specific timestamps with detailed descriptions
-
-{media_context}
-
-Article metadata: {json.dumps(self._create_metadata_for_prompt(metadata), indent=2)}
-
-Return your response in this JSON format:
-{{
-    "summary": "HTML formatted summary in paragraph form (2-4 paragraphs, NOT bullets). Use <p> tags for paragraphs.",
-    "key_insights": [
-        {{"insight": "Key insight, main point, or actionable takeaway", "timestamp_seconds": 300, "time_formatted": "5:00"}},
-        {{"insight": "Another insight without timestamp", "timestamp_seconds": null, "time_formatted": null}}
-    ],
-    "quotes": [
-        {{"quote": "Exact quote text", "speaker": "Speaker name", "timestamp_seconds": 120, "time_formatted": "2:00", "context": "Context for the quote"}}
-    ],
-    "duration_minutes": 45,
-    "word_count": 5000,
-    "topics": ["AI", "Product", "Engineering"]
-}}
-
-CRITICAL TIMESTAMP RULES:
-- Each timestamp section should cover AT LEAST 30 SECONDS of continuous content
-- Each description should include COMPLETE SENTENCES and full thoughts - never break mid-sentence
-- Group related ideas that span 30-60 seconds into a single timestamp entry with comprehensive description
-- Provide detailed summaries that capture the full context of what's discussed in that 30+ second window
-- Use null for timestamp_seconds and time_formatted if you cannot find the EXACT content in the provided transcript
-- NEVER guess or estimate timestamps - if you can't find it in the transcript, use null
-- For quotes: search the transcript for the exact quote text and use that timestamp
-- For insights: provide comprehensive descriptions that summarize the complete topic discussed in that 30+ second section
-- Only include timestamps for content you can find in the provided transcript
-- If transcript is truncated, only use timestamps from the visible portion
-- key_insights should be 8-12 items combining key learnings, main points, and actionable takeaways
-- Each insight with a timestamp should describe the complete topic/discussion in that time window, not just a single point
-- quotes should be memorable/important quotes with exact speaker attribution and context
-"""
+    # Prompt building methods moved to core/prompts.py for Braintrust versioning
+    # See: VideoContextBuilder, AudioContextBuilder, TextContextBuilder, ArticleAnalysisPrompt
 
     def _call_claude_api(self, prompt: str) -> str:
         """Call Claude Code API for AI-powered analysis"""
@@ -1960,27 +1779,7 @@ CRITICAL TIMESTAMP RULES:
 
         return image_urls
 
-    def _format_transcript_for_analysis(self, transcript_data: Dict) -> str:
-        """Format transcript for AI analysis (line-by-line for Claude)"""
-        if not transcript_data or not transcript_data.get('success'):
-            return ""
-
-        transcript = transcript_data.get('transcript', [])
-        formatted_text = []
-
-        for entry in transcript:
-            start_time = entry.get('start', 0)
-            text = entry.get('text', '').strip()
-
-            # Convert seconds to MM:SS format
-            minutes = int(start_time // 60)
-            seconds = int(start_time % 60)
-            timestamp = f"{minutes}:{seconds:02d}"
-
-            if text:
-                formatted_text.append(f"[{timestamp}] {text}")
-
-        return "\n".join(formatted_text)
+    # _format_transcript_for_analysis moved to core/prompts.py (VideoContextBuilder._format_transcript and AudioContextBuilder._format_transcript)
 
     def _format_transcript_for_display(self, transcript_data: Dict) -> str:
         """Format transcript for display (grouped into 30+ second sections)"""
@@ -2047,19 +1846,7 @@ CRITICAL TIMESTAMP RULES:
             return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
         return 0
 
-    def _create_metadata_for_prompt(self, metadata: Dict) -> Dict:
-        """Create simplified metadata for AI prompt"""
-        content_type = metadata['content_type']
-
-        return {
-            'title': metadata['title'],
-            'url': metadata['url'],
-            'platform': metadata['platform'],
-            'has_video': content_type.has_embedded_video,
-            'has_audio': content_type.has_embedded_audio,
-            'is_text_only': content_type.is_text_only,
-            'extracted_at': metadata['extracted_at']
-        }
+    # _create_metadata_for_prompt moved to core/prompts.py (create_metadata_for_prompt function)
 
     def _format_summary_as_html(self, summary_text: str) -> str:
         """Convert plain text summary to formatted HTML"""
