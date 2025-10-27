@@ -73,3 +73,11 @@ ENV/
 .next/
 out/
 *.next
+node_modules/
+
+# Business/Legal documents (not code-related)
+Fincredible_*.docx
+Fincredible_*.md
+
+# Accidental nested directories
+web-apps/article-summarizer/web-apps/

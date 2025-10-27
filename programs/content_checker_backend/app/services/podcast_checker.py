@@ -93,86 +93,79 @@ class PodcastCheckerService:
             "newly_discovered_ids": newly_discovered_ids
         }
 
-    def _fetch_in_progress_episodes(self) -> List[Dict]:
+    async def _fetch_in_progress_episodes(self) -> List[Dict]:
         """
-        Fetch listening history from PocketCasts web page using Playwright
+        Fetch listening history from PocketCasts web page using centralized browser_fetcher
 
         Returns:
             List of all episodes from history
         """
+        from core.browser_fetcher import BrowserFetcher
+        from bs4 import BeautifulSoup
+        import json
+
+        # Get cookies from auth
         cookies = self.podcast_auth.get_cookies()
         if not cookies:
             self.logger.error("Failed to get authentication cookies")
             return []
 
-        self.logger.info("Fetching listening history from PocketCasts using Playwright...")
+        # Use centralized browser fetcher
+        browser_fetcher = BrowserFetcher(self.logger)
+        if not browser_fetcher.is_available():
+            self.logger.error("Browser fetcher not available (Playwright not installed)")
+            return []
+
+        self.logger.info("Fetching listening history from PocketCasts using centralized browser fetcher...")
 
         try:
-            from playwright.sync_api import sync_playwright
-            from bs4 import BeautifulSoup
-            import json
+            # Fetch page content using browser fetcher
+            history_url = "https://pocketcasts.com/history"
+            success, content, message = await browser_fetcher.fetch_with_playwright_async(history_url, cookies)
 
-            with sync_playwright() as p:
-                # Launch browser
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                )
+            if not success or not content:
+                self.logger.error(f"Failed to fetch history page: {message}")
+                return []
 
-                # Add cookies to context
-                context.add_cookies(cookies)
+            # Parse the page to extract episode data
+            soup = BeautifulSoup(content, 'html.parser')
+            episodes = []
 
-                page = context.new_page()
+            # Look for JSON data embedded in script tags
+            scripts = soup.find_all('script', type='application/json')
+            for script in scripts:
+                try:
+                    data = json.loads(script.string)
 
-                # Navigate to history page
-                self.logger.info("Navigating to history page...")
-                page.goto("https://pocketcasts.com/history", wait_until='networkidle', timeout=30000)
+                    # Navigate through the JSON structure to find episodes
+                    if isinstance(data, dict):
+                        # Try common paths where episode data might be
+                        props = data.get('props', {})
+                        page_props = props.get('pageProps', {})
 
-                # Get the page content
-                content = page.content()
+                        # Look for episodes array
+                        if 'episodes' in page_props:
+                            episodes = page_props['episodes']
+                            break
+                        elif 'history' in page_props:
+                            episodes = page_props.get('history', {}).get('episodes', [])
+                            break
+                        elif 'initialData' in page_props:
+                            initial_data = page_props['initialData']
+                            episodes = initial_data.get('episodes', [])
+                            break
 
-                browser.close()
+                except Exception as e:
+                    self.logger.debug(f"Error parsing script tag: {e}")
+                    continue
 
-                # Parse the page to extract episode data
-                soup = BeautifulSoup(content, 'html.parser')
-                episodes = []
+            if not episodes:
+                self.logger.warning("No episodes found in page data")
+                self.logger.debug(f"Page title: {soup.title.string if soup.title else 'No title'}")
 
-                # Look for JSON data embedded in script tags
-                scripts = soup.find_all('script', type='application/json')
-                for script in scripts:
-                    try:
-                        data = json.loads(script.string)
+            self.logger.info(f"Retrieved {len(episodes)} episodes from history")
 
-                        # Navigate through the JSON structure to find episodes
-                        if isinstance(data, dict):
-                            # Try common paths where episode data might be
-                            props = data.get('props', {})
-                            page_props = props.get('pageProps', {})
-
-                            # Look for episodes array
-                            if 'episodes' in page_props:
-                                episodes = page_props['episodes']
-                                break
-                            elif 'history' in page_props:
-                                episodes = page_props.get('history', {}).get('episodes', [])
-                                break
-                            elif 'initialData' in page_props:
-                                initial_data = page_props['initialData']
-                                episodes = initial_data.get('episodes', [])
-                                break
-
-                    except Exception as e:
-                        self.logger.debug(f"Error parsing script tag: {e}")
-                        continue
-
-                if not episodes:
-                    self.logger.warning("No episodes found in page data")
-                    self.logger.debug(f"Page title: {soup.title.string if soup.title else 'No title'}")
-
-                self.logger.info(f"Retrieved {len(episodes)} episodes from history")
-
-                return episodes
+            return episodes
 
         except Exception as e:
             self.logger.error(f"Error fetching history: {e}")

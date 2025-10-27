@@ -32,8 +32,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "article_summarizer
 from core.text_utils import check_title_and_date_match
 
 # Load environment variables
-root_env = Path(__file__).parent.parent.parent.parent / '.env.local'
-load_dotenv(root_env)
+# Priority order: check_new_posts/.env.local -> content_checker_backend/.env.local
+check_new_posts_env = Path(__file__).parent.parent / '.env.local'
+content_checker_env = Path(__file__).parent.parent.parent / 'content_checker_backend' / '.env.local'
+
+# Load from check_new_posts first (PocketCasts credentials)
+if check_new_posts_env.exists():
+    load_dotenv(check_new_posts_env)
+
+# Load from content_checker_backend (Supabase, SerpAPI, etc.) - won't override existing vars
+if content_checker_env.exists():
+    load_dotenv(content_checker_env, override=False)
 
 
 class PodcastChecker(BaseProcessor):

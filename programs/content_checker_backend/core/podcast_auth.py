@@ -108,15 +108,47 @@ class PodcastAuth:
             self.logger.debug(traceback.format_exc())
             return None
 
-    def get_cookies(self) -> Optional[List[Dict]]:
+    def get_cookies(self):
         """
-        Get authentication cookies
+        Get authentication cookies in RequestsCookieJar format for browser_fetcher
 
         Returns:
-            List of cookies or None if not authenticated
+            RequestsCookieJar with cookies or None if not authenticated
         """
         if not self.cookies:
-            self.cookies = self.authenticate_and_get_cookies()
+            playwright_cookies = self.authenticate_and_get_cookies()
+            if not playwright_cookies:
+                return None
+
+            # Convert Playwright cookies to RequestsCookieJar format
+            from http.cookiejar import Cookie
+            from requests.cookies import RequestsCookieJar
+
+            jar = RequestsCookieJar()
+            for pc in playwright_cookies:
+                # Convert Playwright cookie dict to http.cookiejar.Cookie
+                cookie = Cookie(
+                    version=0,
+                    name=pc['name'],
+                    value=pc['value'],
+                    port=None,
+                    port_specified=False,
+                    domain=pc.get('domain', '.pocketcasts.com'),
+                    domain_specified=True,
+                    domain_initial_dot=pc.get('domain', '.pocketcasts.com').startswith('.'),
+                    path=pc.get('path', '/'),
+                    path_specified=True,
+                    secure=pc.get('secure', False),
+                    expires=pc.get('expires'),
+                    discard=False,
+                    comment=None,
+                    comment_url=None,
+                    rest={},
+                    rfc2109=False
+                )
+                jar.set_cookie(cookie)
+
+            self.cookies = jar
 
         return self.cookies
 

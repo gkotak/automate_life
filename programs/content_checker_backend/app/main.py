@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.routes import podcasts
+from app.routes import podcasts, posts
 
 # Load environment variables
 load_dotenv('.env.local')
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Content Checker Backend",
-    description="API for checking new podcasts and posts",
+    description="API for checking new podcasts and newsletter posts",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -52,6 +52,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
+app.include_router(posts.router, prefix="/api", tags=["posts"])
 
 
 @app.get("/health")

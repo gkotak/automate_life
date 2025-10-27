@@ -281,10 +281,18 @@ function AdminPageContent() {
       });
 
       eventSource.addEventListener('error', (e: any) => {
-        const data = JSON.parse(e.data);
+        let message = 'Processing failed';
+        try {
+          if (e.data) {
+            const data = JSON.parse(e.data);
+            message = data.message || message;
+          }
+        } catch (parseError) {
+          console.error('Error parsing error event data:', parseError);
+        }
         setResult({
           status: 'error',
-          message: data.message || 'Processing failed'
+          message: message
         });
         setLoading(false);
         eventSource.close();

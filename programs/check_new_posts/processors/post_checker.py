@@ -26,8 +26,17 @@ from common.config import Config
 from common.url_utils import normalize_url, generate_post_id
 
 # Load environment variables
-root_env = Path(__file__).parent.parent.parent.parent / '.env.local'
-load_dotenv(root_env)
+# Priority order: check_new_posts/.env.local -> content_checker_backend/.env.local
+check_new_posts_env = Path(__file__).parent.parent / '.env.local'
+content_checker_env = Path(__file__).parent.parent.parent / 'content_checker_backend' / '.env.local'
+
+# Load from check_new_posts first
+if check_new_posts_env.exists():
+    load_dotenv(check_new_posts_env)
+
+# Load from content_checker_backend (Supabase, etc.) - won't override existing vars
+if content_checker_env.exists():
+    load_dotenv(content_checker_env, override=False)
 
 # Suppress XML parsing warnings since we'll handle them properly
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
