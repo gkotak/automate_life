@@ -157,87 +157,147 @@ main() {
     # Create Braintrust config directory if it doesn't exist
     mkdir -p .braintrust
 
-    # Create temporary Python script to push prompts using Braintrust SDK
-    cat > .braintrust/push_prompts.py << 'PYTHON_SCRIPT'
+    # Create a Node.js script to push TypeScript prompts using Braintrust SDK
+    log_info "Pushing TypeScript prompts via Braintrust SDK..."
+
+    cat > web-apps/article-summarizer/push_prompts.mjs << 'TYPESCRIPT_SCRIPT'
+import * as braintrust from "braintrust";
+
+async function main() {
+  // Initialize project (API key from BRAINTRUST_API_KEY env var)
+  const project = braintrust.projects.create({ name: "automate-life" });
+
+  // Create chat assistant prompt
+  // Values from src/lib/prompts.ts CHAT_ASSISTANT_METADATA
+  project.prompts.create({
+    slug: "chat-assistant",
+    name: "Chat Assistant",
+    description: "RAG chat assistant for article Q&A",
+    model: "gpt-4-turbo-preview",
+    params: {
+      temperature: 0.7,
+      max_tokens: 1500,
+    },
+    messages: [
+      {
+        role: "system",
+        content: `You are a helpful AI assistant that answers questions based on article summaries and transcripts.
+
+Context from relevant articles:
+{{{context}}}
+
+Guidelines:
+- Answer questions based on the provided context from articles
+- Cite articles by their title when referencing specific information
+- If the context doesn't contain relevant information to answer the question, politely say so
+- Be conversational, helpful, and concise
+- Use markdown formatting for better readability
+- If asked about sources, refer to the article titles provided in context`,
+      },
+    ],
+    if_exists: "replace",
+  });
+
+  // Publish prompts to Braintrust
+  await project.publish();
+  console.log("✅ TypeScript prompts published to Braintrust");
+}
+
+main().catch((error) => {
+  console.error("❌ Error pushing TypeScript prompts:", error);
+  process.exit(1);
+});
+TYPESCRIPT_SCRIPT
+
+    # Run the Node.js script from web-apps directory (where node_modules is)
+    if command -v node >/dev/null 2>&1; then
+        if (cd web-apps/article-summarizer && node push_prompts.mjs 2>&1); then
+            log_success "TypeScript prompts pushed successfully"
+        else
+            log_warning "TypeScript prompt push failed"
+        fi
+    else
+        log_warning "Node.js not found, skipping TypeScript prompt sync"
+    fi
+
+    # Create Python script to push Python prompts using Braintrust SDK
+    log_info "Pushing Python prompts via Braintrust SDK..."
+
+    cat > .braintrust/push_py_prompts.py << 'PYTHON_SCRIPT'
 #!/usr/bin/env python3
-"""
-Push prompts from code to Braintrust
-
-This script imports prompt definitions from code and pushes them to Braintrust
-using the SDK. This ensures prompts are versioned and available for observability.
-"""
-
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "programs" / "article_summarizer_backend"))
 
-# Import Braintrust
 import braintrust
+from core.prompts import ArticleAnalysisPrompt
 
-# Import our prompt definitions
-from core.prompts import (
-    ArticleAnalysisPrompt,
-    VideoContextBuilder,
-    AudioContextBuilder,
-    TextContextBuilder,
-    ChatAssistantPrompt
+# Initialize project (API key from BRAINTRUST_API_KEY env var)
+project = braintrust.projects.create(name="automate-life")
+
+# Create article analysis prompt
+# Build a sample prompt to get the template structure
+sample_metadata = {
+    'title': 'Sample Article',
+    'url': 'https://example.com',
+    'platform': 'example',
+    'has_video': True,
+    'has_audio': False,
+    'is_text_only': False,
+    'extracted_at': '2025-10-27T00:00:00Z'
+}
+sample_context = "{{{media_context}}}"
+prompt_template = ArticleAnalysisPrompt.build(
+    url="{{{url}}}",
+    media_context=sample_context,
+    metadata=sample_metadata
 )
 
-def push_article_analysis_prompt():
-    """Push article analysis prompt to Braintrust"""
-    print("📤 Pushing article-analysis prompt...")
+project.prompts.create(
+    slug=ArticleAnalysisPrompt.SLUG,
+    name=ArticleAnalysisPrompt.NAME,
+    description="Main prompt for analyzing articles and generating structured summaries (video/audio/text)",
+    model=ArticleAnalysisPrompt.MODEL,
+    params={"max_tokens": ArticleAnalysisPrompt.MAX_TOKENS},
+    messages=[
+        {
+            "role": "user",
+            "content": prompt_template,
+        }
+    ],
+    if_exists="replace",
+)
 
-    # Initialize Braintrust project
-    braintrust.login()
-
-    # Create/update the prompt
-    # Note: Braintrust Python SDK doesn't have a direct prompt.create() method
-    # We'll use the CLI tool instead via subprocess
-    print("✅ Article analysis prompt ready for sync")
-
-def push_chat_assistant_prompt():
-    """Push chat assistant prompt to Braintrust"""
-    print("📤 Pushing chat-assistant prompt...")
-
-    # Note: TypeScript prompts will be handled separately
-    print("✅ Chat assistant prompt ready for sync")
-
-def main():
-    """Main entry point"""
-    try:
-        push_article_analysis_prompt()
-        push_chat_assistant_prompt()
-        print("\n✅ All prompts pushed successfully!")
-        return 0
-    except Exception as e:
-        print(f"\n❌ Error pushing prompts: {e}", file=sys.stderr)
-        return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
+# Publish prompts to Braintrust
+project.publish()
+print("✅ Python prompts published to Braintrust")
 PYTHON_SCRIPT
 
-    # Make it executable
-    chmod +x .braintrust/push_prompts.py
+    chmod +x .braintrust/push_py_prompts.py
 
-    # Run the sync script
-    if python3 .braintrust/push_prompts.py; then
-        log_success "Prompts synced to Braintrust successfully!"
-
-        # Record the sync in git notes (optional, for audit trail)
-        if git rev-parse --git-dir > /dev/null 2>&1; then
-            local commit_hash=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-            local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            echo "$timestamp - Synced prompts for commit $commit_hash" >> .braintrust/sync_history.log
-            log_info "Sync logged to .braintrust/sync_history.log"
+    # Run the Python script
+    if command -v python3 >/dev/null 2>&1; then
+        if python3 .braintrust/push_py_prompts.py 2>&1; then
+            log_success "Python prompts pushed successfully"
+        else
+            log_warning "Python prompt push failed"
         fi
     else
-        log_error "Failed to sync prompts to Braintrust"
-        exit 1
+        log_warning "Python not found, skipping Python prompt sync"
+    fi
+
+    log_success "Prompts synced to Braintrust successfully!"
+
+    # Record the sync in git notes (optional, for audit trail)
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        local commit_hash=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "$timestamp - Synced prompts for commit $commit_hash" >> .braintrust/sync_history.log
+        log_info "Sync logged to .braintrust/sync_history.log"
     fi
 }
 
