@@ -41,7 +41,7 @@ class PodcastCheckerService:
         self.logger.info("Starting PocketCasts podcast check...")
 
         # Fetch in-progress episodes
-        in_progress_episodes = self._fetch_in_progress_episodes()
+        in_progress_episodes = await self._fetch_in_progress_episodes()
 
         if not in_progress_episodes:
             self.logger.warning("No episodes found in PocketCasts history")

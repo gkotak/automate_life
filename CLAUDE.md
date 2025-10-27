@@ -15,6 +15,19 @@ This is a Claude Code configuration repository that automates content analysis a
   - Saves structured data to Supabase for dynamic rendering
   - View articles at http://localhost:3000 via Next.js web app
 
+### Content Checker
+- `python3 scripts/check_podcasts.py` - Checks PocketCasts for new podcast episodes
+  - Scans listening history for new episodes
+  - Uses SERPAPI for YouTube discovery (whitelisted podcasts)
+  - Saves discoveries to content_queue table
+  - View at http://localhost:3000/admin/podcasts
+
+- `python3 scripts/check_posts.py` - Checks RSS feeds and newsletters for new posts
+  - Scans content_sources table for active feeds
+  - Extracts posts from RSS/Atom feeds and web pages
+  - Filters by recency (last 3 days)
+  - View at http://localhost:3000/admin/posts
+
 ## Architecture Overview
 
 ### Core System Components
@@ -26,6 +39,14 @@ This is a Claude Code configuration repository that automates content analysis a
 - AI-powered content summarization using Claude API
 - Saves all data to Supabase database (no static files)
 - Smart authentication for protected content (Substack, Medium, etc.)
+- Railway deployment support with Docker
+
+**Content Checker Backend** (`programs/content_checker_backend/`)
+- FastAPI backend for discovering new content (podcasts and newsletters)
+- Podcast checking via PocketCasts API with Playwright automation
+- RSS/Atom feed parsing for newsletter/blog posts
+- SERPAPI integration for YouTube video discovery
+- Async architecture for efficient content scanning
 - Railway deployment support with Docker
 
 **File Organization**:
@@ -42,8 +63,22 @@ programs/article_summarizer_backend/
 │   └── event_emitter.py        # SSE events
 └── processors/                 # Content processors
 
+programs/content_checker_backend/
+├── app/                        # FastAPI application
+│   ├── main.py                 # API server (port 8001)
+│   ├── routes/                 # API endpoints (podcasts, posts)
+│   ├── services/               # Content checkers
+│   ├── models/                 # Pydantic models
+│   └── middleware/             # Authentication
+└── core/                       # Shared utilities
+    ├── podcast_auth.py         # PocketCasts authentication
+    ├── browser_fetcher.py      # Playwright automation
+    └── config.py               # Configuration
+
 web-apps/article-summarizer/   # Next.js web interface (runs on port 3000)
 ├── src/                        # React components and pages
+│   ├── app/admin/podcasts/     # Podcast admin page
+│   └── app/admin/posts/        # Newsletter/blog admin page
 ├── public/                     # Static assets
 └── package.json                # Dependencies
 
@@ -53,16 +88,14 @@ supabase/                       # Database infrastructure
 ├── functions/                  # SQL functions
 └── tools/                      # Migration utilities
 
-scripts/article_summarizer/     # Utility scripts
-├── backfill_embeddings.py      # Regenerate embeddings
-├── backfill_sources.py         # Fix source names
-└── fix_pocketcasts_sources.py  # Data cleanup
+scripts/
+├── check_podcasts.py           # CLI wrapper for podcast checking
+├── check_posts.py              # CLI wrapper for post checking
+└── article_summarizer/         # Utility scripts
+    ├── backfill_embeddings.py  # Regenerate embeddings
+    ├── backfill_sources.py     # Fix source names
+    └── fix_pocketcasts_sources.py  # Data cleanup
 ```
-
-**Check New Posts** (`programs/check_new_posts/`)
-- Scans RSS feeds and newsletter sites for new content
-- Tracks discovered posts in shared database
-- Integration with article_summarizer for processing
 
 **Configuration**:
 ```
