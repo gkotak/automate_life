@@ -22,6 +22,7 @@ export default function ArticleList() {
   const [searchFilter, setSearchFilter] = useState<'all' | 'summary' | 'transcript' | 'article'>('all')
   const [searchMode, setSearchMode] = useState<'keyword' | 'hybrid'>('hybrid')
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isSearching, setIsSearching] = useState(false)
 
   // Filter states
   const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([])
@@ -149,12 +150,14 @@ export default function ArticleList() {
 
     // If no search query and no filters, just fetch all articles
     if (!query.trim() && !hasFilters) {
+      setIsSearching(false)
       fetchArticles()
       return
     }
 
     try {
       setLoading(true)
+      setIsSearching(true)
 
       // Build filters object
       const filters: any = {}
@@ -188,6 +191,7 @@ export default function ArticleList() {
       addNotification('error', 'Search failed. Please try again.')
     } finally {
       setLoading(false)
+      setIsSearching(false)
     }
   }
 
@@ -348,6 +352,7 @@ export default function ArticleList() {
                     <button
                       onClick={() => {
                         setSearchQuery('')
+                        setIsSearching(false)
                         fetchArticles()
                       }}
                       className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
@@ -518,10 +523,10 @@ export default function ArticleList() {
       </div>
 
       {/* Articles List */}
-      {loading ? (
+      {loading || isSearching ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading articles...</p>
+          <p className="mt-4 text-gray-600">{isSearching ? 'Searching...' : 'Loading articles...'}</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:gap-6">
@@ -591,7 +596,7 @@ export default function ArticleList() {
             </div>
           ))}
 
-          {articles.length === 0 && !loading && (
+          {articles.length === 0 && !loading && !isSearching && (
             <div className="text-center py-12">
               <p className="text-gray-600">No articles found</p>
             </div>
