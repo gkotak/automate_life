@@ -1,0 +1,60 @@
+name: Sync Environment Variables to Vercel
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "sync" to confirm syncing all environment variables to Vercel'
+        required: true
+        default: ''
+
+jobs:
+  sync-vercel:
+    if: github.event.inputs.confirm == 'sync'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Sync environment variables to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          echo "🔄 Syncing environment variables to Vercel..."
+
+          # Set environment variables for production
+          # Note: This removes old value and adds new one (Vercel doesn't have 'update')
+
+          # Supabase
+          vercel env rm NEXT_PUBLIC_SUPABASE_URL production --yes --token=$VERCEL_TOKEN || true
+          vercel env add NEXT_PUBLIC_SUPABASE_URL production "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" --token=$VERCEL_TOKEN
+
+          vercel env rm NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production --yes --token=$VERCEL_TOKEN || true
+          vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production "${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}" --token=$VERCEL_TOKEN
+
+          # OpenAI
+          vercel env rm OPENAI_API_KEY production --yes --token=$VERCEL_TOKEN || true
+          vercel env add OPENAI_API_KEY production "${{ secrets.OPENAI_API_KEY }}" --token=$VERCEL_TOKEN
+
+          # Braintrust
+          vercel env rm BRAINTRUST_API_KEY production --yes --token=$VERCEL_TOKEN || true
+          vercel env add BRAINTRUST_API_KEY production "${{ secrets.BRAINTRUST_API_KEY }}" --token=$VERCEL_TOKEN
+
+          echo "✅ Environment variables synced to Vercel successfully!"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ All environment variables have been synced to Vercel production"
+          echo "🔗 Check your deployment at: https://vercel.com/dashboard"
