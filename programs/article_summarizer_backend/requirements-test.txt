@@ -1,0 +1,18 @@
+# Test dependencies for article_summarizer_backend
+
+# Core testing framework
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# HTTP testing
+httpx>=0.26.0
+responses>=0.24.0
+
+# Test data generation
+faker>=22.0.0
+
+# For HTML parsing tests (already in main requirements but listing here for clarity)
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
