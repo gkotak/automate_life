@@ -25,6 +25,7 @@ import json
 import os
 import re
 import asyncio
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Callable, Awaitable
@@ -195,7 +196,7 @@ class ArticleProcessor(BaseProcessor):
                 await self.event_emitter.emit('ai_start')
 
             self.logger.info("2. Analyzing content with AI...")
-            ai_summary = self._generate_summary_with_ai(url, metadata)
+            ai_summary = await self._generate_summary_async(url, metadata)
 
             if self.event_emitter:
                 await self.event_emitter.emit('ai_complete')
@@ -238,7 +239,13 @@ class ArticleProcessor(BaseProcessor):
         youtube_match = re.match(r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', url)
         if youtube_match:
             self.logger.info("🎥 [DIRECT YOUTUBE] Detected direct YouTube video URL")
-            return self._process_direct_youtube_url(url, youtube_match.group(1))
+            return await self._process_direct_youtube_url(url, youtube_match.group(1))
+
+        # Check if URL is a direct Loom video link
+        loom_match = re.match(r'(?:https?://)?(?:www\.)?loom\.com/(?:share|embed)/([a-zA-Z0-9]+)', url)
+        if loom_match:
+            self.logger.info("🎥 [DIRECT LOOM] Detected direct Loom video URL")
+            return await self._process_direct_loom_url(url, loom_match.group(1), progress_callback)
 
         # Load Chrome cookies for this specific URL domain (for Substack subdomains, etc.)
         self.auth_manager.load_cookies_for_url(url)
@@ -321,7 +328,71 @@ class ArticleProcessor(BaseProcessor):
 
         return metadata
 
-    def _process_direct_youtube_url(self, url: str, video_id: str) -> Dict:
+    async def _process_direct_loom_url(
+        self,
+        url: str,
+        video_id: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
+        """
+        Process a direct Loom video URL (e.g., https://www.loom.com/share/xyz)
+
+        Args:
+            url: The Loom video URL
+            video_id: Extracted Loom video ID
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Dictionary containing metadata for direct Loom video with transcript
+        """
+        self.logger.info(f"   📹 [LOOM VIDEO] Processing video ID: {video_id}")
+
+        # Try to get video title from Loom page
+        try:
+            response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
+            soup = self._get_soup(response.content)
+            title = self._extract_title(soup, url)
+        except:
+            title = f"Loom Video: {video_id}"
+
+        # Create video URL dict in expected format
+        video_urls = [{
+            'video_id': video_id,
+            'url': url,
+            'platform': 'loom',
+            'context': 'direct_url',
+            'relevance_score': 1.0
+        }]
+
+        # Extract transcript using the generic async video processing
+        self.logger.info(f"   🎥 [EXTRACTING] Transcript for Loom video...")
+
+        # Create a minimal soup object (not needed for direct video URL)
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup('', 'html.parser')
+
+        # Process the video using the async processing path
+        video_data = await self._process_video_content_async(
+            video_urls, soup, url, progress_callback
+        )
+
+        return {
+            'title': title,
+            'url': url,
+            'platform': 'loom',
+            'content_type': type('obj', (object,), {
+                'has_embedded_video': True,
+                'has_embedded_audio': False,
+                'is_text_only': False
+            })(),
+            'extracted_at': datetime.now().isoformat(),
+            'media_info': video_data.get('media_info', {'loom_urls': video_urls}),
+            'transcripts': video_data.get('transcripts', {}),
+            'article_text': video_data.get('article_text', ''),
+            'images': video_data.get('images', [])
+        }
+
+    async def _process_direct_youtube_url(self, url: str, video_id: str) -> Dict:
         """
         Process a direct YouTube video URL (e.g., https://www.youtube.com/watch?v=xyz)
 
@@ -368,7 +439,7 @@ class ArticleProcessor(BaseProcessor):
             audio_url = self._extract_youtube_audio_url(video_id)
             if audio_url:
                 self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
-                transcript_data = self._download_and_transcribe_media(audio_url, "video")
+                transcript_data = await self._download_and_transcribe_media_async(audio_url, "video")
                 if transcript_data:
                     transcripts[video_id] = transcript_data
                     self.logger.info(f"      ✓ Video transcription successful via Whisper")
@@ -407,77 +478,6 @@ class ArticleProcessor(BaseProcessor):
             'article_text': article_text
         }
 
-    def _process_video_content(self, video_urls: List[Dict], soup, base_url: str) -> Dict:
-        """Process content with single validated video"""
-
-        # Should only receive 1 validated video from detection logic
-        if not video_urls:
-            self.logger.info("   No validated videos to process")
-            return {'media_info': {'youtube_urls': []}, 'transcripts': {}}
-
-        if len(video_urls) > 1:
-            self.logger.warning(f"   ⚠️ [UNEXPECTED] Received {len(video_urls)} videos, expected 1. Using first video only.")
-
-        # Process only the first (and should be only) video
-        video = video_urls[0]
-        video_id = video.get('video_id', 'N/A')
-        score = video.get('relevance_score', 'N/A')
-        context = video.get('context', 'unknown')
-
-        self.logger.info(f"   Processing single validated video: ID={video_id} | Score={score} | Context={context}")
-
-        # Extract transcript for the single video
-        transcripts = {}
-        self.logger.info(f"      🎥 [EXTRACTING] Video: {video_id}")
-
-        transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
-        if transcript_data and transcript_data.get('success'):
-            transcripts[video_id] = transcript_data
-            self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
-        else:
-            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
-            self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
-
-            # Fallback: Try to download and transcribe video audio using Whisper
-            self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
-
-            # Extract audio URL using yt-dlp
-            audio_url = self._extract_youtube_audio_url(video_id)
-            if audio_url:
-                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
-                transcript_data = self._download_and_transcribe_media(audio_url, "video")
-                if transcript_data:
-                    transcripts[video_id] = transcript_data
-                    self.logger.info(f"      ✓ Video transcription successful via Whisper")
-                else:
-                    self.logger.info(f"      ✗ Whisper transcription failed")
-            else:
-                self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
-
-        # Always extract article text content
-        self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
-        article_text = self._extract_article_text_content(soup)
-        if article_text:
-            word_count = len(article_text.split())
-            self.logger.info(f"   📄 [ARTICLE TEXT] Extracted {word_count} words of article content")
-
-            # Limit text size for prompt efficiency
-            if word_count > Config.MAX_ARTICLE_WORDS:
-                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
-                self.logger.info(f"   📄 [ARTICLE TEXT] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
-        else:
-            self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
-
-        # Extract images from article
-        images = self._extract_article_images(soup, base_url)
-
-        return {
-            'media_info': {'youtube_urls': video_urls},
-            'transcripts': transcripts,
-            'article_text': article_text or 'Content not available',
-            'images': images
-        }
-
     async def _process_video_content_async(
         self,
         video_urls: List[Dict],
@@ -508,48 +508,111 @@ class ArticleProcessor(BaseProcessor):
         # Process only the first (and should be only) video
         video = video_urls[0]
         video_id = video.get('video_id', 'N/A')
+        platform = video.get('platform', 'unknown')
         score = video.get('relevance_score', 'N/A')
         context = video.get('context', 'unknown')
 
-        self.logger.info(f"   Processing single validated video: ID={video_id} | Score={score} | Context={context}")
+        self.logger.info(f"   Processing single validated video: Platform={platform} | ID={video_id} | Score={score} | Context={context}")
+
+        # Signal start of content extraction (for UI progress)
+        if progress_callback:
+            await progress_callback("content_extract_start", {})
 
         if progress_callback:
             await progress_callback("processing_video", {"video_id": video_id})
 
-        # Extract transcript for the single video
+        # Extract transcript for the single video based on platform
         transcripts = {}
-        self.logger.info(f"      🎥 [EXTRACTING] Video: {video_id}")
+        self.logger.info(f"      🎥 [EXTRACTING] {platform.title()} video: {video_id}")
 
-        transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
+        # Step 1: Try platform-specific transcript extraction (only YouTube has a native API)
+        transcript_data = None
+
+        if platform == 'youtube':
+            transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
+        else:
+            # For other platforms (Loom, Vimeo, etc.), we don't have native transcript support
+            self.logger.info(f"      ℹ️ No native transcript API for platform: {platform}, will use generic fallback")
+
+        # Check if platform-specific transcript worked
         if transcript_data and transcript_data.get('success'):
             transcripts[video_id] = transcript_data
             self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
         else:
-            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
-            self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
-
-            # Fallback: Try to download and transcribe video audio using Whisper
-            self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
+            # Step 2: GENERIC FALLBACK - works for ANY platform
+            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'No native transcript'
+            self.logger.info(f"      ✗ No {platform} transcript available: {error_msg}")
+            self.logger.info(f"      🎵 [FALLBACK] Attempting audio extraction and transcription with Whisper/Deepgram...")
 
             if progress_callback:
                 await progress_callback("video_fallback_whisper", {"video_id": video_id})
 
-            # Extract audio URL using yt-dlp
-            audio_url = self._extract_youtube_audio_url(video_id)
-            if audio_url:
-                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
-                transcript_data = await self._download_and_transcribe_media_async(
-                    audio_url,
-                    "video",
-                    progress_callback=progress_callback
-                )
-                if transcript_data:
-                    transcripts[video_id] = transcript_data
-                    self.logger.info(f"      ✓ Video transcription successful via Whisper")
+            # Build the full video URL based on platform
+            video_url = self._build_video_url(platform, video_id)
+
+            # Try to download audio using yt-dlp (supports many platforms and HLS streams)
+            try:
+                import tempfile
+                import os
+
+                # yt-dlp can handle YouTube, Vimeo, Loom, and many other platforms (including HLS)
+                self.logger.info(f"      🎵 [FALLBACK] Using yt-dlp to download audio from: {video_url[:80]}...")
+
+                # Send progress callback: downloading audio
+                if progress_callback:
+                    await progress_callback("downloading_audio", {"video_id": video_id})
+
+                # Create temp file template (don't create the file, just get a path)
+                temp_dir = tempfile.gettempdir()
+                temp_template = os.path.join(temp_dir, f'ytdlp_audio_{video_id}')
+
+                # Download using yt-dlp (handles HLS streams properly)
+                temp_path = self._download_video_with_ytdlp(video_url, temp_template)
+                if temp_path:
+                    # Check file size
+                    file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+                    self.logger.info(f"      📊 [FILE SIZE] {file_size_mb:.1f}MB")
+
+                    if file_size_mb > 0:
+                        # Transcribe the downloaded file
+                        self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper/Deepgram...")
+
+                        # Send progress callback: transcribing audio
+                        if progress_callback:
+                            await progress_callback("transcribing_audio", {"file_size_mb": file_size_mb})
+
+                        if not self.file_transcriber:
+                            self.logger.warning("   ⚠️ File transcriber not available")
+                        else:
+                            result = self.file_transcriber.transcribe_file(temp_path)
+                            if result and result.get('transcript_data'):
+                                transcript_data = result['transcript_data']
+
+                                # Format to match expected structure
+                                formatted_transcript = {
+                                    'success': True,
+                                    'type': 'whisper',
+                                    'text': transcript_data.get('text', ''),
+                                    'segments': transcript_data.get('segments', []),
+                                    'language': transcript_data.get('language', 'en')
+                                }
+                                transcripts[video_id] = formatted_transcript
+                                self.logger.info(f"      ✓ Video transcription successful via Whisper/Deepgram")
+                            else:
+                                self.logger.info(f"      ✗ Whisper/Deepgram transcription failed")
+                    else:
+                        self.logger.warning(f"      ✗ Downloaded file is empty (0MB)")
+
+                    # Clean up temp file
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
                 else:
-                    self.logger.info(f"      ✗ Whisper transcription failed")
-            else:
-                self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
+                    self.logger.info(f"      ✗ Could not download audio from {platform} video")
+                    self.logger.info(f"      ℹ️ [INFO] {platform.title()} videos may require authentication or may not be supported by yt-dlp")
+            except Exception as e:
+                self.logger.warning(f"      ✗ yt-dlp download/transcription failed: {e}")
 
         # Always extract article text content
         self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
@@ -568,58 +631,34 @@ class ArticleProcessor(BaseProcessor):
         # Extract images from article
         images = self._extract_article_images(soup, base_url)
 
-        # Emit completion event
+        # Determine transcript method for frontend
+        transcript_method = None
+        if transcripts:
+            # Check what type of transcript we got
+            first_transcript = list(transcripts.values())[0] if transcripts else None
+            if first_transcript:
+                transcript_type = first_transcript.get('type', 'unknown')
+                # Map internal type to frontend-expected method
+                if transcript_type == 'youtube' or transcript_type == 'youtube_generated':
+                    transcript_method = 'youtube'
+                elif transcript_type == 'whisper':
+                    transcript_method = 'audio'  # Whisper transcription
+                else:
+                    transcript_method = 'youtube'  # Default for videos
+
+        # Emit completion event with transcript_method
         if progress_callback:
-            await progress_callback("extract_complete", {
-                "has_transcript": bool(transcripts),
-                "video_count": len(video_urls)
+            await progress_callback("content_extracted", {
+                "transcript_method": transcript_method
             })
 
+        # Determine the key based on platform
+        platform = video_urls[0].get('platform', 'youtube') if video_urls else 'youtube'
+        media_key = f'{platform}_urls'
+
         return {
-            'media_info': {'youtube_urls': video_urls},
+            'media_info': {media_key: video_urls},
             'transcripts': transcripts,
-            'article_text': article_text or 'Content not available',
-            'images': images
-        }
-
-    def _process_audio_content(self, audio_urls: List[Dict], soup, base_url: str) -> Dict:
-        """Process content with embedded audio"""
-        self.logger.info("   Found embedded audio content...")
-
-        # Try to transcribe audio if available
-        transcripts = {}
-        if audio_urls:
-            for idx, audio in enumerate(audio_urls):
-                audio_url = audio.get('url')
-                if audio_url:
-                    self.logger.info(f"   🎵 [AUDIO {idx+1}] Attempting transcription...")
-                    transcript_data = self._download_and_transcribe_media(audio_url, "audio")
-                    if transcript_data:
-                        transcripts[f"audio_{idx}"] = transcript_data
-                        self.logger.info(f"   ✓ Audio transcription successful")
-                    else:
-                        self.logger.info(f"   ✗ Audio transcription failed")
-
-        # Always extract article text content
-        self.logger.info("   📄 [ARTICLE TEXT] Extracting article text content...")
-        article_text = self._extract_article_text_content(soup)
-        if article_text:
-            word_count = len(article_text.split())
-            self.logger.info(f"   📄 [ARTICLE TEXT] Extracted {word_count} words of article content")
-
-            # Limit text size for prompt efficiency
-            if word_count > Config.MAX_ARTICLE_WORDS:
-                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
-                self.logger.info(f"   📄 [ARTICLE TEXT] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
-        else:
-            self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
-
-        # Extract images from article
-        images = self._extract_article_images(soup, base_url)
-
-        return {
-            'media_info': {'audio_urls': audio_urls},
-            'transcripts': transcripts if transcripts else {},
             'article_text': article_text or 'Content not available',
             'images': images
         }
@@ -644,6 +683,10 @@ class ArticleProcessor(BaseProcessor):
             Dict with transcripts, article_text, and images
         """
         self.logger.info("   Found embedded audio content...")
+
+        # Signal start of content extraction (for UI progress)
+        if progress_callback:
+            await progress_callback("content_extract_start", {})
 
         # Try to transcribe audio if available
         transcripts = {}
@@ -687,11 +730,20 @@ class ArticleProcessor(BaseProcessor):
         # Extract images from article
         images = self._extract_article_images(soup, base_url)
 
-        # Emit completion event
+        # Determine transcript method for frontend
+        transcript_method = None
+        if transcripts:
+            # Check what type of transcript we got and if it was chunked
+            first_transcript = list(transcripts.values())[0] if transcripts else None
+            if first_transcript:
+                # For audio content, check if chunking was used
+                # (chunking info would be in the metadata, but we can infer from transcript structure)
+                transcript_method = 'audio'  # Audio transcription
+
+        # Emit completion event with transcript_method
         if progress_callback:
-            await progress_callback("extract_complete", {
-                "has_transcript": bool(transcripts),
-                "audio_count": len(audio_urls)
+            await progress_callback("content_extracted", {
+                "transcript_method": transcript_method
             })
 
         return {
@@ -949,10 +1001,18 @@ class ArticleProcessor(BaseProcessor):
                 not content_type.has_embedded_audio):
                 transcript_text = article_text
 
-            # Get video ID if available
+            # Get video ID and platform if available (support all platforms)
             video_id = None
-            if content_type.has_embedded_video and metadata.get('media_info', {}).get('youtube_urls'):
-                video_id = metadata['media_info']['youtube_urls'][0].get('video_id')
+            platform = None
+            if content_type.has_embedded_video:
+                media_info = metadata.get('media_info', {})
+                # Check for any platform URLs
+                for key in media_info.keys():
+                    if key.endswith('_urls') and media_info[key]:
+                        video_id = media_info[key][0].get('video_id')
+                        # Extract platform from key (e.g., 'youtube_urls' -> 'youtube')
+                        platform = key.replace('_urls', '')
+                        break
 
             # Get audio URL if available
             audio_url = None
@@ -989,7 +1049,7 @@ class ArticleProcessor(BaseProcessor):
                 'content_source': content_source,
                 'video_id': video_id,
                 'audio_url': audio_url,
-                'platform': metadata.get('platform'),
+                'platform': platform,
                 'tags': [],
 
                 # Structured data
@@ -1068,6 +1128,75 @@ class ArticleProcessor(BaseProcessor):
 
         # Fallback to URL
         return f"Article from {extract_domain(url)}"
+
+    def _build_video_url(self, platform: str, video_id: str) -> str:
+        """
+        Build the full video URL from platform and video_id
+
+        Args:
+            platform: Video platform (youtube, loom, vimeo, etc.)
+            video_id: Video identifier
+
+        Returns:
+            Full video URL
+        """
+        platform_urls = {
+            'youtube': f"https://www.youtube.com/watch?v={video_id}",
+            'loom': f"https://www.loom.com/share/{video_id}",
+            'vimeo': f"https://vimeo.com/{video_id}",
+            'dailymotion': f"https://www.dailymotion.com/video/{video_id}",
+        }
+
+        return platform_urls.get(platform.lower(), f"https://{platform}.com/{video_id}")
+
+    def _download_video_with_ytdlp(self, video_url: str, output_template: str) -> Optional[str]:
+        """
+        Download video/audio using yt-dlp (handles HLS streams, not just direct URLs)
+
+        Args:
+            video_url: Video URL to download
+            output_template: Path template where to save the audio file (extension will be added by yt-dlp)
+
+        Returns:
+            Path to downloaded file if successful, None otherwise
+        """
+        try:
+            import yt_dlp
+            import glob
+
+            self.logger.info(f"      🔧 [YT-DLP] Downloading audio with yt-dlp...")
+
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': output_template,
+                'quiet': True,
+                'no_warnings': True,
+                # Don't use postprocessors - DeepGram can handle various audio formats
+                # This avoids dependency on ffmpeg/ffprobe
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_url])
+
+            # yt-dlp adds the extension, so we need to find the actual file
+            # It could be .m4a, .webm, .opus, etc.
+            pattern = output_template + "*"
+            matching_files = glob.glob(pattern)
+
+            if matching_files:
+                actual_path = matching_files[0]
+                self.logger.info(f"      ✅ [YT-DLP] Download successful: {actual_path}")
+                return actual_path
+            else:
+                # Maybe no extension was added
+                if os.path.exists(output_template):
+                    return output_template
+                self.logger.error(f"      ❌ [YT-DLP] Downloaded file not found")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"      ❌ [YT-DLP] Download failed: {e}")
+            return None
 
     def _extract_youtube_audio_url(self, video_id: str) -> Optional[str]:
         """
@@ -1801,7 +1930,8 @@ class ArticleProcessor(BaseProcessor):
         if not transcript_data or not transcript_data.get('success'):
             return ""
 
-        transcript = transcript_data.get('transcript', [])
+        # Handle both YouTube API format ('transcript') and DeepGram format ('segments')
+        transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
         formatted_sections = []
 
         # Group transcript entries into 30+ second sections

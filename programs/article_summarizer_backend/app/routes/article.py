@@ -237,52 +237,9 @@ async def process_article_direct(
 
             metadata = metadata_result
 
-            # NOTE: fetch_complete is now emitted from within _extract_metadata() immediately after HTML fetch
-
-            # Step 2: Detect media type (just analyze metadata, no I/O)
-            yield {
-                "event": "media_detect_start",
-                "data": json.dumps({"elapsed": elapsed()})
-            }
-            await asyncio.sleep(0)
-
-            content_type = metadata.get('content_type')
-            media_type = 'text-only'
-            if content_type and hasattr(content_type, 'has_embedded_video') and content_type.has_embedded_video:
-                media_type = 'video'
-            elif content_type and hasattr(content_type, 'has_embedded_audio') and content_type.has_embedded_audio:
-                media_type = 'audio'
-
-            yield {
-                "event": "media_detected",
-                "data": json.dumps({"media_type": media_type, "elapsed": elapsed()})
-            }
-            await asyncio.sleep(0)
-
-            # Step 3: Determine transcript method (just analyze metadata, no I/O)
-            yield {
-                "event": "content_extract_start",
-                "data": json.dumps({"elapsed": elapsed()})
-            }
-            await asyncio.sleep(0)
-
-            transcript_method = None
-            transcripts = metadata.get('transcripts', {})
-            if transcripts:
-                if media_type == 'video':
-                    transcript_method = 'youtube'
-                elif media_type == 'audio':
-                    # Check if it was chunked
-                    if metadata.get('audio_chunks'):
-                        transcript_method = 'chunked'
-                    else:
-                        transcript_method = 'audio'
-
-            yield {
-                "event": "content_extracted",
-                "data": json.dumps({"transcript_method": transcript_method, "elapsed": elapsed()})
-            }
-            await asyncio.sleep(0)
+            # NOTE: fetch_complete, content_extract_start, and content_extracted are now emitted
+            # from within _extract_metadata() as progress callbacks during actual processing.
+            # This ensures correct timing: events fire when work actually happens, not after.
 
             # Step 4: Generate AI summary
             yield {
