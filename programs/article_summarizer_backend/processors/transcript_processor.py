@@ -2,6 +2,8 @@
 Transcript Processing Module
 
 Handles extraction and processing of transcripts from various sources.
+Currently only supports YouTube API-based transcript extraction.
+For other platforms, use the generic yt-dlp + Whisper/Deepgram fallback.
 """
 
 import logging
@@ -22,7 +24,7 @@ class TranscriptProcessor:
 
     def get_youtube_transcript(self, video_id: str) -> Optional[Dict]:
         """
-        Extract transcript from YouTube video
+        Extract transcript from YouTube video using YouTube Transcript API
 
         Args:
             video_id: YouTube video ID

@@ -40,6 +40,71 @@ class ContentTypeDetector:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.session = session if session else requests.Session()
 
+    def _resolve_iframely_embed(self, iframe_url: str) -> Optional[Dict]:
+        """
+        Resolve an iframe.ly URL to find the actual video it embeds
+
+        Args:
+            iframe_url: The iframe.ly URL (e.g., https://cdn.iframe.ly/QvSl8U8)
+
+        Returns:
+            Video dict with platform and video_id, or None if not a recognized video
+        """
+        try:
+            # Fetch the iframe.ly page
+            response = self.session.get(iframe_url, timeout=5, allow_redirects=True)
+
+            if response.ok:
+                html = response.text
+                self.logger.info(f"   [IFRAME.LY] Fetched {len(html)} chars from iframe.ly")
+
+                # Check for various video platforms in the iframe.ly response
+                # Loom
+                loom_match = re.search(r'loom\.com/(?:share|embed|v)/([a-zA-Z0-9_-]+)', html, re.IGNORECASE)
+                if loom_match:
+                    video_id = loom_match.group(1)
+                    return {
+                        'video_id': video_id,
+                        'url': f'https://www.loom.com/share/{video_id}',
+                        'embed_url': f'https://www.loom.com/embed/{video_id}',
+                        'platform': 'loom',
+                        'context': 'iframely_resolved'
+                    }
+
+                # YouTube
+                youtube_match = re.search(r'youtube\.com/(?:watch\?v=|embed/)([a-zA-Z0-9_-]+)', html, re.IGNORECASE)
+                if youtube_match:
+                    video_id = youtube_match.group(1)
+                    return {
+                        'video_id': video_id,
+                        'url': f'https://www.youtube.com/watch?v={video_id}',
+                        'embed_url': f'https://www.youtube.com/embed/{video_id}',
+                        'platform': 'youtube',
+                        'context': 'iframely_resolved'
+                    }
+
+                # Vimeo
+                vimeo_match = re.search(r'vimeo\.com/(?:video/)?([0-9]+)', html, re.IGNORECASE)
+                if vimeo_match:
+                    video_id = vimeo_match.group(1)
+                    return {
+                        'video_id': video_id,
+                        'url': f'https://vimeo.com/{video_id}',
+                        'embed_url': f'https://player.vimeo.com/video/{video_id}',
+                        'platform': 'vimeo',
+                        'context': 'iframely_resolved'
+                    }
+
+                self.logger.info(f"   [IFRAME.LY] No recognized video platform found in response")
+                return None
+            else:
+                self.logger.warning(f"   [IFRAME.LY] Failed to fetch: {response.status_code}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"   [IFRAME.LY] Error resolving embed: {e}")
+            return None
+
     def detect_content_type(self, soup: BeautifulSoup, url: str) -> ContentType:
         """
         Main method to detect content type
@@ -53,7 +118,19 @@ class ContentTypeDetector:
         """
         self.logger.info("🔍 [CONTENT DETECTION] Analyzing content type...")
 
-        # Check for embedded videos first (highest priority)
+        # Check if the URL itself is a direct video link (Loom, YouTube, etc.)
+        direct_video = self._detect_direct_video_url(url)
+        if direct_video:
+            self.logger.info(f"🎯 [DIRECT VIDEO] URL is a direct {direct_video['platform']} video")
+            return ContentType(
+                has_embedded_video=True,
+                has_embedded_audio=False,
+                is_text_only=False,
+                video_urls=[direct_video],
+                audio_urls=[]
+            )
+
+        # Check for embedded videos (highest priority)
         self.logger.info("🔍 [VIDEO DETECTION] Searching for video content...")
         video_urls = self._detect_embedded_videos(soup)
 
@@ -91,6 +168,55 @@ class ContentTypeDetector:
             self.logger.info("✅ [CONTENT TYPE] 📄 TEXT-ONLY content detected")
 
         return content_type
+
+    def _detect_direct_video_url(self, url: str) -> Optional[Dict]:
+        """
+        Detect if the URL itself is a direct video link (Loom, YouTube, etc.)
+
+        Args:
+            url: The URL to check
+
+        Returns:
+            Video dictionary if URL is a direct video, None otherwise
+        """
+        # Loom video patterns
+        loom_patterns = [
+            r'(?:https?://)?(?:www\.)?loom\.com/share/([a-zA-Z0-9]+)',
+            r'(?:https?://)?(?:www\.)?loom\.com/embed/([a-zA-Z0-9]+)'
+        ]
+
+        for pattern in loom_patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                return {
+                    'video_id': video_id,
+                    'url': url,
+                    'embed_url': f'https://www.loom.com/embed/{video_id}',
+                    'platform': 'loom',
+                    'context': 'direct_url'
+                }
+
+        # YouTube direct URL patterns
+        youtube_patterns = [
+            r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)',
+            r'(?:https?://)?(?:www\.)?youtu\.be/([a-zA-Z0-9_-]+)',
+            r'(?:https?://)?(?:m\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)'
+        ]
+
+        for pattern in youtube_patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                return {
+                    'video_id': video_id,
+                    'url': f'https://www.youtube.com/watch?v={video_id}',
+                    'embed_url': f'https://www.youtube.com/embed/{video_id}',
+                    'platform': 'youtube',
+                    'context': 'direct_url'
+                }
+
+        return None
 
     def _detect_embedded_videos(self, soup: BeautifulSoup) -> List[Dict]:
         """
@@ -142,12 +268,151 @@ class ContentTypeDetector:
         if not main_content:
             main_content = soup  # Fallback to entire page
 
-        # Look for YouTube iframe embeds in main content only
+        # Look for video iframe embeds in main content only
         iframes = main_content.find_all('iframe')
+        self.logger.info(f"🔍 [IFRAME SEARCH] Found {len(iframes)} total iframes in main content")
+
+        # Debug: Check if there are ANY iframes in the entire page
+        all_iframes = soup.find_all('iframe')
+        if len(all_iframes) != len(iframes):
+            self.logger.info(f"   [DEBUG] Total iframes in entire page: {len(all_iframes)} (vs {len(iframes)} in main content)")
+
+        # Also check for Loom embeds that might be loaded via JavaScript or in the full page
+        # Look for any element that contains loom.com URL
+        page_html = str(soup)
+        page_html_lower = page_html.lower()
+
+        self.logger.info(f"   [HTML SEARCH] Searching {len(page_html)} chars of HTML for 'loom' references...")
+
+        # Debug: Save HTML to file for inspection
+        try:
+            from pathlib import Path
+            debug_dir = Path(__file__).parent.parent / 'logs'
+            debug_dir.mkdir(exist_ok=True)
+            debug_file = debug_dir / 'debug_html_content.txt'
+            with open(debug_file, 'w', encoding='utf-8') as f:
+                f.write(page_html)
+            self.logger.info(f"   [DEBUG] Saved HTML to: {debug_file}")
+        except Exception as e:
+            self.logger.warning(f"   [DEBUG] Could not save HTML: {e}")
+
+        # Debug: Check if "loom" appears anywhere in the HTML
+        loom_count = page_html_lower.count('loom')
+        self.logger.info(f"   [DEBUG] Found {loom_count} occurrences of 'loom' in HTML")
+
+        # Debug: Check if iframe.ly is in there
+        iframely_count = page_html_lower.count('iframe.ly')
+        self.logger.info(f"   [DEBUG] Found {iframely_count} occurrences of 'iframe.ly' in HTML")
+
+        # First, do a comprehensive search for ANY loom.com URLs in the HTML
+        # This should catch it regardless of context (iframe.ly, direct embed, etc.)
+        loom_url_pattern = r'https?://(?:www\.)?loom\.com/(?:share|embed|v)/([a-zA-Z0-9_-]+)'
+        loom_matches = re.findall(loom_url_pattern, page_html, re.IGNORECASE)
+
+        self.logger.info(f"   [DEBUG] Regex found {len(loom_matches)} loom.com URLs")
+
+        if loom_matches:
+            self.logger.info(f"🎯 [LOOM DETECTED] Found {len(loom_matches)} Loom URLs in page HTML")
+            for i, match in enumerate(loom_matches[:3]):
+                self.logger.info(f"   Loom URL {i+1}: video_id={match}")
+
+            # Use the first Loom video found
+            video_id = loom_matches[0]
+            video_data = {
+                'video_id': video_id,
+                'url': f'https://www.loom.com/share/{video_id}',
+                'embed_url': f'https://www.loom.com/embed/{video_id}',
+                'platform': 'loom',
+                'context': 'html_reference'
+            }
+            video_urls.append(video_data)
+            self.logger.info(f"✅ [LOOM FOUND] Extracted video ID from HTML: {video_id}")
+            return video_urls
+
+        # Legacy fallback checks
+        if 'loom' in page_html_lower:
+            self.logger.info(f"🎯 [LOOM DETECTED] Page HTML contains 'loom' references")
+            # Extract all loom URLs from page (case insensitive)
+            loom_url_pattern = r'https?://(?:www\.)?loom\.com/(?:share|embed|v)/([a-zA-Z0-9]+)'
+            loom_matches = re.findall(loom_url_pattern, page_html, re.IGNORECASE)
+            if loom_matches:
+                self.logger.info(f"   [LOOM] Found {len(loom_matches)} Loom video IDs in page HTML: {loom_matches[:3]}")
+                # Use the first Loom video found
+                video_id = loom_matches[0]
+                video_data = {
+                    'video_id': video_id,
+                    'url': f'https://www.loom.com/share/{video_id}',
+                    'embed_url': f'https://www.loom.com/embed/{video_id}',
+                    'platform': 'loom',
+                    'context': 'html_reference'
+                }
+                video_urls.append(video_data)
+                self.logger.info(f"✅ [LOOM FOUND] Extracted video ID from HTML: {video_id}")
+                return video_urls
+            else:
+                self.logger.info(f"   [LOOM] Found 'loom' in HTML but no valid loom.com URLs matched pattern")
+        else:
+            self.logger.info(f"   [HTML SEARCH] No 'loom' references found in page HTML")
+
         for iframe in iframes:
             src = iframe.get('src', '')
             if not src:
-                continue
+                self.logger.info(f"   [IFRAME] Found iframe with no src attribute, checking data-src or other attributes...")
+                # Check for data-src or other lazy-loading attributes
+                data_src = iframe.get('data-src', '')
+                if data_src:
+                    self.logger.info(f"   [IFRAME] Found data-src: {data_src[:100]}...")
+                    src = data_src
+                else:
+                    # Log the entire iframe element to see what we have
+                    self.logger.info(f"   [IFRAME] Full iframe element: {str(iframe)[:300]}...")
+                    continue
+
+            self.logger.info(f"   [IFRAME] Checking src: {src[:100]}...")
+
+            # Check for iframe.ly embeds - these are proxies that wrap real videos
+            # We should fetch the iframe.ly URL to see what it actually embeds
+            if 'iframe.ly' in src:
+                self.logger.info(f"🔍 [IFRAME.LY] Detected iframe.ly embed, fetching to find actual video...")
+                actual_video = self._resolve_iframely_embed(src)
+                if actual_video:
+                    video_urls.append(actual_video)
+                    self.logger.info(f"✅ [IFRAME.LY] Resolved to {actual_video['platform']} video: {actual_video['video_id']}")
+                    return video_urls
+                else:
+                    self.logger.info(f"⚠️ [IFRAME.LY] Could not resolve iframe.ly embed to a video")
+
+            # Loom iframe patterns (check first - priority)
+            # More flexible pattern to catch various Loom URLs
+            if 'loom.com' in src:
+                self.logger.info(f"🎯 [LOOM DETECTED] Found Loom iframe: {src}")
+                # Extract video ID from various Loom URL formats
+                loom_patterns = [
+                    r'loom\.com/embed/([a-zA-Z0-9]+)',
+                    r'loom\.com/share/([a-zA-Z0-9]+)',
+                    r'loom\.com/v/([a-zA-Z0-9]+)'
+                ]
+
+                video_id = None
+                for pattern in loom_patterns:
+                    match = re.search(pattern, src)
+                    if match:
+                        video_id = match.group(1)
+                        break
+
+                if video_id:
+                    video_data = {
+                        'video_id': video_id,
+                        'url': f'https://www.loom.com/share/{video_id}',
+                        'embed_url': f'https://www.loom.com/embed/{video_id}',
+                        'platform': 'loom',
+                        'context': 'iframe_embed'
+                    }
+                    video_urls.append(video_data)
+                    self.logger.info(f"✅ [IFRAME FOUND] Loom video ID: {video_id}")
+                    return video_urls  # Return first Loom video found
+                else:
+                    self.logger.warning(f"⚠️ [LOOM] Found Loom URL but couldn't extract video ID: {src}")
 
             # YouTube iframe patterns
             youtube_patterns = [

@@ -8,9 +8,10 @@ interface ArticleSummaryProps {
   article: Article
   onTimestampClick?: (seconds: number) => void
   searchQuery?: string
+  clickedTimestamp?: number | null
 }
 
-export default function ArticleSummary({ article, onTimestampClick, searchQuery }: ArticleSummaryProps) {
+export default function ArticleSummary({ article, onTimestampClick, searchQuery, clickedTimestamp }: ArticleSummaryProps) {
   const highlightedSummary = useMemo(() => {
     if (!searchQuery || !article.summary_text) return article.summary_text
     return highlightKeywords(article.summary_text, searchQuery)
@@ -35,6 +36,7 @@ export default function ArticleSummary({ article, onTimestampClick, searchQuery 
           insights={article.key_insights}
           onTimestampClick={onTimestampClick}
           searchQuery={searchQuery}
+          clickedTimestamp={clickedTimestamp}
         />
       )}
 
@@ -44,6 +46,7 @@ export default function ArticleSummary({ article, onTimestampClick, searchQuery 
           quotes={article.quotes}
           onTimestampClick={onTimestampClick}
           searchQuery={searchQuery}
+          clickedTimestamp={clickedTimestamp}
         />
       )}
 

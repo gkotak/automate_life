@@ -6,9 +6,10 @@ interface InsightsListProps {
   insights: Insight[]
   onTimestampClick?: (seconds: number) => void
   searchQuery?: string
+  clickedTimestamp?: number | null
 }
 
-export default function InsightsList({ insights, onTimestampClick, searchQuery }: InsightsListProps) {
+export default function InsightsList({ insights, onTimestampClick, searchQuery, clickedTimestamp }: InsightsListProps) {
   if (!insights || insights.length === 0) {
     return null
   }
@@ -30,25 +31,33 @@ export default function InsightsList({ insights, onTimestampClick, searchQuery }
         {insights.map((insight, index) => (
           <div
             key={index}
-            className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-[#e2e8f0]"
+            className="bg-green-50 rounded-lg border border-[#e2e8f0] overflow-hidden"
           >
-            <div className="flex-1">
-              <HighlightedText
-                text={insight.insight}
-                query={searchQuery}
-                className="text-[#030712] leading-relaxed"
-              />
+            <div className="flex items-start gap-3 p-3">
+              <div className="flex-1">
+                <HighlightedText
+                  text={insight.insight}
+                  query={searchQuery}
+                  className="text-[#030712] leading-relaxed"
+                />
+              </div>
+
+              {insight.timestamp_seconds && insight.time_formatted && (
+                <button
+                  onClick={() => handleTimestampClick(insight.timestamp_seconds)}
+                  className="flex items-center gap-1 px-2 py-1 bg-[#077331] text-white rounded text-sm hover:bg-[#055a24] transition-colors shrink-0"
+                  title={`Jump to ${insight.time_formatted}`}
+                >
+                  <Play className="h-3 w-3" />
+                  {insight.time_formatted}
+                </button>
+              )}
             </div>
 
-            {insight.timestamp_seconds && insight.time_formatted && (
-              <button
-                onClick={() => handleTimestampClick(insight.timestamp_seconds)}
-                className="flex items-center gap-1 px-2 py-1 bg-[#077331] text-white rounded text-sm hover:bg-[#055a24] transition-colors shrink-0"
-                title={`Jump to ${insight.time_formatted}`}
-              >
-                <Play className="h-3 w-3" />
-                {insight.time_formatted}
-              </button>
+            {insight.timestamp_seconds && clickedTimestamp === insight.timestamp_seconds && (
+              <div className="text-xs text-blue-600 italic px-3 py-2 border-t border-blue-200 bg-blue-50">
+                We've moved the video to this point, however, you'll need to scroll up and hit play.
+              </div>
             )}
           </div>
         ))}

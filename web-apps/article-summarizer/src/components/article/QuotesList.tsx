@@ -6,9 +6,10 @@ interface QuotesListProps {
   quotes: Quote[]
   onTimestampClick?: (seconds: number) => void
   searchQuery?: string
+  clickedTimestamp?: number | null
 }
 
-export default function QuotesList({ quotes, onTimestampClick, searchQuery }: QuotesListProps) {
+export default function QuotesList({ quotes, onTimestampClick, searchQuery, clickedTimestamp }: QuotesListProps) {
   if (!quotes || quotes.length === 0) {
     return null
   }
@@ -68,6 +69,12 @@ export default function QuotesList({ quotes, onTimestampClick, searchQuery }: Qu
                 <p className="text-xs text-gray-500 mt-2">
                   <HighlightedText text={quote.context} query={searchQuery} />
                 </p>
+              )}
+
+              {quote.timestamp_seconds !== null && quote.timestamp_seconds !== undefined && clickedTimestamp === quote.timestamp_seconds && (
+                <div className="text-xs text-blue-600 italic mt-2 pt-2 border-t border-blue-200 bg-blue-50 -mx-4 -mb-4 px-4 py-2 rounded-b-lg">
+                  We've moved the video to this point, however, you'll need to scroll up and hit play.
+                </div>
               )}
             </div>
           </div>

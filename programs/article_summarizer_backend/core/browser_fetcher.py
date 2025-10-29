@@ -107,12 +107,64 @@ class BrowserFetcher:
                     if not success:
                         self.logger.warning("⚠️ [BROWSER FETCH ASYNC] Content did not load within timeout")
 
+                    # Wait for potential dynamic video embeds (e.g., Loom iframes)
+                    try:
+                        self.logger.info(f"⏳ [BROWSER FETCH ASYNC] Waiting for dynamic content (iframes)...")
+                        await page.wait_for_selector('iframe', timeout=5000)
+                        self.logger.info(f"✅ [BROWSER FETCH ASYNC] Iframe(s) detected")
+                        # Wait a bit more for iframe content to fully load
+                        await page.wait_for_timeout(2000)
+
+                        # Extract iframe and surrounding context using JavaScript
+                        video_info = await page.evaluate("""
+                            () => {
+                                const iframes = document.querySelectorAll('iframe');
+                                const videoData = [];
+                                iframes.forEach(iframe => {
+                                    const src = iframe.src || iframe.getAttribute('data-src') || '';
+                                    const parent = iframe.parentElement;
+                                    const parentHtml = parent ? parent.outerHTML.substring(0, 500) : '';
+                                    videoData.push({
+                                        src: src,
+                                        parentHtml: parentHtml
+                                    });
+                                });
+                                return videoData;
+                            }
+                        """)
+
+                        if video_info:
+                            self.logger.info(f"📹 [VIDEO EMBEDS] Found {len(video_info)} iframes")
+                            for i, vid in enumerate(video_info[:3]):
+                                src_preview = vid['src'][:100] if vid['src'] else 'no-src'
+                                self.logger.info(f"   Iframe {i+1}: {src_preview}...")
+                                # Check if parent HTML contains loom.com references
+                                if 'loom.com' in vid.get('parentHtml', '').lower():
+                                    self.logger.info(f"   🎯 Found loom.com reference in parent HTML")
+
+                    except Exception as e:
+                        self.logger.info(f"ℹ️ [BROWSER FETCH ASYNC] No iframes detected or timeout: {e}")
+
                     # Take screenshot for debugging
                     screenshot_path = await self._take_screenshot_async(page, url)
                     self.logger.info(f"📸 [BROWSER FETCH ASYNC] Screenshot saved: {screenshot_path}")
 
-                    # Extract HTML
-                    html_content = await page.content()
+                    # Extract HTML - use evaluate to get the full DOM including all attributes
+                    # document.documentElement.outerHTML captures everything including data attributes
+                    html_content = await page.evaluate("() => document.documentElement.outerHTML")
+                    self.logger.info(f"✅ [HTML EXTRACTION] Extracted {len(html_content)} chars using document.outerHTML")
+
+                    # If we have original HTML with video URLs, prefer that for video detection
+                    # (Some sites like GitBook use iframe.ly which replaces URLs after JS runs)
+                    if hasattr(page, '_original_html') and page._original_html:
+                        self.logger.info(f"✅ [USING ORIGINAL HTML] Using original response HTML (contains video URLs before JS modification)")
+                        html_content = page._original_html
+                    elif hasattr(page, '_api_responses_with_video') and page._api_responses_with_video:
+                        # If video URLs were found in API responses, inject them into the HTML
+                        self.logger.info(f"✅ [USING API DATA] Found {len(page._api_responses_with_video)} API responses with video URLs")
+                        # Append the API response data to the HTML for video detection
+                        for api_resp in page._api_responses_with_video[:3]:
+                            html_content += f"\n<!-- API Response Data: {api_resp['text'][:1000]} -->"
 
                     # Try to detect logged-in user from page content
                     logged_in_user = await self._detect_logged_in_user_from_page_async(page)

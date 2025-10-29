@@ -31,6 +31,7 @@ export default function ArticlePage() {
   const [jumpToTimeFunc, setJumpToTimeFunc] = useState<((seconds: number) => void) | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const [highlightTerms, setHighlightTerms] = useState<string>('')
+  const [clickedTimestamp, setClickedTimestamp] = useState<number | null>(null)
 
   // Use extracted terms from URL (passed from search results)
   useEffect(() => {
@@ -51,15 +52,16 @@ export default function ArticlePage() {
     }
   }, [params.id])
 
-  // Set up YouTube video player with 2x speed
+  // Set up video player (YouTube, Loom, Wistia, etc.) with 2x speed where supported
   useEffect(() => {
     if (article && article.video_id && contentRef.current) {
       let player: any = null
+      const platform = article.platform || 'youtube'
 
       const setupYouTubePlayer = () => {
-        const playerContainer = document.getElementById('youtube-player-container')
+        const playerContainer = document.getElementById('video-player-container')
         if (!playerContainer) {
-          console.warn('YouTube player container not found')
+          console.warn('Video player container not found')
           return
         }
 
@@ -108,17 +110,98 @@ export default function ArticlePage() {
         }
       }
 
+      const setupGenericPlayer = () => {
+        const playerContainer = document.getElementById('video-player-container')
+        if (!playerContainer) {
+          console.warn('Video player container not found')
+          return
+        }
+
+        // Clear existing content
+        playerContainer.innerHTML = ''
+
+        // Create iframe for generic video embed (Loom, Wistia, etc.)
+        const iframe = document.createElement('iframe')
+        iframe.style.width = '100%'
+        iframe.style.height = '100%'
+        iframe.style.border = 'none'
+        iframe.allowFullscreen = true
+        iframe.id = 'generic-video-player'
+        // Allow autoplay for timestamp jumping
+        iframe.setAttribute('allow', 'autoplay; fullscreen')
+
+        // Platform-specific embed URLs
+        const embedUrls: { [key: string]: string } = {
+          'loom': `https://www.loom.com/embed/${article.video_id}`,
+          'wistia': `https://fast.wistia.net/embed/iframe/${article.video_id}`,
+          'vimeo': `https://player.vimeo.com/video/${article.video_id}`,
+          'dailymotion': `https://www.dailymotion.com/embed/video/${article.video_id}`
+        }
+
+        const embedUrl = embedUrls[platform.toLowerCase()] || `https://${platform}.com/embed/${article.video_id}`
+        iframe.src = embedUrl
+
+        playerContainer.appendChild(iframe)
+        console.log(`${platform} player embedded (note: 2x speed and timestamp jumping may not be supported)`)
+      }
+
       // Function to jump to specific time in video
       const jumpToTime = (seconds: number) => {
-        const player = (window as any).youtubePlayer
-        if (player && player.seekTo) {
-          player.seekTo(seconds, true)
-          player.playVideo()
-          // Ensure 2x speed after seeking
-          setTimeout(() => {
-            player.setPlaybackRate(2)
-          }, 100)
-          console.log(`Jumped to ${seconds}s at 2x speed`)
+        if (platform === 'youtube') {
+          const player = (window as any).youtubePlayer
+          if (player && player.seekTo) {
+            player.seekTo(seconds, true)
+            player.playVideo()
+            // Ensure 2x speed after seeking
+            setTimeout(() => {
+              player.setPlaybackRate(2)
+            }, 100)
+          }
+        } else if (platform === 'loom') {
+          // Loom supports ?t= URL parameter for timestamp jumping
+          const playerContainer = document.getElementById('video-player-container')
+          if (playerContainer) {
+            // Recreate iframe with new URL to jump to timestamp
+            playerContainer.innerHTML = ''
+
+            const iframe = document.createElement('iframe')
+            iframe.style.width = '100%'
+            iframe.style.height = '100%'
+            iframe.style.border = 'none'
+            iframe.allowFullscreen = true
+            iframe.id = 'generic-video-player'
+            iframe.setAttribute('allow', 'autoplay; fullscreen')
+
+            const baseUrl = `https://www.loom.com/embed/${article.video_id}`
+            iframe.src = `${baseUrl}?t=${seconds}`
+
+            playerContainer.appendChild(iframe)
+
+            // Track which timestamp was clicked
+            setClickedTimestamp(seconds)
+
+            // Clear after 5 seconds
+            setTimeout(() => {
+              setClickedTimestamp(null)
+            }, 5000)
+          }
+        } else if (platform === 'vimeo') {
+          // Vimeo supports #t= hash parameter
+          const iframe = document.getElementById('generic-video-player') as HTMLIFrameElement
+          if (iframe) {
+            const baseUrl = `https://player.vimeo.com/video/${article.video_id}`
+            iframe.src = `${baseUrl}#t=${seconds}s`
+
+            // Track which timestamp was clicked
+            setClickedTimestamp(seconds)
+
+            // Clear after 5 seconds
+            setTimeout(() => {
+              setClickedTimestamp(null)
+            }, 5000)
+          }
+        } else {
+          console.warn(`Timestamp jumping not supported for ${platform} videos.`)
         }
       }
 
@@ -126,18 +209,24 @@ export default function ArticlePage() {
       ;(window as any).jumpToTime = jumpToTime
       setJumpToTimeFunc(() => jumpToTime)
 
-      // Load YouTube API if not already loaded
-      if (!window.YT) {
-        const script = document.createElement('script')
-        script.src = 'https://www.youtube.com/iframe_api'
-        script.async = true
-        document.head.appendChild(script)
+      // Set up player based on platform
+      if (platform === 'youtube') {
+        // Load YouTube API if not already loaded
+        if (!window.YT) {
+          const script = document.createElement('script')
+          script.src = 'https://www.youtube.com/iframe_api'
+          script.async = true
+          document.head.appendChild(script)
 
-        ;(window as any).onYouTubeIframeAPIReady = () => {
+          ;(window as any).onYouTubeIframeAPIReady = () => {
+            setupYouTubePlayer()
+          }
+        } else {
           setupYouTubePlayer()
         }
       } else {
-        setupYouTubePlayer()
+        // Use generic iframe embed for other platforms
+        setupGenericPlayer()
       }
 
       // Cleanup function
@@ -329,8 +418,8 @@ export default function ArticlePage() {
           <div className="space-y-2">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Video</h3>
             <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-              <div id="youtube-player-container" className="absolute top-0 left-0 w-full h-full">
-                {/* YouTube player will be injected here */}
+              <div id="video-player-container" className="absolute top-0 left-0 w-full h-full">
+                {/* Video player (YouTube, Loom, Wistia, etc.) will be injected here */}
               </div>
             </div>
           </div>
@@ -402,6 +491,7 @@ export default function ArticlePage() {
                 article={article}
                 onTimestampClick={jumpToTimeFunc || undefined}
                 searchQuery={highlightTerms}
+                clickedTimestamp={clickedTimestamp}
               />
               {/* Image Gallery - show extracted images */}
               {article.images && article.images.length > 0 && (
@@ -412,6 +502,7 @@ export default function ArticlePage() {
 
           {activeTab === 'transcript' && article.transcript_text && (
             <div className="space-y-6">
+
               {/* Article metadata */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex flex-wrap gap-4 text-sm text-gray-600">
@@ -444,16 +535,23 @@ export default function ArticlePage() {
                       : `${timestampMatch[1]}:${timestampMatch[2]}`
 
                     return (
-                      <div key={index} className="flex gap-3">
-                        <button
-                          onClick={() => jumpToTimeFunc?.(totalSeconds)}
-                          className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm flex-shrink-0 cursor-pointer"
-                        >
-                          [{timeDisplay}]
-                        </button>
-                        <span className="text-gray-700 leading-relaxed">
-                          <HighlightedText text={text} query={highlightTerms} />
-                        </span>
+                      <div key={index}>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => jumpToTimeFunc?.(totalSeconds)}
+                            className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm flex-shrink-0 cursor-pointer"
+                          >
+                            [{timeDisplay}]
+                          </button>
+                          <span className="text-gray-700 leading-relaxed">
+                            <HighlightedText text={text} query={highlightTerms} />
+                          </span>
+                        </div>
+                        {clickedTimestamp === totalSeconds && (
+                          <div className="ml-16 mt-1 text-blue-600 text-sm italic">
+                            We've moved the video to this point, however, you'll need to scroll up and hit play.
+                          </div>
+                        )}
                       </div>
                     )
                   }

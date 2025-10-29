@@ -120,7 +120,13 @@ class VideoContextBuilder:
         Returns:
             Formatted context string for video content
         """
-        video_urls = metadata.get('media_info', {}).get('youtube_urls', [])
+        # Get video URLs from any platform (youtube_urls, loom_urls, vimeo_urls, etc.)
+        media_info = metadata.get('media_info', {})
+        video_urls = []
+        for key in media_info.keys():
+            if key.endswith('_urls'):
+                video_urls.extend(media_info[key])
+
         transcripts = metadata.get('transcripts', {})
         article_text = metadata.get('article_text', 'Content not available')
 
@@ -180,7 +186,8 @@ ARTICLE TEXT CONTENT:
         if not transcript_data or not transcript_data.get('success'):
             return ""
 
-        transcript = transcript_data.get('transcript', [])
+        # Handle both YouTube API format ('transcript') and DeepGram format ('segments')
+        transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
         formatted_text = []
 
         for entry in transcript:
@@ -278,7 +285,8 @@ Please analyze the article text to provide comprehensive insights about the audi
         if not transcript_data or not transcript_data.get('success'):
             return ""
 
-        transcript = transcript_data.get('transcript', [])
+        # Handle both YouTube API format ('transcript') and DeepGram format ('segments')
+        transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
         formatted_text = []
 
         for entry in transcript:
