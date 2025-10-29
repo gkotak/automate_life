@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# Pre-commit hook to run pytest tests for article_summarizer_backend
+#
+# This hook runs automatically before every git commit.
+# To bypass temporarily: git commit --no-verify
+#
+
+set -e
+
+echo "🧪 Running article_summarizer_backend tests..."
+
+# Change to backend directory
+cd programs/article_summarizer_backend
+
+# Run tests (fast, no coverage to keep it speedy)
+python3 -m pytest tests/unit/ -q --no-cov
+
+# Exit code from pytest determines if commit proceeds
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    echo "✅ All tests passed!"
+else
+    echo "❌ Tests failed. Fix failures before committing."
+    echo "   To bypass: git commit --no-verify"
+fi
+
+exit $exit_code
