@@ -88,12 +88,11 @@ jobs:
 To enable automatic test execution before every commit:
 
 ```bash
-# Link the pre-commit hook
-cd /Users/gauravkotak/cursor-projects-1/automate_life
-ln -sf ../../.githooks/pre-commit-pytest .git/hooks/pre-commit-pytest
-
-# Or configure git to use .githooks directory
+# Option 1: Configure git to use .githooks directory (recommended)
 git config core.hooksPath .githooks
+
+# Option 2: Manually symlink the hook
+ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
 ```
 
 To bypass the hook (not recommended):
