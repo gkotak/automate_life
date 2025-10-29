@@ -547,16 +547,10 @@ class ArticleProcessor(BaseProcessor):
             if progress_callback:
                 await progress_callback("video_fallback_whisper", {"video_id": video_id})
 
-            # Build the full video URL based on platform
-            video_url = self._build_video_url(platform, video_id)
-
             # Try to download audio using yt-dlp (supports many platforms and HLS streams)
             try:
                 import tempfile
                 import os
-
-                # yt-dlp can handle YouTube, Vimeo, Loom, and many other platforms (including HLS)
-                self.logger.info(f"      🎵 [FALLBACK] Using yt-dlp to download audio from: {video_url[:80]}...")
 
                 # Send progress callback: downloading audio
                 if progress_callback:
@@ -566,8 +560,34 @@ class ArticleProcessor(BaseProcessor):
                 temp_dir = tempfile.gettempdir()
                 temp_template = os.path.join(temp_dir, f'ytdlp_audio_{video_id}')
 
-                # Download using yt-dlp (handles HLS streams properly)
-                temp_path = self._download_video_with_ytdlp(video_url, temp_template)
+                # For platforms like Vimeo, try embed URL first (often publicly accessible)
+                # Fall back to direct URL if embed fails
+                urls_to_try = []
+
+                if platform == 'vimeo':
+                    # Try embed URL first for Vimeo (more likely to work without auth)
+                    embed_url = f'https://player.vimeo.com/video/{video_id}'
+                    direct_url = f'https://vimeo.com/{video_id}'
+                    urls_to_try = [embed_url, direct_url]
+                    self.logger.info(f"      🎵 [VIMEO] Will try embed URL first, then direct URL")
+                else:
+                    # For other platforms, use the standard URL
+                    urls_to_try = [self._build_video_url(platform, video_id)]
+
+                temp_path = None
+                last_error = None
+
+                for idx, video_url in enumerate(urls_to_try):
+                    self.logger.info(f"      🎵 [FALLBACK] Attempt {idx + 1}/{len(urls_to_try)}: {video_url[:80]}...")
+
+                    # Download using yt-dlp (handles HLS streams properly)
+                    # Pass base_url as referer for embedded videos (helps with Vimeo)
+                    temp_path = self._download_video_with_ytdlp(video_url, temp_template, referer=base_url)
+                    if temp_path:
+                        break  # Success! Stop trying
+                    else:
+                        last_error = f"Failed to download from {video_url[:50]}..."
+                        self.logger.info(f"      ⚠️ Attempt {idx + 1} failed, trying next URL...")
                 if temp_path:
                     # Check file size
                     file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
@@ -1149,13 +1169,14 @@ class ArticleProcessor(BaseProcessor):
 
         return platform_urls.get(platform.lower(), f"https://{platform}.com/{video_id}")
 
-    def _download_video_with_ytdlp(self, video_url: str, output_template: str) -> Optional[str]:
+    def _download_video_with_ytdlp(self, video_url: str, output_template: str, referer: Optional[str] = None) -> Optional[str]:
         """
         Download video/audio using yt-dlp (handles HLS streams, not just direct URLs)
 
         Args:
             video_url: Video URL to download
             output_template: Path template where to save the audio file (extension will be added by yt-dlp)
+            referer: Optional referer URL for platforms that require it (e.g., embedded Vimeo)
 
         Returns:
             Path to downloaded file if successful, None otherwise
@@ -1171,9 +1192,17 @@ class ArticleProcessor(BaseProcessor):
                 'outtmpl': output_template,
                 'quiet': True,
                 'no_warnings': True,
+                'nocheckcertificate': True,  # Bypass SSL certificate verification
+                'no_check_certificate': True,  # Alternative flag
+                'ignoreerrors': False,  # We want to see errors to handle them
                 # Don't use postprocessors - DeepGram can handle various audio formats
                 # This avoids dependency on ffmpeg/ffprobe
             }
+
+            # Add referer if provided (helps with embedded videos like Vimeo)
+            if referer:
+                ydl_opts['http_headers'] = {'Referer': referer, 'Origin': referer}
+                self.logger.info(f"      🔧 [YT-DLP] Using referer/origin: {referer[:80]}...")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([video_url])

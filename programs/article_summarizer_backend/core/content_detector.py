@@ -40,6 +40,97 @@ class ContentTypeDetector:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.session = session if session else requests.Session()
 
+    def _extract_video_from_iframe_src(self, src: str) -> Optional[Dict]:
+        """
+        Generic function to extract video platform and ID from iframe src URL
+
+        Supports: YouTube, Loom, Vimeo, Wistia, Dailymotion, and more
+
+        Args:
+            src: The iframe src URL
+
+        Returns:
+            Video data dict with platform, video_id, url, and embed_url, or None if not recognized
+        """
+        # Platform configurations: (domain_keyword, regex_patterns, url_template, embed_url_template)
+        platforms = {
+            'loom': {
+                'domains': ['loom.com'],
+                'patterns': [
+                    r'loom\.com/embed/([a-zA-Z0-9_-]+)',
+                    r'loom\.com/share/([a-zA-Z0-9_-]+)',
+                    r'loom\.com/v/([a-zA-Z0-9_-]+)'
+                ],
+                'url_template': 'https://www.loom.com/share/{video_id}',
+                'embed_template': 'https://www.loom.com/embed/{video_id}'
+            },
+            'vimeo': {
+                'domains': ['vimeo.com'],
+                'patterns': [
+                    r'player\.vimeo\.com/video/([0-9]+)',
+                    r'vimeo\.com/video/([0-9]+)',
+                    r'vimeo\.com/([0-9]+)'
+                ],
+                'url_template': 'https://vimeo.com/{video_id}',
+                'embed_template': 'https://player.vimeo.com/video/{video_id}'
+            },
+            'youtube': {
+                'domains': ['youtube.com', 'youtube-nocookie.com'],
+                'patterns': [
+                    r'youtube\.com/embed/([a-zA-Z0-9_-]+)',
+                    r'youtube-nocookie\.com/embed/([a-zA-Z0-9_-]+)'
+                ],
+                'url_template': 'https://www.youtube.com/watch?v={video_id}',
+                'embed_template': 'https://www.youtube.com/embed/{video_id}'
+            },
+            'wistia': {
+                'domains': ['wistia.com', 'wistia.net'],
+                'patterns': [
+                    r'fast\.wistia\.(?:net|com)/embed/iframe/([a-zA-Z0-9]+)',
+                    r'wistia\.(?:net|com)/medias/([a-zA-Z0-9]+)'
+                ],
+                'url_template': 'https://fast.wistia.net/embed/iframe/{video_id}',
+                'embed_template': 'https://fast.wistia.net/embed/iframe/{video_id}'
+            },
+            'dailymotion': {
+                'domains': ['dailymotion.com'],
+                'patterns': [
+                    r'dailymotion\.com/embed/video/([a-zA-Z0-9]+)',
+                    r'dailymotion\.com/video/([a-zA-Z0-9]+)'
+                ],
+                'url_template': 'https://www.dailymotion.com/video/{video_id}',
+                'embed_template': 'https://www.dailymotion.com/embed/video/{video_id}'
+            }
+        }
+
+        # Try each platform
+        for platform_name, config in platforms.items():
+            # Check if any domain keyword is in the src
+            if any(domain in src for domain in config['domains']):
+                self.logger.info(f"🎯 [{platform_name.upper()} DETECTED] Found {platform_name} iframe: {src[:100]}...")
+
+                # Try each pattern for this platform
+                video_id = None
+                for pattern in config['patterns']:
+                    match = re.search(pattern, src, re.IGNORECASE)
+                    if match:
+                        video_id = match.group(1)
+                        break
+
+                if video_id:
+                    return {
+                        'video_id': video_id,
+                        'url': config['url_template'].format(video_id=video_id),
+                        'embed_url': config['embed_template'].format(video_id=video_id),
+                        'platform': platform_name,
+                        'context': 'iframe_embed'
+                    }
+                else:
+                    self.logger.warning(f"⚠️ [{platform_name.upper()}] Found {platform_name} URL but couldn't extract video ID: {src}")
+                    return None
+
+        return None
+
     def _resolve_iframely_embed(self, iframe_url: str) -> Optional[Dict]:
         """
         Resolve an iframe.ly URL to find the actual video it embeds
@@ -382,59 +473,12 @@ class ContentTypeDetector:
                 else:
                     self.logger.info(f"⚠️ [IFRAME.LY] Could not resolve iframe.ly embed to a video")
 
-            # Loom iframe patterns (check first - priority)
-            # More flexible pattern to catch various Loom URLs
-            if 'loom.com' in src:
-                self.logger.info(f"🎯 [LOOM DETECTED] Found Loom iframe: {src}")
-                # Extract video ID from various Loom URL formats
-                loom_patterns = [
-                    r'loom\.com/embed/([a-zA-Z0-9]+)',
-                    r'loom\.com/share/([a-zA-Z0-9]+)',
-                    r'loom\.com/v/([a-zA-Z0-9]+)'
-                ]
-
-                video_id = None
-                for pattern in loom_patterns:
-                    match = re.search(pattern, src)
-                    if match:
-                        video_id = match.group(1)
-                        break
-
-                if video_id:
-                    video_data = {
-                        'video_id': video_id,
-                        'url': f'https://www.loom.com/share/{video_id}',
-                        'embed_url': f'https://www.loom.com/embed/{video_id}',
-                        'platform': 'loom',
-                        'context': 'iframe_embed'
-                    }
-                    video_urls.append(video_data)
-                    self.logger.info(f"✅ [IFRAME FOUND] Loom video ID: {video_id}")
-                    return video_urls  # Return first Loom video found
-                else:
-                    self.logger.warning(f"⚠️ [LOOM] Found Loom URL but couldn't extract video ID: {src}")
-
-            # YouTube iframe patterns
-            youtube_patterns = [
-                r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]+)',
-                r'(?:https?://)?(?:www\.)?youtube-nocookie\.com/embed/([a-zA-Z0-9_-]+)'
-            ]
-
-            for pattern in youtube_patterns:
-                match = re.search(pattern, src)
-                if match:
-                    video_id = match.group(1)
-                    if any(domain in src for domain in ['youtube.com/embed', 'youtube-nocookie.com/embed']):
-                        video_data = {
-                            'video_id': video_id,
-                            'url': f'https://www.youtube.com/watch?v={video_id}',
-                            'embed_url': src,
-                            'platform': 'youtube',
-                            'context': 'iframe_embed'
-                        }
-                        video_urls.append(video_data)
-                        self.logger.info(f"🎯 [IFRAME FOUND] YouTube: {video_id}")
-                        break
+            # Try to extract video from iframe src using generic platform detection
+            video_data = self._extract_video_from_iframe_src(src)
+            if video_data:
+                video_urls.append(video_data)
+                self.logger.info(f"✅ [IFRAME FOUND] {video_data['platform'].title()} video ID: {video_data['video_id']}")
+                return video_urls  # Return first video found
 
         return video_urls
 

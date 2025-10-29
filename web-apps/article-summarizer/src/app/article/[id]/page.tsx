@@ -142,7 +142,25 @@ export default function ArticlePage() {
         iframe.src = embedUrl
 
         playerContainer.appendChild(iframe)
-        console.log(`${platform} player embedded (note: 2x speed and timestamp jumping may not be supported)`)
+
+        // For Vimeo, set playback speed to 2x when player is ready
+        if (platform === 'vimeo') {
+          iframe.onload = () => {
+            // Wait a bit for the Vimeo player to initialize
+            setTimeout(() => {
+              if (iframe.contentWindow) {
+                const speedMessage = {
+                  method: 'setPlaybackRate',
+                  value: 2
+                }
+                iframe.contentWindow.postMessage(JSON.stringify(speedMessage), 'https://player.vimeo.com')
+                console.log('Vimeo player ready - set to 2x speed')
+              }
+            }, 1000)
+          }
+        }
+
+        console.log(`${platform} player embedded`)
       }
 
       // Function to jump to specific time in video
@@ -186,11 +204,30 @@ export default function ArticlePage() {
             }, 5000)
           }
         } else if (platform === 'vimeo') {
-          // Vimeo supports #t= hash parameter
+          // Vimeo Player API: use postMessage to control the player
           const iframe = document.getElementById('generic-video-player') as HTMLIFrameElement
-          if (iframe) {
-            const baseUrl = `https://player.vimeo.com/video/${article.video_id}`
-            iframe.src = `${baseUrl}#t=${seconds}s`
+          if (iframe && iframe.contentWindow) {
+            // Use Vimeo Player API to seek to timestamp
+            const message = {
+              method: 'setCurrentTime',
+              value: seconds
+            }
+            iframe.contentWindow.postMessage(JSON.stringify(message), 'https://player.vimeo.com')
+
+            // Set playback speed to 2x
+            setTimeout(() => {
+              const speedMessage = {
+                method: 'setPlaybackRate',
+                value: 2
+              }
+              iframe.contentWindow?.postMessage(JSON.stringify(speedMessage), 'https://player.vimeo.com')
+            }, 100)
+
+            // Also trigger play
+            setTimeout(() => {
+              const playMessage = { method: 'play' }
+              iframe.contentWindow?.postMessage(JSON.stringify(playMessage), 'https://player.vimeo.com')
+            }, 200)
 
             // Track which timestamp was clicked
             setClickedTimestamp(seconds)
@@ -417,6 +454,11 @@ export default function ArticlePage() {
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="space-y-2">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Video</h3>
+            {article.platform === 'youtube' && (
+              <p className="text-xs sm:text-sm text-gray-600">
+                ⚡ Video automatically plays at 2x speed for efficient watching. Use player controls to adjust.
+              </p>
+            )}
             <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
               <div id="video-player-container" className="absolute top-0 left-0 w-full h-full">
                 {/* Video player (YouTube, Loom, Wistia, etc.) will be injected here */}
