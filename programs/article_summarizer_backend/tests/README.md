@@ -6,10 +6,12 @@ This directory contains the test suite for the article_summarizer_backend. Tests
 
 ## Test Statistics
 
-- **Total Tests:** 97
-- **Execution Time:** ~0.12 seconds
+- **Total Tests:** 149 (Phase 1: 97, Phase 2: 52)
+- **Execution Time:** ~0.14 seconds
 - **Pass Rate:** 100%
-- **Coverage:** 87% (core/url_utils), comprehensive coverage for text_utils and content_detector
+- **Coverage:**
+  - Phase 1: 87% (core/url_utils), ~95% (core/text_utils), ~80% (core/content_detector)
+  - Phase 2: 31% (processors/transcript_processor), 97% (core/source_extractor)
 
 ## Running Tests
 
@@ -105,15 +107,17 @@ git commit --no-verify -m "Emergency fix"
 ```
 tests/
 ├── __init__.py
-├── conftest.py                    # Shared fixtures
-├── README.md                      # This file
-├── PHASE1_SUMMARY.md             # Phase 1 completion report
-├── unit/                         # Unit tests (fast, no external deps)
+├── conftest.py                      # Shared fixtures
+├── README.md                        # This file
+├── PHASE1_SUMMARY.md               # Phase 1 completion report
+├── unit/                           # Unit tests (fast, no external deps)
 │   ├── __init__.py
-│   ├── test_url_utils.py         # 30 tests - URL utilities
-│   ├── test_text_utils.py        # 37 tests - Text processing
-│   └── test_content_detector.py  # 30 tests - Video platform detection
-└── integration/                  # Integration tests (coming in Phase 2-4)
+│   ├── test_url_utils.py           # 30 tests - URL utilities
+│   ├── test_text_utils.py          # 37 tests - Text processing
+│   ├── test_content_detector.py    # 30 tests - Video platform detection
+│   ├── test_transcript_processor.py # 10 tests - YouTube transcript extraction (mocked)
+│   └── test_source_extractor.py    # 42 tests - Source name extraction and normalization
+└── integration/                    # Integration tests (coming in Phase 3-4)
     └── __init__.py
 ```
 
@@ -177,13 +181,20 @@ def test_with_sample_titles(sample_titles):
 
 ## Test Coverage
 
-### Current Coverage (Phase 1)
+### Current Coverage
 
+**Phase 1 (Core Utilities):**
 | Module | Coverage | Status |
 |--------|----------|--------|
 | core/url_utils.py | 87% | ✅ Excellent |
 | core/text_utils.py | ~95% | ✅ Excellent |
 | core/content_detector.py | ~80% | ✅ Good |
+
+**Phase 2 (Data Processors):**
+| Module | Coverage | Status |
+|--------|----------|--------|
+| processors/transcript_processor.py | 31% | ⚠️ Basic (mocked API calls) |
+| core/source_extractor.py | 97% | ✅ Excellent |
 
 ### Viewing Coverage Reports
 
@@ -235,25 +246,25 @@ python3 -m pytest tests/unit/
 ### Benchmark (M1 MacBook Pro)
 
 ```
-97 tests in 0.12s
-- test_url_utils.py: 30 tests in 0.04s
-- test_text_utils.py: 37 tests in 0.05s
-- test_content_detector.py: 30 tests in 0.03s
+149 tests in 0.14s
+Phase 1 (97 tests in ~0.08s):
+- test_url_utils.py: 30 tests
+- test_text_utils.py: 37 tests
+- test_content_detector.py: 30 tests
+
+Phase 2 (52 tests in ~0.06s):
+- test_transcript_processor.py: 10 tests
+- test_source_extractor.py: 42 tests
 ```
 
 Tests are optimized for speed:
 - No file I/O operations
 - No network requests
 - No database queries
-- All external dependencies mocked
+- All external dependencies mocked (YouTube API, HTTP requests)
 - Fixtures are session-scoped where possible
 
 ## Next Steps
-
-### Phase 2: Data Processors (Coming Soon)
-
-- `test_transcript_processor.py` - YouTube transcript fetching (mocked)
-- `test_source_extractor.py` - Source name extraction
 
 ### Phase 3: Integration Tests (Coming Soon)
 
