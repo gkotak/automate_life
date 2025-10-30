@@ -95,80 +95,136 @@ class PodcastCheckerService:
 
     async def _fetch_in_progress_episodes(self) -> List[Dict]:
         """
-        Fetch listening history from PocketCasts web page using centralized browser_fetcher
+        Fetch listening history from PocketCasts web page
 
         Returns:
             List of all episodes from history
         """
-        from core.browser_fetcher import BrowserFetcher
         from bs4 import BeautifulSoup
         import json
 
-        # Get cookies from auth
-        cookies = self.podcast_auth.get_cookies()
-        if not cookies:
-            self.logger.error("Failed to get authentication cookies")
+        # Fetch history page HTML (authentication happens inside this method)
+        content = await self.podcast_auth.fetch_history_page()
+        if not content:
+            self.logger.error("Failed to fetch history page")
             return []
 
-        # Use centralized browser fetcher
-        browser_fetcher = BrowserFetcher(self.logger)
-        if not browser_fetcher.is_available():
-            self.logger.error("Browser fetcher not available (Playwright not installed)")
-            return []
-
-        self.logger.info("Fetching listening history from PocketCasts using centralized browser fetcher...")
+        self.logger.info("Parsing history page for episodes...")
 
         try:
-            # Fetch page content using browser fetcher
-            history_url = "https://pocketcasts.com/history"
-            success, content, message = await browser_fetcher.fetch_with_playwright_async(history_url, cookies)
-
-            if not success or not content:
-                self.logger.error(f"Failed to fetch history page: {message}")
-                return []
-
-            # Parse the page to extract episode data
-            soup = BeautifulSoup(content, 'html.parser')
+            # Check if content is JSON (from API interception) or HTML
             episodes = []
+
+            try:
+                # Try parsing as JSON first (from API interception)
+                api_responses = json.loads(content)
+                self.logger.info(f"Content is JSON with {len(api_responses)} API responses")
+
+                # Extract episodes from API responses - ONLY from history endpoint
+                seen_episode_ids = set()
+                history_responses = [r for r in api_responses if isinstance(r, dict) and '/user/history' in r.get('url', '')]
+
+                self.logger.info(f"Found {len(history_responses)} history API responses (out of {len(api_responses)} total)")
+
+                for idx, response in enumerate(history_responses):
+                    url = response.get('url', '')
+                    self.logger.info(f"Processing history response {idx + 1}/{len(history_responses)}: {url}")
+
+                    # Handle wrapped response format (with url, status, data)
+                    data = response.get('data', response)
+
+                    if 'episodes' in data:
+                        # Deduplicate episodes by ID
+                        new_episodes = []
+                        for ep in data['episodes']:
+                            ep_id = ep.get('uuid', '')
+                            if ep_id and ep_id not in seen_episode_ids:
+                                seen_episode_ids.add(ep_id)
+                                new_episodes.append(ep)
+
+                        self.logger.info(f"  └─ {len(data['episodes'])} episodes in response ({len(new_episodes)} new, {len(data['episodes']) - len(new_episodes)} duplicates)")
+                        episodes.extend(new_episodes)
+                    elif 'history' in data:
+                        history_data = data['history']
+                        if isinstance(history_data, list):
+                            self.logger.info(f"  └─ 'history' list with {len(history_data)} items")
+                            episodes.extend(history_data)
+                        elif isinstance(history_data, dict) and 'episodes' in history_data:
+                            self.logger.info(f"  └─ 'history.episodes' with {len(history_data['episodes'])} items")
+                            episodes.extend(history_data['episodes'])
+
+                if episodes:
+                    self.logger.info(f"✅ Extracted {len(episodes)} episodes from API responses")
+                    return episodes
+                else:
+                    self.logger.warning(f"⚠️  No episodes found in {len(api_responses)} API responses")
+
+            except json.JSONDecodeError:
+                # Not JSON, fallback to HTML parsing
+                self.logger.info("Content is not JSON, parsing as HTML...")
+
+            # Parse the page to extract episode data from HTML
+            soup = BeautifulSoup(content, 'html.parser')
 
             # Look for JSON data embedded in script tags
             scripts = soup.find_all('script', type='application/json')
-            for script in scripts:
+            self.logger.info(f"Found {len(scripts)} script tags with type='application/json'")
+
+            for idx, script in enumerate(scripts):
                 try:
+                    if not script.string:
+                        continue
+
                     data = json.loads(script.string)
 
-                    # Navigate through the JSON structure to find episodes
+                    # Log the structure for debugging
                     if isinstance(data, dict):
+                        self.logger.info(f"Script {idx} keys: {list(data.keys())}")
+
                         # Try common paths where episode data might be
                         props = data.get('props', {})
                         page_props = props.get('pageProps', {})
 
-                        # Look for episodes array
+                        if props:
+                            self.logger.info(f"Script {idx} has 'props' with keys: {list(props.keys())}")
+                        if page_props:
+                            self.logger.info(f"Script {idx} pageProps keys: {list(page_props.keys())}")
+
+                        # Look for episodes array in various locations
                         if 'episodes' in page_props:
                             episodes = page_props['episodes']
+                            self.logger.info(f"Found episodes in pageProps.episodes: {len(episodes)} episodes")
                             break
                         elif 'history' in page_props:
                             episodes = page_props.get('history', {}).get('episodes', [])
-                            break
+                            if episodes:
+                                self.logger.info(f"Found episodes in pageProps.history.episodes: {len(episodes)} episodes")
+                                break
                         elif 'initialData' in page_props:
                             initial_data = page_props['initialData']
                             episodes = initial_data.get('episodes', [])
-                            break
+                            if episodes:
+                                self.logger.info(f"Found episodes in pageProps.initialData.episodes: {len(episodes)} episodes")
+                                break
 
                 except Exception as e:
-                    self.logger.debug(f"Error parsing script tag: {e}")
+                    self.logger.debug(f"Error parsing script tag {idx}: {e}")
                     continue
 
             if not episodes:
                 self.logger.warning("No episodes found in page data")
-                self.logger.debug(f"Page title: {soup.title.string if soup.title else 'No title'}")
+                self.logger.info(f"Page title: {soup.title.string if soup.title else 'No title'}")
+                # Save the HTML for manual inspection
+                with open('/tmp/pocketcasts_history_debug.html', 'w', encoding='utf-8') as f:
+                    f.write(content)
+                self.logger.info("Saved HTML to /tmp/pocketcasts_history_debug.html for inspection")
 
             self.logger.info(f"Retrieved {len(episodes)} episodes from history")
 
             return episodes
 
         except Exception as e:
-            self.logger.error(f"Error fetching history: {e}")
+            self.logger.error(f"Error parsing history page: {e}")
             import traceback
             self.logger.debug(traceback.format_exc())
             return []
@@ -243,6 +299,11 @@ class PodcastCheckerService:
             The ID of the saved episode, or None on error
         """
         try:
+            # Handle published_date - convert empty string to None
+            published_date = episode_details.get('published_date')
+            if published_date == '' or not published_date:
+                published_date = None
+
             record = {
                 'url': episode_details['episode_url'],
                 'title': episode_details['episode_title'],
@@ -253,7 +314,7 @@ class PodcastCheckerService:
                 'platform': 'pocketcasts',
                 'source_feed': None,
                 'found_at': datetime.now().isoformat(),
-                'published_date': episode_details.get('published_date'),
+                'published_date': published_date,
                 'status': 'discovered',
                 'podcast_uuid': episode_details['podcast_uuid'],
                 'episode_uuid': episode_details['episode_uuid'],
