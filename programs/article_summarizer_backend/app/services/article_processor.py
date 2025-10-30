@@ -835,6 +835,19 @@ class ArticleProcessor(BaseProcessor):
             # Ensure summary is properly formatted as HTML
             if 'summary' in parsed_json:
                 summary = parsed_json['summary']
+
+                # Check if summary itself is a JSON string (sometimes Claude wraps incorrectly)
+                if isinstance(summary, str) and summary.strip().startswith('{'):
+                    try:
+                        nested_json = json.loads(summary)
+                        if isinstance(nested_json, dict) and 'summary' in nested_json:
+                            self.logger.warning("   ⚠️ [JSON] Summary contained nested JSON - extracting inner summary")
+                            summary = nested_json['summary']
+                            parsed_json['summary'] = summary
+                    except json.JSONDecodeError:
+                        pass  # Not actually JSON, continue normally
+
+                # Format as HTML if not already formatted
                 if not any(tag in summary for tag in ['<p>', '<div>', '<h1>', '<h2>', '<h3>']):
                     parsed_json['summary'] = self._format_summary_as_html(summary)
             self.logger.info("   ✅ [JSON] Successfully parsed Claude response")
