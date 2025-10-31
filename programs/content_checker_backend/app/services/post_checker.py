@@ -172,6 +172,52 @@ class PostCheckerService:
 
         return False
 
+    def _discover_rss_feed(self, url: str, response) -> Optional[str]:
+        """
+        Auto-discover RSS feed URL from HTML page
+        Looks for <link> tags in the HTML head that point to RSS/Atom feeds
+        """
+        try:
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Look for RSS/Atom feed links in <head>
+            feed_link_types = [
+                'application/rss+xml',
+                'application/atom+xml',
+                'application/xml'
+            ]
+
+            for link in soup.find_all('link', type=feed_link_types):
+                href = link.get('href')
+                if href:
+                    # Convert relative URLs to absolute
+                    feed_url = urljoin(url, href)
+                    self.logger.info(f"Found RSS feed link: {feed_url}")
+                    return feed_url
+
+            # Fallback: try common RSS feed patterns
+            parsed_url = urlparse(url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            common_feed_paths = ['/feed', '/rss', '/feed.xml', '/rss.xml', '/atom.xml']
+
+            for feed_path in common_feed_paths:
+                potential_feed = base_url + feed_path
+                try:
+                    feed_response = self.session.head(potential_feed, timeout=Config.SHORT_TIMEOUT)
+                    if feed_response.status_code == 200:
+                        content_type = feed_response.headers.get('content-type', '').lower()
+                        if any(t in content_type for t in ['xml', 'rss', 'atom']):
+                            self.logger.info(f"Found RSS feed via common path: {potential_feed}")
+                            return potential_feed
+                except:
+                    continue
+
+            return None
+
+        except Exception as e:
+            self.logger.warning(f"Error discovering RSS feed: {e}")
+            return None
+
     def _extract_posts_from_feed(self, url: str, platform_type: str) -> List[Dict]:
         """Extract posts from a content source (RSS feed or webpage)"""
         try:
@@ -182,55 +228,131 @@ class PostCheckerService:
             if self._is_rss_feed(url, response):
                 return self._extract_posts_from_rss_feed(url)
 
+            # Try to auto-discover RSS feed from HTML page
+            discovered_feed_url = self._discover_rss_feed(url, response)
+            if discovered_feed_url:
+                self.logger.info(f"Auto-discovered RSS feed: {discovered_feed_url}")
+                return self._extract_posts_from_rss_feed(discovered_feed_url)
+
             # Parse HTML content
             soup = BeautifulSoup(response.content, 'html.parser')
             posts = []
 
             if platform_type == 'substack':
-                post_links = soup.find_all('a', href=True)
+                # Look for article links in main content area, not navigation
+                # Substack typically has articles in <article> or <div class="post"> elements
+                main_content = soup.find('main') or soup.find('article') or soup
+                post_links = main_content.find_all('a', href=True)
+
                 for link in post_links:
                     href = link.get('href')
-                    if href and '/p/' in href:
-                        title = link.get_text().strip()
-                        if title and len(title) > 10:
-                            full_url = urljoin(url, href)
-                            posts.append({
-                                'title': title,
-                                'url': full_url,
-                                'platform': 'substack',
-                                'published': None
-                            })
+                    if not href or '/p/' not in href:
+                        continue
+
+                    title = link.get_text().strip()
+
+                    # Filter out navigation/footer links
+                    if not title or len(title) < 15:  # Increased minimum length
+                        continue
+
+                    # Skip common non-article patterns
+                    skip_patterns = [
+                        'privacy', 'terms', 'about', 'subscribe', 'sign in',
+                        'log in', 'contact', 'settings', 'archive', 'policy'
+                    ]
+                    if any(pattern in title.lower() for pattern in skip_patterns):
+                        continue
+
+                    # Skip if it looks like a navigation element (parent has nav/footer)
+                    parent_classes = ' '.join(link.parent.get('class', [])).lower()
+                    if any(nav in parent_classes for nav in ['nav', 'footer', 'header', 'menu', 'sidebar']):
+                        continue
+
+                    full_url = urljoin(url, href)
+                    posts.append({
+                        'title': title,
+                        'url': full_url,
+                        'platform': 'substack',
+                        'published': None
+                    })
 
             elif platform_type == 'medium':
-                article_links = soup.find_all('a', href=True)
+                # Focus on main content area for Medium
+                main_content = soup.find('main') or soup.find('article') or soup
+                article_links = main_content.find_all('a', href=True)
+
                 for link in article_links:
                     href = link.get('href')
-                    if href and ('/@' in href or '/p/' in href or 'medium.com' in href):
-                        title = link.get_text().strip()
-                        if title and len(title) > 10:
-                            full_url = urljoin(url, href)
-                            posts.append({
-                                'title': title,
-                                'url': full_url,
-                                'platform': 'medium',
-                                'published': None
-                            })
+                    if not href or not ('/@' in href or '/p/' in href or 'medium.com' in href):
+                        continue
+
+                    title = link.get_text().strip()
+
+                    # Filter out short titles and common non-article patterns
+                    if not title or len(title) < 15:
+                        continue
+
+                    skip_patterns = [
+                        'privacy', 'terms', 'about', 'subscribe', 'sign in',
+                        'log in', 'contact', 'settings', 'archive', 'policy'
+                    ]
+                    if any(pattern in title.lower() for pattern in skip_patterns):
+                        continue
+
+                    # Skip navigation elements
+                    parent_classes = ' '.join(link.parent.get('class', [])).lower()
+                    if any(nav in parent_classes for nav in ['nav', 'footer', 'header', 'menu', 'sidebar']):
+                        continue
+
+                    full_url = urljoin(url, href)
+                    posts.append({
+                        'title': title,
+                        'url': full_url,
+                        'platform': 'medium',
+                        'published': None
+                    })
 
             else:
-                # Generic approach - look for article-like links
-                links = soup.find_all('a', href=True)
+                # Generic approach - look for article-like links in main content
+                main_content = soup.find('main') or soup.find('article') or soup
+                links = main_content.find_all('a', href=True)
+
+                skip_href_patterns = [
+                    'javascript:', 'mailto:', '#', 'about', 'contact',
+                    'privacy', 'terms', 'subscribe', 'login', 'signin'
+                ]
+                skip_title_patterns = [
+                    'privacy', 'terms', 'about', 'subscribe', 'sign in',
+                    'log in', 'contact', 'settings', 'archive', 'policy'
+                ]
+
                 for link in links:
                     href = link.get('href')
                     title = link.get_text().strip()
-                    if (href and title and len(title) > 10 and
-                        not any(skip in href.lower() for skip in ['javascript:', 'mailto:', '#', 'about', 'contact'])):
-                        full_url = urljoin(url, href)
-                        posts.append({
-                            'title': title,
-                            'url': full_url,
-                            'platform': 'generic',
-                            'published': None
-                        })
+
+                    # Basic validation
+                    if not href or not title or len(title) < 15:
+                        continue
+
+                    # Skip common non-article patterns
+                    if any(skip in href.lower() for skip in skip_href_patterns):
+                        continue
+
+                    if any(pattern in title.lower() for pattern in skip_title_patterns):
+                        continue
+
+                    # Skip navigation elements
+                    parent_classes = ' '.join(link.parent.get('class', [])).lower()
+                    if any(nav in parent_classes for nav in ['nav', 'footer', 'header', 'menu', 'sidebar']):
+                        continue
+
+                    full_url = urljoin(url, href)
+                    posts.append({
+                        'title': title,
+                        'url': full_url,
+                        'platform': 'generic',
+                        'published': None
+                    })
 
             # Remove duplicates
             seen_urls = set()

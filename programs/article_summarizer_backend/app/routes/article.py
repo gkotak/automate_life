@@ -97,7 +97,8 @@ class ProcessArticleStreamResponse(BaseModel):
 async def process_article_direct(
     url: str,
     api_key: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    force_reprocess: bool = False
 ):
     """
     NEW APPROACH: Process article with generator-driven SSE streaming
@@ -109,6 +110,7 @@ async def process_article_direct(
         url: Article URL to process
         api_key: API key as query parameter
         user_id: Optional user ID for authentication (Supabase auth user)
+        force_reprocess: If True, reprocess article even if it already exists
 
     Returns:
         EventSourceResponse with real-time processing events
@@ -159,27 +161,30 @@ async def process_article_direct(
             # Initialize processor (no event emitter - we're streaming directly)
             processor = ArticleProcessor(event_emitter=None)
 
-            # Check if article already exists
-            existing = processor.check_article_exists(url)
-            if existing:
-                # Emit duplicate detected event
-                yield {
-                    "event": "duplicate_detected",
-                    "data": json.dumps({
-                        "article_id": existing['id'],
-                        "title": existing['title'],
-                        "created_at": existing['created_at'],
-                        "updated_at": existing['updated_at'],
-                        "url": f"/article/{existing['id']}",
-                        "elapsed": elapsed()
-                    })
-                }
-                await asyncio.sleep(0)
+            # Check if article already exists (unless force_reprocess is True)
+            if not force_reprocess:
+                existing = processor.check_article_exists(url)
+                if existing:
+                    # Emit duplicate detected event
+                    yield {
+                        "event": "duplicate_detected",
+                        "data": json.dumps({
+                            "article_id": existing['id'],
+                            "title": existing['title'],
+                            "created_at": existing['created_at'],
+                            "updated_at": existing['updated_at'],
+                            "url": f"/article/{existing['id']}",
+                            "elapsed": elapsed()
+                        })
+                    }
+                    await asyncio.sleep(0)
 
-                # Wait for confirmation (frontend should send a new request or cancel)
-                # For now, we'll just stop and let the frontend handle it
-                logger.info(f"⚠️  Article already exists (ID: {existing['id']}). Stopping processing.")
-                return
+                    # Wait for confirmation (frontend should send a new request or cancel)
+                    # For now, we'll just stop and let the frontend handle it
+                    logger.info(f"⚠️  Article already exists (ID: {existing['id']}). Stopping processing.")
+                    return
+            else:
+                logger.info(f"🔄 Force reprocessing article: {url}")
 
             # Create async queue for progress events (producer-consumer pattern)
             event_queue = asyncio.Queue()

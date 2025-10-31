@@ -112,7 +112,7 @@ function AdminPageContent() {
     setSteps(initialSteps);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, forceReprocess: boolean = false) => {
     e.preventDefault();
 
     if (!url.trim()) {
@@ -134,6 +134,9 @@ function AdminPageContent() {
       let streamUrl = `${API_URL}/api/process-direct?url=${encodedUrl}&api_key=${API_KEY}`;
       if (user) {
         streamUrl += `&user_id=${encodeURIComponent(user.id)}`;
+      }
+      if (forceReprocess) {
+        streamUrl += '&force_reprocess=true';
       }
 
       const eventSource = new EventSource(streamUrl);
@@ -413,12 +416,9 @@ function AdminPageContent() {
                       Cancel
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
                         setDuplicateWarning(null);
-                        setResult({
-                          status: 'error',
-                          message: 'Reprocessing existing articles is not yet implemented. Please use the CLI for this feature.'
-                        });
+                        handleSubmit(e as any, true);
                       }}
                       className="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors"
                     >
