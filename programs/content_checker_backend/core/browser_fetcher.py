@@ -67,6 +67,10 @@ class BrowserFetcher:
                         '--disable-blink-features=AutomationControlled',
                         '--disable-dev-shm-usage',
                         '--no-sandbox',
+                        '--disable-gpu',
+                        '--disable-setuid-sandbox',
+                        '--single-process',
+                        '--no-zygote',
                     ]
                 )
 
