@@ -31,7 +31,6 @@ export default function ContentSourcesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSource, setEditingSource] = useState<ContentSource | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [includeInactive, setIncludeInactive] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<ContentSourceCreate>({
@@ -53,7 +52,7 @@ export default function ContentSourcesPage() {
     if (user) {
       loadSources();
     }
-  }, [user, includeInactive]);
+  }, [user]);
 
   const addNotification = (type: NotificationType, message: string) => {
     const id = Date.now().toString();
@@ -73,7 +72,8 @@ export default function ContentSourcesPage() {
   const loadSources = async () => {
     try {
       setLoading(true);
-      const data = await getContentSources(includeInactive);
+      // Always load only active sources (includeInactive = false)
+      const data = await getContentSources(false);
       setSources(data.sources);
     } catch (error) {
       console.error('Error loading sources:', error);
@@ -268,20 +268,6 @@ export default function ContentSourcesPage() {
                   />
                 </div>
 
-                {/* Only show active checkbox when editing (new sources are always active) */}
-                {editingSource && (
-                  <div>
-                    <label className="flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.is_active}
-                        onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                        className="rounded border-gray-300 text-[#077331] focus:ring-[#077331] mr-2"
-                      />
-                      <span className="text-sm font-medium text-gray-700">Active</span>
-                    </label>
-                  </div>
-                )}
 
                 <div className="flex gap-3 pt-4">
                   <button
@@ -303,18 +289,6 @@ export default function ContentSourcesPage() {
           )}
 
           {/* Filter Toggle */}
-          <div className="mb-6">
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeInactive}
-                onChange={(e) => setIncludeInactive(e.target.checked)}
-                className="rounded border-gray-300 text-[#077331] focus:ring-[#077331] mr-2"
-              />
-              <span className="text-sm font-medium text-gray-700">Show inactive sources</span>
-            </label>
-          </div>
-
           {/* Sources List */}
           {loading ? (
             <div className="text-center py-12">
@@ -344,17 +318,8 @@ export default function ContentSourcesPage() {
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
+                      <div className="mb-2">
                         <h3 className="text-lg font-semibold text-gray-900">{source.title}</h3>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            source.is_active
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-200 text-gray-600'
-                          }`}
-                        >
-                          {source.is_active ? 'Active' : 'Inactive'}
-                        </span>
                       </div>
 
                       {source.notes && (
