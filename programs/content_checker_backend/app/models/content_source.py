@@ -9,9 +9,9 @@ from datetime import datetime
 
 class ContentSourceBase(BaseModel):
     """Base model for content source"""
-    name: str = Field(..., min_length=1, max_length=255, description="Display name for the source")
+    title: str = Field(..., min_length=1, max_length=255, description="Display name for the source")
     url: HttpUrl = Field(..., description="RSS feed or content URL")
-    description: Optional[str] = Field(None, max_length=1000, description="Optional description")
+    notes: Optional[str] = Field(None, max_length=1000, description="Optional notes")
     is_active: bool = Field(True, description="Whether to actively check this source")
 
 
@@ -22,9 +22,9 @@ class ContentSourceCreate(ContentSourceBase):
 
 class ContentSourceUpdate(BaseModel):
     """Model for updating an existing content source"""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
     url: Optional[HttpUrl] = None
-    description: Optional[str] = Field(None, max_length=1000)
+    notes: Optional[str] = Field(None, max_length=1000)
     is_active: Optional[bool] = None
 
 

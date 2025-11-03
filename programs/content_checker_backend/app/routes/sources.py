@@ -154,9 +154,9 @@ async def create_content_source(
         # Prepare data for insertion
         source_data = {
             'user_id': user_id,
-            'name': source.name,
+            'title': source.title,
             'url': str(source.url),
-            'description': source.description,
+            'notes': source.notes,
             'is_active': source.is_active
         }
 
@@ -222,12 +222,12 @@ async def update_content_source(
 
         # Prepare update data (only include fields that were provided)
         update_data = {}
-        if updates.name is not None:
-            update_data['name'] = updates.name
+        if updates.title is not None:
+            update_data['title'] = updates.title
         if updates.url is not None:
             update_data['url'] = str(updates.url)
-        if updates.description is not None:
-            update_data['description'] = updates.description
+        if updates.notes is not None:
+            update_data['notes'] = updates.notes
         if updates.is_active is not None:
             update_data['is_active'] = updates.is_active
 

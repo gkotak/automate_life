@@ -35,9 +35,9 @@ export default function ContentSourcesPage() {
 
   // Form state
   const [formData, setFormData] = useState<ContentSourceCreate>({
-    name: '',
+    title: '',
     url: '',
-    description: '',
+    notes: '',
     is_active: true,
   });
 
@@ -90,9 +90,9 @@ export default function ContentSourcesPage() {
       if (editingSource) {
         // Update existing source
         const updates: ContentSourceUpdate = {
-          name: formData.name !== editingSource.name ? formData.name : undefined,
+          title: formData.title !== editingSource.title ? formData.title : undefined,
           url: formData.url !== editingSource.url ? formData.url : undefined,
-          description: formData.description !== editingSource.description ? formData.description : undefined,
+          notes: formData.notes !== editingSource.notes ? formData.notes : undefined,
           is_active: formData.is_active !== editingSource.is_active ? formData.is_active : undefined,
         };
 
@@ -116,16 +116,16 @@ export default function ContentSourcesPage() {
   const handleEdit = (source: ContentSource) => {
     setEditingSource(source);
     setFormData({
-      name: source.name,
+      title: source.title,
       url: source.url,
-      description: source.description || '',
+      notes: source.notes || '',
       is_active: source.is_active,
     });
     setShowAddForm(true);
   };
 
   const handleDelete = async (source: ContentSource) => {
-    if (!confirm(`Are you sure you want to delete "${source.name}"?`)) {
+    if (!confirm(`Are you sure you want to delete "${source.title}"?`)) {
       return;
     }
 
@@ -141,9 +141,9 @@ export default function ContentSourcesPage() {
 
   const resetForm = () => {
     setFormData({
-      name: '',
+      title: '',
       url: '',
-      description: '',
+      notes: '',
       is_active: true,
     });
     setEditingSource(null);
@@ -231,13 +231,13 @@ export default function ContentSourcesPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name <span className="text-red-500">*</span>
+                    Title <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     placeholder="e.g., My Tech Blog"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#077331] focus:border-transparent"
                   />
@@ -258,11 +258,11 @@ export default function ContentSourcesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                   <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Optional description..."
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Optional notes..."
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#077331] focus:border-transparent"
                   />
@@ -342,7 +342,7 @@ export default function ContentSourcesPage() {
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">{source.name}</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">{source.title}</h3>
                         <span
                           className={`px-2 py-1 rounded text-xs font-medium ${
                             source.is_active
@@ -354,8 +354,8 @@ export default function ContentSourcesPage() {
                         </span>
                       </div>
 
-                      {source.description && (
-                        <p className="text-sm text-gray-600 mb-2">{source.description}</p>
+                      {source.notes && (
+                        <p className="text-sm text-gray-600 mb-2">{source.notes}</p>
                       )}
 
                       <a

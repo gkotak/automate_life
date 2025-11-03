@@ -166,9 +166,9 @@ export async function getDiscoveredPosts(limit: number = 200): Promise<{
  */
 export interface ContentSource {
   id: number
-  name: string
+  title: string
   url: string
-  description?: string
+  notes?: string
   is_active: boolean
   user_id: string
   created_at: string
@@ -177,16 +177,16 @@ export interface ContentSource {
 }
 
 export interface ContentSourceCreate {
-  name: string
+  title: string
   url: string
-  description?: string
+  notes?: string
   is_active?: boolean
 }
 
 export interface ContentSourceUpdate {
-  name?: string
+  title?: string
   url?: string
-  description?: string
+  notes?: string
   is_active?: boolean
 }
 
