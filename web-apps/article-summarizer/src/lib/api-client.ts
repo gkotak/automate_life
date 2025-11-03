@@ -170,7 +170,6 @@ export interface ContentSource {
   url: string
   description?: string
   is_active: boolean
-  source_type: string
   user_id: string
   created_at: string
   updated_at?: string
@@ -182,7 +181,6 @@ export interface ContentSourceCreate {
   url: string
   description?: string
   is_active?: boolean
-  source_type?: string
 }
 
 export interface ContentSourceUpdate {
@@ -190,7 +188,6 @@ export interface ContentSourceUpdate {
   url?: string
   description?: string
   is_active?: boolean
-  source_type?: string
 }
 
 /**

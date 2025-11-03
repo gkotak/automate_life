@@ -157,8 +157,7 @@ async def create_content_source(
             'name': source.name,
             'url': str(source.url),
             'description': source.description,
-            'is_active': source.is_active,
-            'source_type': source.source_type or 'rss_feed'
+            'is_active': source.is_active
         }
 
         result = supabase.table('content_sources').insert(source_data).execute()
@@ -231,8 +230,6 @@ async def update_content_source(
             update_data['description'] = updates.description
         if updates.is_active is not None:
             update_data['is_active'] = updates.is_active
-        if updates.source_type is not None:
-            update_data['source_type'] = updates.source_type
 
         if not update_data:
             raise HTTPException(

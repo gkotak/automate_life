@@ -39,7 +39,6 @@ export default function ContentSourcesPage() {
     url: '',
     description: '',
     is_active: true,
-    source_type: 'rss_feed',
   });
 
   // Protect this page - redirect to login if not authenticated
@@ -95,7 +94,6 @@ export default function ContentSourcesPage() {
           url: formData.url !== editingSource.url ? formData.url : undefined,
           description: formData.description !== editingSource.description ? formData.description : undefined,
           is_active: formData.is_active !== editingSource.is_active ? formData.is_active : undefined,
-          source_type: formData.source_type !== editingSource.source_type ? formData.source_type : undefined,
         };
 
         await updateContentSource(editingSource.id, updates);
@@ -122,7 +120,6 @@ export default function ContentSourcesPage() {
       url: source.url,
       description: source.description || '',
       is_active: source.is_active,
-      source_type: source.source_type,
     });
     setShowAddForm(true);
   };
@@ -148,7 +145,6 @@ export default function ContentSourcesPage() {
       url: '',
       description: '',
       is_active: true,
-      source_type: 'rss_feed',
     });
     setEditingSource(null);
     setShowAddForm(false);
@@ -272,7 +268,7 @@ export default function ContentSourcesPage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-6">
+                <div>
                   <label className="flex items-center cursor-pointer">
                     <input
                       type="checkbox"
@@ -282,20 +278,6 @@ export default function ContentSourcesPage() {
                     />
                     <span className="text-sm font-medium text-gray-700">Active</span>
                   </label>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <select
-                      value={formData.source_type}
-                      onChange={(e) => setFormData({ ...formData, source_type: e.target.value })}
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#077331] focus:border-transparent"
-                    >
-                      <option value="rss_feed">RSS Feed</option>
-                      <option value="substack">Substack</option>
-                      <option value="medium">Medium</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4">
@@ -369,9 +351,6 @@ export default function ContentSourcesPage() {
                           }`}
                         >
                           {source.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                          {source.source_type.replace('_', ' ').toUpperCase()}
                         </span>
                       </div>
 

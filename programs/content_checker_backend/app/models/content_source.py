@@ -13,7 +13,6 @@ class ContentSourceBase(BaseModel):
     url: HttpUrl = Field(..., description="RSS feed or content URL")
     description: Optional[str] = Field(None, max_length=1000, description="Optional description")
     is_active: bool = Field(True, description="Whether to actively check this source")
-    source_type: Optional[str] = Field("rss_feed", description="Type of source (rss_feed, substack, etc)")
 
 
 class ContentSourceCreate(ContentSourceBase):
@@ -27,7 +26,6 @@ class ContentSourceUpdate(BaseModel):
     url: Optional[HttpUrl] = None
     description: Optional[str] = Field(None, max_length=1000)
     is_active: Optional[bool] = None
-    source_type: Optional[str] = None
 
 
 class ContentSource(ContentSourceBase):
