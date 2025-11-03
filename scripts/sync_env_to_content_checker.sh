@@ -126,9 +126,6 @@ add_var("POCKETCASTS_EMAIL", os.getenv("POCKETCASTS_EMAIL", ""))
 add_var("POCKETCASTS_PASSWORD", os.getenv("POCKETCASTS_PASSWORD", ""))
 add_var("CORS_ORIGINS", os.getenv("CORS_ORIGINS", ""))
 add_var("ENVIRONMENT", os.getenv("ENVIRONMENT", ""))
-add_var("SERPAPI_KEY", os.getenv("SERPAPI_KEY", ""))
-add_var("SEARCH_PODCAST_URLS", os.getenv("SEARCH_PODCAST_URLS", ""))
-add_var("SERPAPI_PODCAST_WHITELIST", os.getenv("SERPAPI_PODCAST_WHITELIST", ""))
 add_var("API_KEY", os.getenv("API_KEY", ""))
 
 if not variables:

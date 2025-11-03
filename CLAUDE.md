@@ -18,15 +18,16 @@ This is a Claude Code configuration repository that automates content analysis a
 ### Content Checker
 - `python3 scripts/check_podcasts.py` - Checks PocketCasts for new podcast episodes
   - Scans listening history for new episodes
-  - Uses SERPAPI for YouTube discovery (whitelisted podcasts)
+  - YouTube discovery via free scraping (PocketCasts pages + YouTube playlists/channels)
+  - `known_podcasts` table for reliable YouTube URL associations
   - Saves discoveries to content_queue table
-  - View at http://localhost:3000/new/podcasts
+  - View at http://localhost:3000/admin/podcasts
 
 - `python3 scripts/check_posts.py` - Checks RSS feeds and newsletters for new posts
   - Scans content_sources table for active feeds
   - Extracts posts from RSS/Atom feeds and web pages
   - Filters by recency (last 3 days)
-  - View at http://localhost:3000/new/posts
+  - View at http://localhost:3000/admin/posts
 
 ## Architecture Overview
 
@@ -45,7 +46,8 @@ This is a Claude Code configuration repository that automates content analysis a
 - FastAPI backend for discovering new content (podcasts and newsletters)
 - Podcast checking via PocketCasts API with Playwright automation
 - RSS/Atom feed parsing for newsletter/blog posts
-- SERPAPI integration for YouTube video discovery
+- YouTube discovery via free scraping (PocketCasts pages + YouTube playlists/channels)
+- `known_podcasts` table for reliable YouTube URL associations
 - Async architecture for efficient content scanning
 - Railway deployment support with Docker
 

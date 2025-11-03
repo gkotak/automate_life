@@ -70,7 +70,6 @@ async def health_check():
     database_configured = bool(
         os.getenv('SUPABASE_URL') and os.getenv('SUPABASE_SERVICE_ROLE_KEY')
     )
-    serpapi_configured = bool(os.getenv('SERPAPI_KEY'))
 
     # Test database connection
     database_connected = False
@@ -92,7 +91,6 @@ async def health_check():
         "pocketcasts_configured": pocketcasts_configured,
         "database_configured": database_configured,
         "database_connected": database_connected,
-        "serpapi_configured": serpapi_configured,
         "cors_origins": cors_origins
     }
 

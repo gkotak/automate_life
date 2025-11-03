@@ -19,7 +19,7 @@ Checks PocketCasts listening history for new episodes and saves them to the data
 1. Calls the content_checker_backend API (`POST /api/podcasts/check`)
 2. Backend checks PocketCasts listening history using authenticated browser automation
 3. Discovers new episodes and saves them to the `content_queue` table
-4. Uses SERPAPI to find YouTube URLs for whitelisted podcasts
+4. Finds YouTube URLs via `known_podcasts` table or PocketCasts page scraping
 5. Returns summary of newly discovered episodes
 
 To process discovered podcasts:
@@ -59,7 +59,6 @@ POCKETCASTS_EMAIL=your-email@example.com
 POCKETCASTS_PASSWORD=your-password
 SUPABASE_URL=your-supabase-url
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-key
-SERPAPI_KEY=your-serpapi-key (optional, for YouTube discovery)
 ```
 
 ## Technical Details
@@ -68,6 +67,7 @@ SERPAPI_KEY=your-serpapi-key (optional, for YouTube discovery)
 - Backend API: `content_checker_backend` (FastAPI, async)
 - Service: `app/services/podcast_checker.py`
 - Uses Playwright for PocketCasts authentication
-- SERPAPI integration for whitelisted podcasts
+- YouTube discovery via free scraping (PocketCasts pages + YouTube playlists/channels)
+- `known_podcasts` table for reliable YouTube URL associations
 - Data stored in: `content_queue` table (Supabase)
 - View UI at: http://localhost:3000/admin/podcasts

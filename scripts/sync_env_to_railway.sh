@@ -140,9 +140,6 @@ add_var("SUBSTACK_EMAIL", os.getenv("SUBSTACK_EMAIL", ""))
 add_var("SUBSTACK_PASSWORD", os.getenv("SUBSTACK_PASSWORD", ""))
 add_var("POCKETCASTS_EMAIL", os.getenv("POCKETCASTS_EMAIL", ""))
 add_var("POCKETCASTS_PASSWORD", os.getenv("POCKETCASTS_PASSWORD", ""))
-add_var("SERPAPI_KEY", os.getenv("SERPAPI_KEY", ""))
-add_var("SEARCH_PODCAST_URLS", os.getenv("SEARCH_PODCAST_URLS", ""))
-add_var("SERPAPI_PODCAST_WHITELIST", os.getenv("SERPAPI_PODCAST_WHITELIST", ""))
 
 if not variables:
     print("\033[0;31m❌ No variables to sync\033[0m")

@@ -291,6 +291,106 @@ class PodcastCheckerService:
             self.logger.error(f"Error fetching existing podcasts: {e}")
             return set()
 
+    def _get_known_podcast_youtube_url(self, podcast_title: str) -> Optional[str]:
+        """
+        Check if podcast is in known_podcasts table and return YouTube URL
+
+        Args:
+            podcast_title: The podcast title to check
+
+        Returns:
+            YouTube channel or playlist URL if known, None otherwise
+        """
+        try:
+            result = self.supabase.table('known_podcasts')\
+                .select('youtube_url')\
+                .eq('podcast_title', podcast_title)\
+                .eq('is_active', True)\
+                .single()\
+                .execute()
+
+            if result.data:
+                youtube_url = result.data.get('youtube_url')
+                if youtube_url:
+                    self.logger.info(f"      ✅ [KNOWN PODCAST] Found YouTube URL for '{podcast_title}': {youtube_url}")
+                    return youtube_url
+
+        except Exception as e:
+            # Not found is expected for unknown podcasts
+            if 'PGRST116' not in str(e):  # Ignore "no rows returned" error
+                self.logger.debug(f"      ℹ️ [KNOWN PODCAST] Podcast not in database: {podcast_title}")
+
+        return None
+
+    def _fuzzy_match_titles(self, episode_title: str, video_title: str, episode_published_date: Optional[str] = None, video_published_date: Optional[str] = None) -> tuple[bool, float, float]:
+        """
+        Fuzzy match episode title against video title with date-aware thresholds
+
+        Args:
+            episode_title: Episode title from PocketCasts
+            video_title: Video title from YouTube
+            episode_published_date: Episode publish date (ISO format)
+            video_published_date: Video publish date (ISO format or relative like "2 days ago")
+
+        Returns:
+            Tuple of (matches, similarity_ratio, threshold_used)
+        """
+        from difflib import SequenceMatcher
+        from datetime import datetime, timedelta
+        import re
+
+        # Calculate character-level similarity ratio
+        ratio = SequenceMatcher(None, episode_title.lower(), video_title.lower()).ratio()
+
+        # Use relaxed threshold (40%) if published within 1 day OF EACH OTHER, otherwise require 70%
+        threshold = 0.70
+        if episode_published_date and video_published_date:
+            try:
+                from dateutil import parser
+                episode_date = parser.parse(episode_published_date)
+
+                # Convert relative dates like "2 days ago" to actual dates
+                video_date = None
+                if 'ago' in video_published_date.lower():
+                    # Parse relative dates
+                    match = re.search(r'(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago', video_published_date.lower())
+                    if match:
+                        amount = int(match.group(1))
+                        unit = match.group(2)
+
+                        now = datetime.now()
+                        if unit == 'second':
+                            video_date = now - timedelta(seconds=amount)
+                        elif unit == 'minute':
+                            video_date = now - timedelta(minutes=amount)
+                        elif unit == 'hour':
+                            video_date = now - timedelta(hours=amount)
+                        elif unit == 'day':
+                            video_date = now - timedelta(days=amount)
+                        elif unit == 'week':
+                            video_date = now - timedelta(weeks=amount)
+                        elif unit == 'month':
+                            video_date = now - timedelta(days=amount*30)  # Approximate
+                        elif unit == 'year':
+                            video_date = now - timedelta(days=amount*365)  # Approximate
+                else:
+                    # Try to parse as ISO format
+                    try:
+                        video_date = parser.parse(video_published_date)
+                    except:
+                        pass
+
+                if video_date:
+                    # Compare episode date vs video date (not vs today!)
+                    days_apart = abs((episode_date.replace(tzinfo=None) - video_date.replace(tzinfo=None)).days)
+                    if days_apart <= 1:
+                        threshold = 0.40  # Relaxed: published within 1 day of each other
+            except:
+                pass
+
+        matches = ratio >= threshold
+        return matches, ratio, threshold
+
     def _extract_youtube_url_from_pocketcasts(self, episode_url: str) -> Optional[str]:
         """
         Step 1a: Extract YouTube URL from PocketCasts episode page
@@ -386,8 +486,10 @@ class PodcastCheckerService:
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # Extract video title from ytInitialData
+            # Extract video title and publish date from ytInitialData
             video_title = None
+            video_published_date = None
+
             for script in soup.find_all('script'):
                 script_text = script.string or ''
                 if 'var ytInitialData = ' in script_text:
@@ -396,13 +498,27 @@ class PodcastCheckerService:
                     json_str = script_text[start:end]
                     try:
                         yt_data = json.loads(json_str)
-                        video_title = yt_data.get('contents', {}).get('twoColumnWatchNextResults', {}).get('results', {}).get('results', {}).get('contents', [{}])[0].get('videoPrimaryInfoRenderer', {}).get('title', {}).get('runs', [{}])[0].get('text')
-                        break
+                        contents = yt_data.get('contents', {}).get('twoColumnWatchNextResults', {}).get('results', {}).get('results', {}).get('contents', [])
+
+                        if contents and len(contents) > 0:
+                            video_primary_info = contents[0].get('videoPrimaryInfoRenderer', {})
+
+                            # Extract title
+                            video_title = video_primary_info.get('title', {}).get('runs', [{}])[0].get('text')
+
+                            # Extract publish date
+                            date_text = video_primary_info.get('dateText', {}).get('simpleText', '')
+                            if date_text:
+                                # dateText is like "Oct 30, 2024" - parse it
+                                video_published_date = date_text
+
+                        if video_title:
+                            break
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
 
             if not video_title:
-                # Fallback to meta tags
+                # Fallback to meta tags for title
                 title_tag = soup.find('meta', property='og:title')
                 if title_tag:
                     video_title = title_tag.get('content', '')
@@ -411,25 +527,16 @@ class PodcastCheckerService:
                 self.logger.warning(f"      ⚠️ [STEP 1a] Could not extract video title")
                 return False
 
-            # Calculate similarity
-            ratio = SequenceMatcher(None, episode_title.lower(), video_title.lower()).ratio()
+            # Use shared fuzzy matching logic with video publish date
+            matches, ratio, threshold = self._fuzzy_match_titles(episode_title, video_title, episode_published_date, video_published_date)
 
-            # Use relaxed threshold (40%) if published within 1 day, otherwise require 70%
-            threshold = 0.70
-            if episode_published_date:
-                try:
-                    from dateutil import parser
-                    episode_date = parser.parse(episode_published_date)
-                    # Video dates are harder to extract, so we'll use relaxed threshold for recent episodes
-                    if (datetime.now() - episode_date.replace(tzinfo=None)).days <= 1:
-                        threshold = 0.40
-                except:
-                    pass
-
-            matches = ratio >= threshold
             self.logger.info(f"      {'✅' if matches else '❌'} [STEP 1a] Match: {ratio:.1%} (need {threshold:.0%})")
             self.logger.info(f"      📝 Episode: {episode_title[:60]}...")
             self.logger.info(f"      🎬 Video:   {video_title[:60]}...")
+            if video_published_date:
+                self.logger.info(f"      📅 Video published: {video_published_date}")
+            if episode_published_date and video_published_date:
+                self.logger.info(f"      💡 Using date-aware threshold: {threshold:.0%}")
 
             return matches
 
@@ -462,8 +569,51 @@ class PodcastCheckerService:
 
             soup = BeautifulSoup(response.content, 'html.parser')
 
-            # Extract videos from ytInitialData
+            # Extract videos from ytInitialData using recursive search
             videos = []
+
+            def find_videos_recursive(obj, videos_list):
+                """Recursively search for richItemRenderer or playlistVideoRenderer"""
+                if isinstance(obj, dict):
+                    # Found a playlist video
+                    if 'playlistVideoRenderer' in obj:
+                        video_data = obj['playlistVideoRenderer']
+                        video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
+                        video_id = video_data.get('videoId', '')
+                        video_info_runs = video_data.get('videoInfo', {}).get('runs', [])
+                        video_published = video_info_runs[-1].get('text', '') if video_info_runs else ''
+                        if video_title and video_id:
+                            videos_list.append({
+                                'title': video_title,
+                                'url': f'https://www.youtube.com/watch?v={video_id}',
+                                'published': video_published
+                            })
+
+                    # Found a channel video
+                    elif 'richItemRenderer' in obj:
+                        try:
+                            video_data = obj['richItemRenderer']['content']['videoRenderer']
+                            video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
+                            video_id = video_data.get('videoId', '')
+                            video_published = video_data.get('publishedTimeText', {}).get('simpleText', '')
+                            if video_title and video_id:
+                                videos_list.append({
+                                    'title': video_title,
+                                    'url': f'https://www.youtube.com/watch?v={video_id}',
+                                    'published': video_published
+                                })
+                        except (KeyError, TypeError):
+                            pass
+
+                    # Recurse into dictionary values
+                    for value in obj.values():
+                        find_videos_recursive(value, videos_list)
+
+                elif isinstance(obj, list):
+                    # Recurse into list items
+                    for item in obj:
+                        find_videos_recursive(item, videos_list)
+
             for script in soup.find_all('script'):
                 if not script.string or 'ytInitialData' not in script.string:
                     continue
@@ -474,56 +624,9 @@ class PodcastCheckerService:
 
                 try:
                     data = json.loads(match.group(1))
-
-                    # Try different data structures (playlist vs channel)
-                    contents = None
-
-                    # Playlist structure
-                    try:
-                        contents = data['contents']['twoColumnBrowseResultsRenderer']['tabs'][0]['tabRenderer']['content']['sectionListRenderer']['contents'][0]['itemSectionRenderer']['contents'][0]['playlistVideoListRenderer']['contents']
-                    except (KeyError, IndexError, TypeError):
-                        pass
-
-                    # Channel structure
-                    if not contents:
-                        try:
-                            contents = data['contents']['twoColumnBrowseResultsRenderer']['tabs'][0]['tabRenderer']['content']['richGridRenderer']['contents']
-                        except (KeyError, IndexError, TypeError):
-                            pass
-
-                    if contents:
-                        for item in contents:
-                            video_title = None
-                            video_id = None
-                            video_published = ''
-
-                            # Playlist video
-                            if 'playlistVideoRenderer' in item:
-                                video_data = item['playlistVideoRenderer']
-                                video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
-                                video_id = video_data.get('videoId', '')
-                                video_info_runs = video_data.get('videoInfo', {}).get('runs', [])
-                                video_published = video_info_runs[-1].get('text', '') if video_info_runs else ''
-
-                            # Channel video
-                            elif 'richItemRenderer' in item:
-                                try:
-                                    video_data = item['richItemRenderer']['content']['videoRenderer']
-                                    video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
-                                    video_id = video_data.get('videoId', '')
-                                    video_published = video_data.get('publishedTimeText', {}).get('simpleText', '')
-                                except (KeyError, TypeError):
-                                    pass
-
-                            if video_title and video_id:
-                                videos.append({
-                                    'title': video_title,
-                                    'url': f'https://www.youtube.com/watch?v={video_id}',
-                                    'published': video_published
-                                })
-
-                    break
-
+                    find_videos_recursive(data, videos)
+                    if videos:
+                        break
                 except json.JSONDecodeError:
                     continue
 
@@ -538,18 +641,14 @@ class PodcastCheckerService:
             best_ratio = 0.0
 
             for video in videos:
-                ratio = SequenceMatcher(None, episode_title.lower(), video['title'].lower()).ratio()
-
-                # Determine threshold (relaxed if published recently)
-                threshold = 0.70
-                if episode_published_date:
-                    try:
-                        from dateutil import parser
-                        episode_date = parser.parse(episode_published_date)
-                        if (datetime.now() - episode_date.replace(tzinfo=None)).days <= 1:
-                            threshold = 0.40
-                    except:
-                        pass
+                # Use shared fuzzy matching logic with video publish date
+                video_pub_date = video.get('published', '')
+                matches, ratio, threshold = self._fuzzy_match_titles(
+                    episode_title,
+                    video['title'],
+                    episode_published_date,
+                    video_pub_date
+                )
 
                 if ratio > best_ratio:
                     best_ratio = ratio
@@ -557,12 +656,12 @@ class PodcastCheckerService:
 
                 # Log good matches
                 if ratio > 0.4:
-                    pub_info = f" [{video['published']}]" if video['published'] else ""
+                    pub_info = f" [{video_pub_date}]" if video_pub_date else ""
                     self.logger.info(f"      🔍 [STEP 1b] Match: {ratio:.1%} - {video['title'][:60]}{pub_info}...")
 
                 # Return if we found a strong match
-                if ratio >= threshold:
-                    self.logger.info(f"      ✅ [STEP 1b] Found match ({ratio:.1%}): {video['url']}")
+                if matches:
+                    self.logger.info(f"      ✅ [STEP 1b] Found match ({ratio:.1%}, threshold {threshold:.0%}): {video['url']}")
                     return video['url']
 
             # Log best match if no strong match found
@@ -580,6 +679,11 @@ class PodcastCheckerService:
         """
         Find YouTube video URL for podcast episode using free scraping methods
 
+        Flow:
+        1. Check database whitelist for podcast's YouTube channel/playlist
+        2. If not whitelisted, extract YouTube URL from PocketCasts episode page
+        3. Validate direct video URLs or scrape playlists/channels
+
         Args:
             episode_details: Episode details dictionary
 
@@ -596,8 +700,13 @@ class PodcastCheckerService:
         self.logger.info(f"      📝 Episode: {episode_title[:80]}")
         self.logger.info(f"      🎙️ Podcast: {podcast_title}")
 
-        # Step 1a: Extract YouTube URL from PocketCasts page
-        youtube_url = self._extract_youtube_url_from_pocketcasts(episode_url)
+        # Step 0: Check known_podcasts database table first
+        youtube_url = self._get_known_podcast_youtube_url(podcast_title)
+
+        if not youtube_url:
+            # Step 1a: Fallback to extracting YouTube URL from PocketCasts page
+            self.logger.info(f"      [STEP 1a] Checking PocketCasts page for YouTube link...")
+            youtube_url = self._extract_youtube_url_from_pocketcasts(episode_url)
 
         if not youtube_url:
             self.logger.info(f"      ℹ️ [YOUTUBE SEARCH] No YouTube link found")
@@ -614,6 +723,12 @@ class PodcastCheckerService:
 
         # Step 1b: If it's a playlist/channel, scrape it for the episode
         if any(x in youtube_url for x in ['/playlist', '/channel/', '/@', '/c/', '/user/']):
+            # For channels, append /videos to get the videos tab
+            if any(x in youtube_url for x in ['/channel/', '/@', '/c/', '/user/']):
+                if not youtube_url.endswith('/videos'):
+                    youtube_url = youtube_url.rstrip('/') + '/videos'
+                    self.logger.info(f"      💡 [STEP 1b] Appending /videos to channel URL for better scraping")
+
             video_url = self._scrape_youtube_playlist_for_episode(youtube_url, episode_title, published_date)
             if video_url:
                 self.logger.info(f"      ✅ [YOUTUBE SEARCH] Found via playlist scraping!")

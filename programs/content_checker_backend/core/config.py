@@ -29,7 +29,6 @@ class Config:
     SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
     POCKETCASTS_EMAIL = os.getenv('POCKETCASTS_EMAIL', '')
     POCKETCASTS_PASSWORD = os.getenv('POCKETCASTS_PASSWORD', '')
-    SERPAPI_KEY = os.getenv('SERPAPI_KEY', '')
     API_KEY = os.getenv('API_KEY', '')
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
 
