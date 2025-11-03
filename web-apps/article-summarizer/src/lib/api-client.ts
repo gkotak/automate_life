@@ -203,7 +203,7 @@ export async function getContentSources(includeInactive: boolean = false): Promi
   total: number
 }> {
   const response = await fetchContentCheckerBackend(
-    `/sources?include_inactive=${includeInactive}`
+    `/api/sources?include_inactive=${includeInactive}`
   )
 
   if (!response.ok) {
@@ -222,7 +222,7 @@ export async function getContentSources(includeInactive: boolean = false): Promi
 export async function getContentSource(sourceId: number): Promise<{
   source: ContentSource
 }> {
-  const response = await fetchContentCheckerBackend(`/sources/${sourceId}`)
+  const response = await fetchContentCheckerBackend(`/api/sources/${sourceId}`)
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
@@ -241,7 +241,7 @@ export async function createContentSource(source: ContentSourceCreate): Promise<
   source: ContentSource
   message?: string
 }> {
-  const response = await fetchContentCheckerBackend('/sources', {
+  const response = await fetchContentCheckerBackend('/api/sources', {
     method: 'POST',
     body: JSON.stringify(source),
   })
@@ -267,7 +267,7 @@ export async function updateContentSource(
   source: ContentSource
   message?: string
 }> {
-  const response = await fetchContentCheckerBackend(`/sources/${sourceId}`, {
+  const response = await fetchContentCheckerBackend(`/api/sources/${sourceId}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
   })
@@ -285,7 +285,7 @@ export async function updateContentSource(
  * @param sourceId - ID of the content source
  */
 export async function deleteContentSource(sourceId: number): Promise<void> {
-  const response = await fetchContentCheckerBackend(`/sources/${sourceId}`, {
+  const response = await fetchContentCheckerBackend(`/api/sources/${sourceId}`, {
     method: 'DELETE',
   })
 
