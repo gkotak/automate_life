@@ -5,6 +5,8 @@ API routes for content source management (RSS feeds, newsletters, etc.)
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional
 import logging
+import os
+from supabase import create_client, Client
 
 from app.models.content_source import (
     ContentSourceCreate,
@@ -14,10 +16,28 @@ from app.models.content_source import (
     ContentSourceResponse
 )
 from app.middleware.auth import verify_supabase_jwt
-from core.config import Config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Initialize Supabase client
+_supabase_client: Optional[Client] = None
+
+def get_supabase() -> Client:
+    """Get or create Supabase client (singleton)"""
+    global _supabase_client
+
+    if _supabase_client is None:
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+
+        if not supabase_url or not supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
+
+        _supabase_client = create_client(supabase_url, supabase_key)
+        logger.info("✅ Supabase client initialized for sources routes")
+
+    return _supabase_client
 
 
 @router.get("/sources", response_model=ContentSourceListResponse)
@@ -36,7 +56,7 @@ async def list_content_sources(
         List of content sources
     """
     try:
-        supabase = Config.get_supabase_client()
+        supabase = get_supabase()
 
         # Build query
         query = supabase.table('content_sources').select('*').eq('user_id', user_id)
@@ -83,7 +103,7 @@ async def get_content_source(
         Content source details
     """
     try:
-        supabase = Config.get_supabase_client()
+        supabase = get_supabase()
 
         result = supabase.table('content_sources').select('*').eq(
             'id', source_id
@@ -129,7 +149,7 @@ async def create_content_source(
         Created content source
     """
     try:
-        supabase = Config.get_supabase_client()
+        supabase = get_supabase()
 
         # Prepare data for insertion
         source_data = {
@@ -186,7 +206,7 @@ async def update_content_source(
         Updated content source
     """
     try:
-        supabase = Config.get_supabase_client()
+        supabase = get_supabase()
 
         # Check if source exists and belongs to user
         existing = supabase.table('content_sources').select('*').eq(
@@ -270,7 +290,7 @@ async def delete_content_source(
         No content on success
     """
     try:
-        supabase = Config.get_supabase_client()
+        supabase = get_supabase()
 
         # Check if source exists and belongs to user
         existing = supabase.table('content_sources').select('id').eq(
