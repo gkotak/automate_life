@@ -154,3 +154,137 @@ export async function getDiscoveredPosts(limit: number = 200): Promise<{
 
   return response.json()
 }
+
+/**
+ * Content Source types
+ */
+export interface ContentSource {
+  id: number
+  name: string
+  url: string
+  description?: string
+  is_active: boolean
+  source_type: string
+  user_id: string
+  created_at: string
+  updated_at?: string
+  last_checked_at?: string
+}
+
+export interface ContentSourceCreate {
+  name: string
+  url: string
+  description?: string
+  is_active?: boolean
+  source_type?: string
+}
+
+export interface ContentSourceUpdate {
+  name?: string
+  url?: string
+  description?: string
+  is_active?: boolean
+  source_type?: string
+}
+
+/**
+ * Get all content sources for the current user
+ * @param includeInactive - Whether to include inactive sources
+ * @returns List of content sources
+ */
+export async function getContentSources(includeInactive: boolean = false): Promise<{
+  sources: ContentSource[]
+  total: number
+}> {
+  const response = await fetchContentCheckerBackend(
+    `/sources?include_inactive=${includeInactive}`
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || 'Failed to get content sources')
+  }
+
+  return response.json()
+}
+
+/**
+ * Get a specific content source by ID
+ * @param sourceId - ID of the content source
+ * @returns Content source details
+ */
+export async function getContentSource(sourceId: number): Promise<{
+  source: ContentSource
+}> {
+  const response = await fetchContentCheckerBackend(`/sources/${sourceId}`)
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || 'Failed to get content source')
+  }
+
+  return response.json()
+}
+
+/**
+ * Create a new content source
+ * @param source - Content source data
+ * @returns Created content source
+ */
+export async function createContentSource(source: ContentSourceCreate): Promise<{
+  source: ContentSource
+  message?: string
+}> {
+  const response = await fetchContentCheckerBackend('/sources', {
+    method: 'POST',
+    body: JSON.stringify(source),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || 'Failed to create content source')
+  }
+
+  return response.json()
+}
+
+/**
+ * Update an existing content source
+ * @param sourceId - ID of the content source
+ * @param updates - Fields to update
+ * @returns Updated content source
+ */
+export async function updateContentSource(
+  sourceId: number,
+  updates: ContentSourceUpdate
+): Promise<{
+  source: ContentSource
+  message?: string
+}> {
+  const response = await fetchContentCheckerBackend(`/sources/${sourceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || 'Failed to update content source')
+  }
+
+  return response.json()
+}
+
+/**
+ * Delete a content source
+ * @param sourceId - ID of the content source
+ */
+export async function deleteContentSource(sourceId: number): Promise<void> {
+  const response = await fetchContentCheckerBackend(`/sources/${sourceId}`, {
+    method: 'DELETE',
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || 'Failed to delete content source')
+  }
+}

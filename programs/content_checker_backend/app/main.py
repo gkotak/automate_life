@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.routes import podcasts, posts
+from app.routes import podcasts, posts, sources
 
 # Load environment variables
 load_dotenv('.env.local')
@@ -53,6 +53,7 @@ app.add_middleware(
 # Include routers
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
 app.include_router(posts.router, prefix="/api", tags=["posts"])
+app.include_router(sources.router, prefix="/api", tags=["sources"])
 
 
 @app.get("/health")
