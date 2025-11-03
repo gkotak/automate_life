@@ -14,11 +14,10 @@ interface Post {
   source_feed: string | null;
   published_date: string | null;
   found_at: string;
-  status: string;
   is_new: boolean;
 }
 
-type SortField = 'title' | 'published_date' | 'found_at' | 'status';
+type SortField = 'title' | 'published_date' | 'found_at';
 type SortDirection = 'asc' | 'desc';
 
 export default function PostsAdminPage() {
@@ -142,10 +141,6 @@ export default function PostsAdminPage() {
           aValue = a.found_at ? new Date(a.found_at).getTime() : 0;
           bValue = b.found_at ? new Date(b.found_at).getTime() : 0;
           break;
-        case 'status':
-          aValue = a.status.toLowerCase();
-          bValue = b.status.toLowerCase();
-          break;
         default:
           return 0;
       }
@@ -166,21 +161,6 @@ export default function PostsAdminPage() {
       });
     } catch {
       return 'Invalid date';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'discovered':
-        return 'bg-blue-100 text-blue-800';
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'processed':
-        return 'bg-green-100 text-green-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -310,7 +290,6 @@ export default function PostsAdminPage() {
                       <SortableHeader field="title" label="Title" className="w-[45%]" />
                       <SortableHeader field="published_date" label="Published Date" />
                       <SortableHeader field="found_at" label="Found Date" />
-                      <SortableHeader field="status" label="Status" />
                       <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Action
                       </th>
@@ -351,11 +330,6 @@ export default function PostsAdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatDate(post.found_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${getStatusColor(post.status)}`}>
-                              {post.status}
-                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                             <button
