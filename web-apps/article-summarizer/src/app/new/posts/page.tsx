@@ -110,8 +110,8 @@ export default function PostsAdminPage() {
   };
 
   const handleProcess = (post: Post) => {
-    // Redirect to existing admin page with URL parameter
-    router.push(`/admin?url=${encodeURIComponent(post.url)}`);
+    // Redirect to article processing page with URL parameter
+    router.push(`/new/article?url=${encodeURIComponent(post.url)}`);
   };
 
   const handleSort = (field: SortField) => {
@@ -474,15 +474,6 @@ export default function PostsAdminPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
                 Manage Sources
-              </a>
-              <a
-                href="/admin"
-                className="text-sm text-gray-600 hover:text-[#077331] transition-colors inline-flex items-center"
-              >
-                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                Article Admin
               </a>
             </div>
 
