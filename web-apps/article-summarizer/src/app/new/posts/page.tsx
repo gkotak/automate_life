@@ -11,7 +11,6 @@ interface Post {
   url: string;
   channel_title: string | null;
   channel_url: string | null;
-  platform: string;
   source_feed: string | null;
   published_date: string | null;
   found_at: string;
@@ -19,7 +18,7 @@ interface Post {
   is_new: boolean;
 }
 
-type SortField = 'title' | 'published_date' | 'found_at' | 'platform' | 'status';
+type SortField = 'title' | 'published_date' | 'found_at' | 'status';
 type SortDirection = 'asc' | 'desc';
 
 export default function PostsAdminPage() {
@@ -143,10 +142,6 @@ export default function PostsAdminPage() {
           aValue = a.found_at ? new Date(a.found_at).getTime() : 0;
           bValue = b.found_at ? new Date(b.found_at).getTime() : 0;
           break;
-        case 'platform':
-          aValue = a.platform.toLowerCase();
-          bValue = b.platform.toLowerCase();
-          break;
         case 'status':
           aValue = a.status.toLowerCase();
           bValue = b.status.toLowerCase();
@@ -171,22 +166,6 @@ export default function PostsAdminPage() {
       });
     } catch {
       return 'Invalid date';
-    }
-  };
-
-  const getPlatformBadgeColor = (platform: string) => {
-    switch (platform.toLowerCase()) {
-      case 'rss_feed':
-      case 'rss':
-        return 'bg-purple-100 text-purple-800';
-      case 'substack':
-        return 'bg-orange-100 text-orange-800';
-      case 'medium':
-        return 'bg-blue-100 text-blue-800';
-      case 'youtube':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -331,7 +310,6 @@ export default function PostsAdminPage() {
                       <SortableHeader field="title" label="Title" className="w-[45%]" />
                       <SortableHeader field="published_date" label="Published Date" />
                       <SortableHeader field="found_at" label="Found Date" />
-                      <SortableHeader field="platform" label="Platform" />
                       <SortableHeader field="status" label="Status" />
                       <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Action
@@ -373,11 +351,6 @@ export default function PostsAdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatDate(post.found_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${getPlatformBadgeColor(post.platform)}`}>
-                              {post.platform.replace('_', ' ').toUpperCase()}
-                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${getStatusColor(post.status)}`}>
