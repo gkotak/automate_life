@@ -465,15 +465,26 @@ export default function PostsAdminPage() {
 
           {/* Footer */}
           <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between items-center">
-            <a
-              href="/admin"
-              className="text-sm text-gray-600 hover:text-[#077331] transition-colors inline-flex items-center"
-            >
-              <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Article Admin
-            </a>
+            <div className="flex gap-4">
+              <a
+                href="/sources"
+                className="text-sm text-gray-600 hover:text-[#077331] transition-colors inline-flex items-center"
+              >
+                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Manage Sources
+              </a>
+              <a
+                href="/admin"
+                className="text-sm text-gray-600 hover:text-[#077331] transition-colors inline-flex items-center"
+              >
+                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Article Admin
+              </a>
+            </div>
 
             <a
               href="/"
