@@ -41,6 +41,14 @@ export default function ArticleList() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [showMyArticlesOnly, setShowMyArticlesOnly] = useState<boolean>(() => {
+    // Default to true, but check localStorage for saved preference
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('showMyArticlesOnly')
+      return saved !== null ? saved === 'true' : true
+    }
+    return true
+  })
 
   // Source filter states
   const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
@@ -90,13 +98,52 @@ export default function ArticleList() {
     }
   }, [user, pathname])
 
+  // Re-fetch articles when My Articles filter changes
+  useEffect(() => {
+    if (hasLoaded && pathname === '/') {
+      fetchArticles()
+      fetchAvailableSources()
+    }
+    // Save preference to localStorage
+    localStorage.setItem('showMyArticlesOnly', String(showMyArticlesOnly))
+  }, [showMyArticlesOnly])
+
   const fetchAvailableSources = async () => {
     try {
-      const { data, error } = await supabase
-        .from('articles')
-        .select('source')
+      let data
 
-      if (error) throw error
+      if (showMyArticlesOnly && user?.id) {
+        // Fetch sources only from user's articles
+        const { data: articleUsers, error: junctionError } = await supabase
+          .from('article_users')
+          .select('article_id')
+          .eq('user_id', user.id)
+
+        if (junctionError) throw junctionError
+
+        const articleIds = articleUsers.map(au => au.article_id)
+
+        if (articleIds.length === 0) {
+          setAvailableSources([])
+          return
+        }
+
+        const { data: articlesData, error: articlesError } = await supabase
+          .from('articles')
+          .select('source')
+          .in('id', articleIds)
+
+        if (articlesError) throw articlesError
+        data = articlesData
+      } else {
+        // Fetch all sources
+        const { data: allSources, error } = await supabase
+          .from('articles')
+          .select('source')
+
+        if (error) throw error
+        data = allSources
+      }
 
       // Count sources
       const sourceCounts: Record<string, number> = {}
@@ -140,22 +187,46 @@ export default function ArticleList() {
       setSearchQuery('')
       setExtractedTerms([])
 
-      let query = supabase
-        .from('articles')
-        .select('*, key_insights, quotes, duration_minutes, word_count, topics')
+      let data
 
-      // NOTE: User filtering disabled - articles don't have user_id set yet
-      // TODO: Implement user isolation when ready:
-      // 1. Run migration to add user_id to existing articles
-      // 2. Update article processor to set user_id on new articles
-      // 3. Re-enable the filter below:
-      // if (user) {
-      //   query = query.eq('user_id', user.id)
-      // }
+      if (showMyArticlesOnly && user?.id) {
+        // Fetch only articles the user has saved via article_users junction table
+        const { data: articleUsers, error: junctionError } = await supabase
+          .from('article_users')
+          .select('article_id')
+          .eq('user_id', user.id)
 
-      const { data, error } = await query.order('created_at', { ascending: false })
+        if (junctionError) throw junctionError
 
-      if (error) throw error
+        const articleIds = articleUsers.map(au => au.article_id)
+
+        if (articleIds.length === 0) {
+          // User has no articles yet
+          setArticles([])
+          setHasLoaded(true)
+          setLoading(false)
+          return
+        }
+
+        // Fetch the actual articles
+        const { data: articlesData, error: articlesError } = await supabase
+          .from('articles')
+          .select('*, key_insights, quotes, duration_minutes, word_count, topics')
+          .in('id', articleIds)
+          .order('created_at', { ascending: false })
+
+        if (articlesError) throw articlesError
+        data = articlesData
+      } else {
+        // Fetch all articles (no user filter)
+        const { data: allArticles, error } = await supabase
+          .from('articles')
+          .select('*, key_insights, quotes, duration_minutes, word_count, topics')
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        data = allArticles
+      }
 
       // Only update articles after we have the data
       if (data) {
@@ -209,7 +280,7 @@ export default function ArticleList() {
 
   const performSearch = async (query: string, contentTypes: string[], sources: string[], from: string, to: string) => {
     // Check if we have any filters applied
-    const hasFilters = contentTypes.length > 0 || sources.length > 0 || from || to
+    const hasFilters = contentTypes.length > 0 || sources.length > 0 || from || to || showMyArticlesOnly
 
     // If no search query and no filters, just fetch all articles
     if (!query.trim() && !hasFilters) {
@@ -226,6 +297,7 @@ export default function ArticleList() {
       if (sources.length > 0) filters.sources = sources
       if (from) filters.dateFrom = from
       if (to) filters.dateTo = to
+      if (showMyArticlesOnly && user?.id) filters.userId = user.id
 
       // Use API for search with filters (even if query is empty)
       const response = await fetch('/api/search', {
@@ -473,6 +545,24 @@ export default function ArticleList() {
             {/* Filters Section */}
             {showFilters && (
               <div className="pt-4 border-t border-gray-200">
+                {/* My Articles Filter */}
+                {user && (
+                  <div className="mb-4 pb-4 border-b border-gray-200">
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showMyArticlesOnly}
+                        onChange={(e) => setShowMyArticlesOnly(e.target.checked)}
+                        className="rounded border-gray-300 text-[#077331] focus:ring-[#077331]"
+                      />
+                      <span className="ml-2 text-sm font-medium text-gray-700">My Articles Only</span>
+                      <span className="ml-2 text-xs text-gray-500 italic">
+                        ({showMyArticlesOnly ? 'Showing only your saved articles' : 'Showing all articles'})
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Content Type Filter */}
                   <div>

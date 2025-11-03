@@ -2,12 +2,12 @@
 API routes for post checking operations
 """
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 
 from app.models.post import GetPostsResponse, CheckPostsResponse, Post
 from app.services.post_checker import PostCheckerService
-from app.middleware.auth import verify_api_key
+from app.middleware.auth import verify_supabase_jwt
 
 router = APIRouter()
 
@@ -15,24 +15,21 @@ router = APIRouter()
 @router.get("/posts/discovered", response_model=GetPostsResponse)
 async def get_discovered_posts(
     limit: int = 200,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+    user_id: str = Depends(verify_supabase_jwt)
 ):
     """
-    Get discovered posts/articles from the database
+    Get discovered posts/articles from the database for the authenticated user
 
     Args:
         limit: Maximum number of posts to return
-        x_api_key: API key for authentication
+        user_id: User ID extracted from JWT token
 
     Returns:
-        List of discovered posts
+        List of discovered posts for this user
     """
-    # Verify API key
-    verify_api_key(x_api_key)
-
-    # Get posts from service
+    # Get posts from service (filtered by user_id)
     service = PostCheckerService()
-    posts = await service.get_discovered_posts(limit=limit)
+    posts = await service.get_discovered_posts(user_id=user_id, limit=limit)
 
     return GetPostsResponse(
         posts=[Post(**p) for p in posts],
@@ -42,23 +39,20 @@ async def get_discovered_posts(
 
 @router.post("/posts/check", response_model=CheckPostsResponse)
 async def check_posts(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+    user_id: str = Depends(verify_supabase_jwt)
 ):
     """
-    Check content_sources for new posts/articles
+    Check content_sources for new posts/articles for the authenticated user
 
     Args:
-        x_api_key: API key for authentication
+        user_id: User ID extracted from JWT token
 
     Returns:
         Results of the post check
     """
-    # Verify API key
-    verify_api_key(x_api_key)
-
-    # Run post check
+    # Run post check for this user
     service = PostCheckerService()
-    result = await service.check_for_new_posts()
+    result = await service.check_for_new_posts(user_id=user_id)
 
     return CheckPostsResponse(
         message=result["message"],

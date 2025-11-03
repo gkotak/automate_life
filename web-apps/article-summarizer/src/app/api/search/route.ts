@@ -17,6 +17,7 @@ interface SearchFilters {
   sources?: string[]
   dateFrom?: string
   dateTo?: string
+  userId?: string  // Filter by user's articles only
 }
 
 /**
@@ -174,7 +175,23 @@ export async function POST(request: NextRequest) {
     }
     }
 
-    // Apply filters
+    // Apply user filter first if specified
+    if (filters.userId) {
+      // Fetch article IDs for this user
+      const { data: articleUsers, error: junctionError } = await supabase
+        .from('article_users')
+        .select('article_id')
+        .eq('user_id', filters.userId)
+
+      if (junctionError) {
+        console.error('User filter error:', junctionError);
+      } else if (articleUsers) {
+        const userArticleIds = new Set(articleUsers.map(au => au.article_id))
+        results = results.filter(r => userArticleIds.has(r.id))
+      }
+    }
+
+    // Apply other filters
     if (filters.contentTypes && filters.contentTypes.length > 0) {
       results = results.filter(r => filters.contentTypes!.includes(r.content_source))
     }

@@ -37,20 +37,23 @@ class PostCheckerService:
         self.session = requests.Session()
         self.session.headers.update(Config.get_default_headers())
 
-    async def check_for_new_posts(self) -> Dict:
+    async def check_for_new_posts(self, user_id: str) -> Dict:
         """
-        Check content_sources for new posts/articles
+        Check content_sources for new posts/articles for a specific user
+
+        Args:
+            user_id: UUID of the user to check sources for
 
         Returns:
             Dictionary with results including newly_discovered_ids
         """
-        self.logger.info("Starting post check...")
+        self.logger.info(f"Starting post check for user: {user_id}...")
 
-        # Load content sources from database
-        sources = self._load_content_sources()
+        # Load content sources from database (filtered by user_id)
+        sources = self._load_content_sources(user_id)
 
         if not sources:
-            self.logger.warning("No active content sources found")
+            self.logger.warning(f"No active content sources found for user: {user_id}")
             return {
                 "new_posts_found": 0,
                 "total_sources_checked": 0,
@@ -58,14 +61,14 @@ class PostCheckerService:
                 "newly_discovered_ids": []
             }
 
-        self.logger.info(f"Processing {len(sources)} content sources...")
+        self.logger.info(f"Processing {len(sources)} content sources for user: {user_id}...")
 
         new_posts_found = 0
         total_sources_checked = 0
         newly_discovered_ids = []
 
-        # Load existing posts from database
-        existing_urls = self._get_existing_post_urls()
+        # Load existing posts from database (filtered by user_id)
+        existing_urls = self._get_existing_post_urls(user_id)
 
         # Process each source
         for source in sources:
@@ -100,7 +103,7 @@ class PostCheckerService:
                 new_posts_found += 1
 
                 # Save to database and get the ID
-                post_id = self._save_post_to_queue(post, source_url)
+                post_id = self._save_post_to_queue(post, source_url, user_id)
                 if post_id:
                     newly_discovered_ids.append(post_id)
 
@@ -114,24 +117,28 @@ class PostCheckerService:
             "newly_discovered_ids": newly_discovered_ids
         }
 
-    def _load_content_sources(self) -> List[Dict]:
-        """Load active content sources from Supabase"""
+    def _load_content_sources(self, user_id: str) -> List[Dict]:
+        """Load active content sources from Supabase for a specific user"""
         try:
             result = self.supabase.table('content_sources').select('*').eq(
+                'user_id', user_id
+            ).eq(
                 'is_active', True
             ).execute()
 
-            self.logger.info(f"Loaded {len(result.data)} active content sources")
+            self.logger.info(f"Loaded {len(result.data)} active content sources for user: {user_id}")
             return result.data
 
         except Exception as e:
             self.logger.error(f"Error loading content sources: {e}")
             return []
 
-    def _get_existing_post_urls(self) -> set:
-        """Get set of existing post URLs from content_queue"""
+    def _get_existing_post_urls(self, user_id: str) -> set:
+        """Get set of existing post URLs from content_queue for a specific user"""
         try:
             result = self.supabase.table('content_queue').select('url').eq(
+                'user_id', user_id
+            ).eq(
                 'content_type', 'article'
             ).execute()
 
@@ -452,8 +459,8 @@ class PostCheckerService:
             self.logger.warning(f"Error checking post date for {post_url}: {e}")
             return True  # Assume recent if we can't determine
 
-    def _save_post_to_queue(self, post: Dict, source_feed: str) -> Optional[str]:
-        """Save post to content_queue table"""
+    def _save_post_to_queue(self, post: Dict, source_feed: str, user_id: str) -> Optional[str]:
+        """Save post to content_queue table with user_id"""
         try:
             # Extract channel info
             channel_title, channel_url = self._extract_channel_info(post['url'], source_feed)
@@ -469,7 +476,8 @@ class PostCheckerService:
                 'source_feed': source_feed,
                 'found_at': datetime.now().isoformat(),
                 'published_date': post['published'].isoformat() if post.get('published') else None,
-                'status': 'discovered'
+                'status': 'discovered',
+                'user_id': user_id
             }
 
             result = self.supabase.table('content_queue').upsert(
@@ -511,10 +519,12 @@ class PostCheckerService:
         except:
             return None, None
 
-    async def get_discovered_posts(self, limit: int = 200) -> List[Dict]:
-        """Get discovered posts from content_queue"""
+    async def get_discovered_posts(self, user_id: str, limit: int = 200) -> List[Dict]:
+        """Get discovered posts from content_queue for a specific user"""
         try:
             result = self.supabase.table('content_queue').select('*').eq(
+                'user_id', user_id
+            ).eq(
                 'content_type', 'article'
             ).order('found_at', desc=True).limit(limit).execute()
 

@@ -3,10 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-
-// API configuration from environment variables
-const CONTENT_CHECKER_API_URL = process.env.NEXT_PUBLIC_CONTENT_CHECKER_API_URL || 'http://localhost:8001';
-const CONTENT_CHECKER_API_KEY = process.env.NEXT_PUBLIC_CONTENT_CHECKER_API_KEY || '';
+import { getDiscoveredPosts, checkNewPosts } from '@/lib/api-client';
 
 interface Post {
   id: string;
@@ -62,21 +59,7 @@ export default function PostsAdminPage() {
     }
 
     try {
-      const headers: HeadersInit = {};
-      if (CONTENT_CHECKER_API_KEY) {
-        headers['X-API-Key'] = CONTENT_CHECKER_API_KEY;
-      }
-
-      const response = await fetch(
-        `${CONTENT_CHECKER_API_URL}/api/posts/discovered?limit=200`,
-        { headers }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to load posts');
-      }
-
-      const data = await response.json();
+      const data = await getDiscoveredPosts(200);
       setPosts(data.posts);
       setTotalCount(data.total);
 
@@ -96,31 +79,12 @@ export default function PostsAdminPage() {
     }
   };
 
-  const checkNewPosts = async () => {
+  const checkForNewPosts = async () => {
     setChecking(true);
     setMessage(null);
 
     try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-      if (CONTENT_CHECKER_API_KEY) {
-        headers['X-API-Key'] = CONTENT_CHECKER_API_KEY;
-      }
-
-      const response = await fetch(
-        `${CONTENT_CHECKER_API_URL}/api/posts/check`,
-        {
-          method: 'POST',
-          headers
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to check posts');
-      }
-
-      const data = await response.json();
+      const data = await checkNewPosts();
 
       // Track newly discovered IDs
       if (data.newly_discovered_ids && data.newly_discovered_ids.length > 0) {
@@ -302,7 +266,7 @@ export default function PostsAdminPage() {
           {/* Actions */}
           <div className="mb-6">
             <button
-              onClick={checkNewPosts}
+              onClick={checkForNewPosts}
               disabled={checking}
               className={`px-6 py-3 rounded-lg font-medium text-white transition-colors ${
                 checking
@@ -352,7 +316,7 @@ export default function PostsAdminPage() {
               </svg>
               <p className="mt-4 text-gray-600">No discovered posts found</p>
               <button
-                onClick={checkNewPosts}
+                onClick={checkForNewPosts}
                 className="mt-4 px-4 py-2 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] transition-colors"
               >
                 Check for Posts

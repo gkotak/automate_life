@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { createBrowserClient } from '@supabase/ssr';
 
 // API configuration from environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || '';
 
 interface ProcessingStep {
   id: string;
@@ -41,6 +41,12 @@ function AdminPageContent() {
   const audioDurationRef = useRef<number | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const hasAutoSubmittedRef = useRef(false);
+
+  // Create Supabase client - same as AuthContext
+  const supabase = useMemo(() => createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  ), []);
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -130,11 +136,17 @@ function AdminPageContent() {
     initializeSteps();
 
     try {
-      const encodedUrl = encodeURIComponent(url.trim());
-      let streamUrl = `${API_URL}/api/process-direct?url=${encodedUrl}&api_key=${API_KEY}`;
-      if (user) {
-        streamUrl += `&user_id=${encodeURIComponent(user.id)}`;
+      // Get auth token from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('Not authenticated. Please sign in again.');
       }
+
+      const encodedUrl = encodeURIComponent(url.trim());
+      // NOTE: EventSource doesn't support custom headers, so we pass the token as a query parameter
+      // The backend will be updated to accept tokens from query params for SSE endpoints
+      let streamUrl = `${API_URL}/api/process-direct?url=${encodedUrl}&token=${encodeURIComponent(session.access_token)}`;
       if (forceReprocess) {
         streamUrl += '&force_reprocess=true';
       }
@@ -273,9 +285,15 @@ function AdminPageContent() {
 
       eventSource.addEventListener('completed', (e) => {
         const data = JSON.parse(e.data);
+
+        // Determine message based on whether article was already processed
+        const message = data.already_processed
+          ? data.message || 'Article added to your library!'
+          : 'Article processed successfully!';
+
         setResult({
           status: 'success',
-          message: 'Article processed successfully!',
+          message: message,
           articleId: data.article_id
         });
         setUrl('');

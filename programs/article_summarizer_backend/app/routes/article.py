@@ -14,7 +14,7 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from sse_starlette.sse import EventSourceResponse
 
-from app.middleware.auth import verify_api_key
+from app.middleware.auth import verify_supabase_jwt
 from core.event_emitter import ProcessingEventEmitter
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class ProcessArticleResponse(BaseModel):
 @router.post("/process-article", response_model=ProcessArticleResponse)
 async def process_article(
     request: ProcessArticleRequest,
-    api_key: str = Depends(verify_api_key)
+    user_id: str = Depends(verify_supabase_jwt)
 ):
     """
     Process an article URL and save to database
@@ -52,12 +52,12 @@ async def process_article(
 
     Args:
         request: ProcessArticleRequest with URL
-        api_key: Validated API key from middleware
+        user_id: User ID extracted from JWT token
 
     Returns:
         ProcessArticleResponse with article_id and status
     """
-    logger.info(f"📥 Processing article request: {request.url}")
+    logger.info(f"📥 Processing article request: {request.url} for user: {user_id}")
 
     try:
         # Import ArticleProcessor here to avoid circular imports
@@ -66,8 +66,8 @@ async def process_article(
         # Initialize processor
         processor = ArticleProcessor()
 
-        # Process the article (now async)
-        article_id = await processor.process_article(str(request.url))
+        # Process the article (now async) with user_id
+        article_id = await processor.process_article(str(request.url), user_id=user_id)
 
         logger.info(f"✅ Successfully processed article: ID={article_id}")
 
@@ -96,9 +96,8 @@ class ProcessArticleStreamResponse(BaseModel):
 @router.get("/process-direct")
 async def process_article_direct(
     url: str,
-    api_key: Optional[str] = None,
-    user_id: Optional[str] = None,
-    force_reprocess: bool = False
+    force_reprocess: bool = False,
+    token: Optional[str] = None
 ):
     """
     NEW APPROACH: Process article with generator-driven SSE streaming
@@ -106,25 +105,48 @@ async def process_article_direct(
     The generator itself does the processing and yields events in real-time.
     No background tasks, no queues - just direct streaming.
 
+    NOTE: EventSource doesn't support custom headers, so we accept the token as a query parameter.
+
     Args:
         url: Article URL to process
-        api_key: API key as query parameter
-        user_id: Optional user ID for authentication (Supabase auth user)
         force_reprocess: If True, reprocess article even if it already exists
+        token: Supabase JWT token (passed as query param for SSE compatibility)
 
     Returns:
         EventSourceResponse with real-time processing events
     """
-    # Validate API key
-    expected_api_key = os.getenv('API_KEY')
-    if not expected_api_key or api_key != expected_api_key:
-        logger.warning(f"🔒 Invalid or missing API key")
+    # Verify token manually since we can't use Depends with query param
+    from app.middleware.auth import get_supabase_admin
+
+    if not token:
+        logger.warning("🔒 SSE request without token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key"
+            detail="Missing authentication token"
         )
 
-    logger.info(f"📡 Starting direct SSE processing for: {url}")
+    try:
+        supabase = get_supabase_admin()
+        user_response = supabase.auth.get_user(token)
+
+        if not user_response or not user_response.user:
+            logger.warning("🔒 Invalid token for SSE request")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        user_id = user_response.user.id
+        logger.info(f"📡 Starting direct SSE processing for: {url} (user: {user_id})")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error verifying token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        )
 
     async def process_and_stream():
         """
@@ -165,24 +187,68 @@ async def process_article_direct(
             if not force_reprocess:
                 existing = processor.check_article_exists(url)
                 if existing:
-                    # Emit duplicate detected event
-                    yield {
-                        "event": "duplicate_detected",
-                        "data": json.dumps({
-                            "article_id": existing['id'],
-                            "title": existing['title'],
-                            "created_at": existing['created_at'],
-                            "updated_at": existing['updated_at'],
-                            "url": f"/article/{existing['id']}",
-                            "elapsed": elapsed()
-                        })
-                    }
-                    await asyncio.sleep(0)
+                    article_id = existing['id']
 
-                    # Wait for confirmation (frontend should send a new request or cancel)
-                    # For now, we'll just stop and let the frontend handle it
-                    logger.info(f"⚠️  Article already exists (ID: {existing['id']}). Stopping processing.")
-                    return
+                    # Check if user has already saved this article
+                    user_already_has_article = False
+                    if user_id:
+                        try:
+                            result = processor.supabase.table('article_users').select('*').eq(
+                                'article_id', article_id
+                            ).eq(
+                                'user_id', user_id
+                            ).execute()
+                            user_already_has_article = len(result.data) > 0
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error checking article_users: {e}")
+
+                    if user_already_has_article:
+                        # User already has this article - show reprocess warning
+                        logger.info(f"⚠️ User already has this article (ID: {article_id}). Asking for confirmation...")
+                        yield {
+                            "event": "duplicate_detected",
+                            "data": json.dumps({
+                                "article_id": existing['id'],
+                                "title": existing['title'],
+                                "created_at": existing['created_at'],
+                                "updated_at": existing['updated_at'],
+                                "url": f"/article/{existing['id']}",
+                                "elapsed": elapsed()
+                            })
+                        }
+                        await asyncio.sleep(0)
+                        logger.info(f"⚠️ Waiting for user confirmation to reprocess")
+                        return
+                    else:
+                        # Article exists globally but user doesn't have it - add to library
+                        logger.info(f"📚 Article exists globally (ID: {article_id}). Adding to user's library...")
+
+                        # Associate article with user in junction table
+                        if user_id:
+                            try:
+                                processor.supabase.table('article_users').insert({
+                                    'article_id': article_id,
+                                    'user_id': user_id
+                                }).execute()
+                                logger.info(f"✅ Associated article with user: {user_id}")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to associate article with user: {e}")
+
+                        # Emit success event (article was "saved" for this user)
+                        yield {
+                            "event": "completed",
+                            "data": json.dumps({
+                                "article_id": article_id,
+                                "url": f"/article/{article_id}",
+                                "elapsed": elapsed(),
+                                "already_processed": True,
+                                "message": "Article already exists - added to your library"
+                            })
+                        }
+                        await asyncio.sleep(0)
+
+                        logger.info(f"✅ Article added to user's library (no reprocessing needed)")
+                        return
             else:
                 logger.info(f"🔄 Force reprocessing article: {url}")
 
@@ -270,7 +336,7 @@ async def process_article_direct(
             await asyncio.sleep(0)
 
             logger.info("Saving to database...")
-            article_id = processor._save_to_database(metadata, ai_summary)
+            article_id = processor._save_to_database(metadata, ai_summary, user_id=user_id)
 
             yield {
                 "event": "save_complete",
@@ -306,7 +372,7 @@ async def process_article_direct(
 @router.get("/status/{job_id}")
 async def stream_processing_status(
     job_id: str,
-    api_key: Optional[str] = None
+    user_id: str = Depends(verify_supabase_jwt)
 ):
     """
     Stream real-time processing updates for a job via Server-Sent Events
@@ -317,21 +383,12 @@ async def stream_processing_status(
 
     Args:
         job_id: Job ID from background processing task
-        api_key: API key as query parameter (since EventSource can't send headers)
+        user_id: User ID extracted from JWT token
 
     Returns:
         EventSourceResponse streaming processing events
     """
-    # Validate API key from query parameter (EventSource limitation)
-    expected_api_key = os.getenv('API_KEY')
-    if not expected_api_key or api_key != expected_api_key:
-        logger.warning(f"🔒 Invalid or missing API key for SSE stream: {job_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key"
-        )
-
-    logger.info(f"📡 Starting SSE stream for job: {job_id}")
+    logger.info(f"📡 Starting SSE stream for job: {job_id} (user: {user_id})")
 
     return EventSourceResponse(
         ProcessingEventEmitter.stream_events(job_id),
@@ -346,7 +403,7 @@ async def stream_processing_status(
 @router.get("/article/{article_id}/status")
 async def get_article_status(
     article_id: int,
-    api_key: str = Depends(verify_api_key)
+    user_id: str = Depends(verify_supabase_jwt)
 ):
     """
     Get processing status of an article
@@ -355,7 +412,7 @@ async def get_article_status(
 
     Args:
         article_id: ID of the article
-        api_key: Validated API key from middleware
+        user_id: User ID extracted from JWT token
 
     Returns:
         Status information

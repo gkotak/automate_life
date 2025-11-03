@@ -1096,15 +1096,12 @@ class ArticleProcessor(BaseProcessor):
                 'topics': ai_summary.get('topics', []),
             }
 
-            # Add user_id if provided (for user-owned articles)
-            if user_id:
-                article_data['user_id'] = user_id
-
             # Add embedding if generated
             if embedding:
                 article_data['embedding'] = embedding
 
             # Try to update existing article or insert new one
+            # Note: user_id is no longer on articles table (moved to article_users junction table)
             result = self.supabase.table('articles').upsert(
                 article_data,
                 on_conflict='url'
@@ -1113,6 +1110,21 @@ class ArticleProcessor(BaseProcessor):
             if result.data:
                 article_id = result.data[0]['id']
                 self.logger.info(f"   ✅ Saved to database (article ID: {article_id})")
+
+                # Associate article with user in junction table (if user_id provided)
+                if user_id:
+                    try:
+                        self.supabase.table('article_users').upsert(
+                            {
+                                'article_id': article_id,
+                                'user_id': user_id
+                            },
+                            on_conflict='article_id,user_id'
+                        ).execute()
+                        self.logger.info(f"   ✅ Associated article with user: {user_id}")
+                    except Exception as e:
+                        self.logger.warning(f"   ⚠️ Failed to associate article with user: {e}")
+
                 return article_id
             else:
                 self.logger.warning("   ⚠️ Database save completed but no data returned")

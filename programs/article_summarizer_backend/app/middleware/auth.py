@@ -1,29 +1,51 @@
 """
 Authentication Middleware
 
-Provides API key authentication for protected endpoints.
+Provides Supabase JWT authentication for protected endpoints.
+Uses Supabase client library to verify tokens.
 """
 
 import os
 import logging
 from fastapi import Header, HTTPException, status
 from typing import Optional
+from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
+# Initialize Supabase client with service role key for admin operations
+_supabase_client: Optional[Client] = None
 
-async def verify_api_key(authorization: Optional[str] = Header(None)) -> str:
+
+def get_supabase_admin() -> Client:
+    """Get or create Supabase admin client (singleton)"""
+    global _supabase_client
+
+    if _supabase_client is None:
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_SECRET_KEY')  # Using the service role key
+
+        if not supabase_url or not supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must be set")
+
+        _supabase_client = create_client(supabase_url, supabase_key)
+        logger.info("✅ Supabase admin client initialized")
+
+    return _supabase_client
+
+
+async def verify_supabase_jwt(authorization: Optional[str] = Header(None)) -> str:
     """
-    Verify API key from Authorization header
+    Verify Supabase JWT token from Authorization header using Supabase client
 
     Args:
         authorization: Authorization header value (Bearer TOKEN)
 
     Returns:
-        The validated API key
+        The user_id extracted from the JWT token
 
     Raises:
-        HTTPException: If API key is missing or invalid
+        HTTPException: If token is missing or invalid
     """
     if not authorization:
         logger.warning("🔒 API request without Authorization header")
@@ -36,7 +58,7 @@ async def verify_api_key(authorization: Optional[str] = Header(None)) -> str:
     # Parse Bearer token
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        logger.warning(f"🔒 Invalid Authorization format: {authorization[:20]}...")
+        logger.warning(f"🔒 Invalid Authorization format")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization header format. Expected: Bearer <token>",
@@ -45,23 +67,41 @@ async def verify_api_key(authorization: Optional[str] = Header(None)) -> str:
 
     token = parts[1]
 
-    # Get expected API key from environment
-    expected_api_key = os.getenv('API_KEY')
-    if not expected_api_key:
-        logger.error("❌ API_KEY environment variable not set!")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error"
-        )
+    # Verify token using Supabase client
+    try:
+        supabase = get_supabase_admin()
 
-    # Validate token
-    if token != expected_api_key:
-        logger.warning(f"🔒 Invalid API key attempt: {token[:10]}...")
+        # Get user from token
+        user_response = supabase.auth.get_user(token)
+
+        if not user_response or not user_response.user:
+            logger.warning("🔒 Invalid token - no user found")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_id = user_response.user.id
+        logger.debug(f"✅ JWT validated successfully for user: {user_id}")
+        return user_id
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error verifying JWT: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key",
+            detail="Invalid authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    logger.debug("✅ API key validated successfully")
-    return token
+
+# Keep old function name for backward compatibility (but make it an alias)
+async def verify_api_key(authorization: Optional[str] = Header(None)) -> str:
+    """
+    DEPRECATED: Use verify_supabase_jwt instead
+    This is kept for backward compatibility only
+    """
+    return await verify_supabase_jwt(authorization)
