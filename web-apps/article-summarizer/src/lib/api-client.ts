@@ -5,7 +5,13 @@
  * Automatically includes Supabase JWT token in requests
  */
 
-import { supabase } from './supabase'
+import { createBrowserClient } from '@supabase/ssr'
+
+// Create Supabase client using @supabase/ssr (same as AuthContext)
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+)
 
 /**
  * Get the current user's auth token
