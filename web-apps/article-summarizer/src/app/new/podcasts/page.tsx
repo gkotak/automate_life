@@ -146,9 +146,9 @@ export default function PodcastsAdminPage() {
   };
 
   const handleProcess = (podcast: PodcastEpisode) => {
-    // Redirect to existing admin page with URL parameter
+    // Redirect to article processing page with URL parameter
     const url = podcast.podcast_video_url || podcast.episode_url;
-    router.push(`/admin?url=${encodeURIComponent(url)}`);
+    router.push(`/new/article?url=${encodeURIComponent(url)}`);
   };
 
   const handleSort = (field: SortField) => {
@@ -492,17 +492,7 @@ export default function PodcastsAdminPage() {
           )}
 
           {/* Footer */}
-          <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between items-center">
-            <a
-              href="/admin"
-              className="text-sm text-gray-600 hover:text-[#077331] transition-colors inline-flex items-center"
-            >
-              <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Article Admin
-            </a>
-
+          <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end items-center">
             <a
               href="/"
               className="text-sm text-gray-600 hover:text-[#077331] transition-colors inline-flex items-center"
