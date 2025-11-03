@@ -162,3 +162,14 @@ html, body {
 .prose .insight-timestamp:hover {
   background: #055a24;
 }
+
+/* Form Input Styling - Global white background for inputs/textareas */
+input[type="text"],
+input[type="email"],
+input[type="url"],
+input[type="password"],
+input[type="search"],
+textarea,
+select {
+  background-color: white !important;
+}

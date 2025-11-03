@@ -268,17 +268,20 @@ export default function ContentSourcesPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.is_active}
-                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                      className="rounded border-gray-300 text-[#077331] focus:ring-[#077331] mr-2"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Active</span>
-                  </label>
-                </div>
+                {/* Only show active checkbox when editing (new sources are always active) */}
+                {editingSource && (
+                  <div>
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_active}
+                        onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                        className="rounded border-gray-300 text-[#077331] focus:ring-[#077331] mr-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Active</span>
+                    </label>
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-4">
                   <button
