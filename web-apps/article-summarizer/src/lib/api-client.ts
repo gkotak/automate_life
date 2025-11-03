@@ -119,7 +119,7 @@ export async function checkNewPosts(): Promise<{
   total_sources_checked: number
   newly_discovered_ids: string[]
 }> {
-  const response = await fetchContentCheckerBackend('/posts/check', {
+  const response = await fetchContentCheckerBackend('/api/posts/check', {
     method: 'POST',
   })
 
@@ -151,7 +151,7 @@ export async function getDiscoveredPosts(limit: number = 200): Promise<{
   }>
   total: number
 }> {
-  const response = await fetchContentCheckerBackend(`/posts/discovered?limit=${limit}`)
+  const response = await fetchContentCheckerBackend(`/api/posts/discovered?limit=${limit}`)
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
