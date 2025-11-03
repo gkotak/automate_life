@@ -23,7 +23,7 @@ export default function Nav() {
             </Link>
             {user && (
               <Link
-                href="/admin"
+                href="/new/article"
                 className="text-slate-300 hover:text-white transition-colors"
               >
                 Add Article

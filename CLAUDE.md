@@ -20,13 +20,13 @@ This is a Claude Code configuration repository that automates content analysis a
   - Scans listening history for new episodes
   - Uses SERPAPI for YouTube discovery (whitelisted podcasts)
   - Saves discoveries to content_queue table
-  - View at http://localhost:3000/admin/podcasts
+  - View at http://localhost:3000/new/podcasts
 
 - `python3 scripts/check_posts.py` - Checks RSS feeds and newsletters for new posts
   - Scans content_sources table for active feeds
   - Extracts posts from RSS/Atom feeds and web pages
   - Filters by recency (last 3 days)
-  - View at http://localhost:3000/admin/posts
+  - View at http://localhost:3000/new/posts
 
 ## Architecture Overview
 
@@ -77,8 +77,8 @@ programs/content_checker_backend/
 
 web-apps/article-summarizer/   # Next.js web interface (runs on port 3000)
 ├── src/                        # React components and pages
-│   ├── app/admin/podcasts/     # Podcast admin page
-│   └── app/admin/posts/        # Newsletter/blog admin page
+│   ├── app/new/podcasts/       # Podcast queue page
+│   └── app/new/posts/          # Newsletter/blog queue page
 ├── public/                     # Static assets
 └── package.json                # Dependencies
 

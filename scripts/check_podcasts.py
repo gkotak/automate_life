@@ -39,8 +39,8 @@ async def check_podcasts():
                 data = response.json()
 
                 print(f"\n✅ {data['message']}")
-                print(f"📊 New episodes: {data['new_episodes_found']}")
-                print(f"📊 Podcasts checked: {data['total_podcasts_checked']}")
+                print(f"📊 New episodes: {data['new_podcasts_found']}")
+                print(f"📊 Episodes checked: {data['total_episodes_checked']}")
 
                 if data.get('newly_discovered_ids'):
                     print(f"\n🆕 Newly discovered episodes ({len(data['newly_discovered_ids'])}):")

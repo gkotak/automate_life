@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { User } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
@@ -23,11 +23,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  // Create Supabase client with environment variables
-  const supabase = createBrowserClient(
+  // Create Supabase client with environment variables - memoize to prevent recreation
+  const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
+  ), [])
 
   useEffect(() => {
     // Check active session
@@ -41,13 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('Auth event:', _event)
       setUser(session?.user ?? null)
-      setLoading(false)
-      router.refresh()
+      // Don't call router.refresh() here - it causes infinite loops
+      // The auth state update is enough to trigger UI updates
     })
 
     return () => subscription.unsubscribe()
-  }, [supabase, router])
+  }, [supabase])
 
   const signUp = async (email: string, password: string, displayName?: string) => {
     try {
@@ -117,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    setUser(null)
     router.push('/')
   }
 
