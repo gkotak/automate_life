@@ -22,7 +22,7 @@ fi
 # Check if .env.local exists
 if [ ! -f ".env.local" ]; then
     echo "❌ Error: .env.local not found!"
-    echo "   Copy .env.example and fill in your credentials"
+    echo "   Copy .env.local.example and fill in your credentials"
     exit 1
 fi
 

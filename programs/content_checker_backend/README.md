@@ -13,9 +13,9 @@ FastAPI backend for checking new podcasts and posts from various sources.
 
 ### Local Development
 
-1. Copy `.env.example` to `.env.local` and fill in your credentials:
+1. Copy `.env.local.example` to `.env.local` and fill in your credentials:
    ```bash
-   cp .env.example .env.local
+   cp .env.local.example .env.local
    ```
 
 2. Run the local development server:
@@ -39,7 +39,7 @@ FastAPI backend for checking new podcasts and posts from various sources.
 2. In Railway:
    - Connect your repository
    - Set root directory to `programs/content_checker_backend`
-   - Set environment variables from `.env.example`
+   - Set environment variables from `.env.production.example`
 
 3. Railway will automatically:
    - Build using Dockerfile
@@ -68,7 +68,7 @@ Headers:
 
 ## Environment Variables
 
-See `.env.example` for required environment variables.
+See `.env.local.example` for required environment variables.
 
 ## Frontend Integration
 
