@@ -80,20 +80,92 @@ class FileTranscriber(BaseProcessor):
 
         return file_path
 
+    def _extract_audio_if_needed(self, file_path):
+        """Extract audio from video file if needed, return path to audio file"""
+        import subprocess
+        import tempfile
+
+        file_path = Path(file_path)
+
+        # Video extensions that need audio extraction
+        video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg'}
+
+        # If it's not a video file, return original path
+        if file_path.suffix.lower() not in video_extensions:
+            self.logger.info(f"📁 Audio file detected ({file_path.suffix}), no extraction needed")
+            return str(file_path), False
+
+        # It's a video file, extract audio
+        self.logger.info(f"🎥 Video file detected ({file_path.suffix}), extracting audio...")
+
+        # Create temporary audio file
+        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        temp_audio_path = temp_audio.name
+        temp_audio.close()
+
+        try:
+            # Use ffmpeg to extract audio as MP3
+            cmd = [
+                'ffmpeg',
+                '-i', str(file_path),
+                '-vn',  # No video
+                '-acodec', 'libmp3lame',  # MP3 codec
+                '-q:a', '2',  # Good quality
+                '-y',  # Overwrite output file
+                temp_audio_path
+            ]
+
+            self.logger.info(f"🔧 Running ffmpeg to extract audio...")
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 min timeout
+            )
+
+            if result.returncode != 0:
+                self.logger.error(f"❌ ffmpeg failed: {result.stderr}")
+                raise Exception(f"Audio extraction failed: {result.stderr}")
+
+            # Verify the audio file was created
+            audio_path = Path(temp_audio_path)
+            if not audio_path.exists() or audio_path.stat().st_size == 0:
+                raise Exception("Audio extraction failed - output file is empty or missing")
+
+            audio_size = audio_path.stat().st_size / (1024 * 1024)
+            self.logger.info(f"✅ Audio extracted: {audio_size:.1f}MB")
+
+            return temp_audio_path, True
+
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                Path(temp_audio_path).unlink()
+            except:
+                pass
+            raise
+
     @braintrust.traced
     def transcribe_file(self, file_path, language=None):
         """Transcribe audio/video file using DeepGram with Braintrust logging"""
+        temp_audio_path = None
+        needs_cleanup = False
+
         try:
             file_path = self._validate_file(file_path)
 
             self.logger.info(f"🚀 Starting transcription...")
             self.logger.info(f"🎯 Language: {language or 'auto-detect'}")
 
-            # Read file
-            with open(file_path, "rb") as audio_file:
+            # Extract audio if it's a video file
+            audio_path, needs_cleanup = self._extract_audio_if_needed(file_path)
+            temp_audio_path = audio_path if needs_cleanup else None
+
+            # Read audio file
+            with open(audio_path, "rb") as audio_file:
                 buffer_data = audio_file.read()
 
-            self.logger.info("📡 Sending file to DeepGram API...")
+            self.logger.info("📡 Sending audio to DeepGram API...")
 
             # Prepare transcription options
             options = {

@@ -434,36 +434,25 @@ class ArticleProcessor(BaseProcessor):
         if progress_callback:
             await progress_callback("fetch_complete", {"title": title})
 
-        # Download the media file to a temporary location
-        self.logger.info(f"⬇️ [DOWNLOAD] Downloading {media_type} file...")
+        # Download the media file using yt-dlp (extracts audio for video files)
+        self.logger.info(f"⬇️ [DOWNLOAD] Downloading {media_type} with yt-dlp (audio extraction)...")
         if progress_callback:
             await progress_callback("download_start", {"filename": filename})
 
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{filename.split('.')[-1]}") as tmp_file:
-                temp_path = tmp_file.name
+            # Use yt-dlp to download - it will extract only audio for video files
+            temp_template = os.path.join(tempfile.gettempdir(), f"direct_media_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
-                # Stream download the file
-                response = self.session.get(url, stream=True, timeout=300)  # 5 min timeout
-                response.raise_for_status()
+            audio_path = self._download_video_with_ytdlp(url, temp_template)
 
-                total_size = int(response.headers.get('content-length', 0))
-                self.logger.info(f"📦 [DOWNLOAD] File size: {total_size / (1024*1024):.2f} MB")
+            if not audio_path:
+                raise Exception("Failed to download media file with yt-dlp")
 
-                downloaded = 0
-                for chunk in response.iter_content(chunk_size=8192):
-                    tmp_file.write(chunk)
-                    downloaded += len(chunk)
+            temp_path = audio_path
+            self.logger.info(f"✅ [DOWNLOAD] Audio downloaded to: {temp_path}")
 
-                    # Log progress every 10MB
-                    if downloaded % (10 * 1024 * 1024) == 0:
-                        pct = (downloaded / total_size * 100) if total_size else 0
-                        self.logger.info(f"⬇️ [DOWNLOAD] {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)")
-
-                self.logger.info(f"✅ [DOWNLOAD] File downloaded to: {temp_path}")
-
-                if progress_callback:
-                    await progress_callback("download_complete", {"path": temp_path})
+            if progress_callback:
+                await progress_callback("download_complete", {"path": temp_path})
 
             # Use FileTranscriber to extract audio and transcribe
             if not self.file_transcriber:
