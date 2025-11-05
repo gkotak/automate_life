@@ -80,8 +80,37 @@ class FileTranscriber(BaseProcessor):
 
         return file_path
 
+    def _has_audio_track(self, file_path):
+        """Check if video file has an audio track using ffprobe"""
+        import subprocess
+
+        try:
+            cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-select_streams', 'a:0',
+                '-show_entries', 'stream=codec_type',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(file_path)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            # If ffprobe finds an audio stream, it will output "audio"
+            return result.stdout.strip() == 'audio'
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not check for audio track: {e}")
+            # Assume it has audio if we can't check
+            return True
+
     def _extract_audio_if_needed(self, file_path):
-        """Extract audio from video file if needed, return path to audio file"""
+        """Extract audio from video file if needed, return path to audio file or None if no audio"""
         import subprocess
         import tempfile
 
@@ -95,8 +124,14 @@ class FileTranscriber(BaseProcessor):
             self.logger.info(f"📁 Audio file detected ({file_path.suffix}), no extraction needed")
             return str(file_path), False
 
-        # It's a video file, extract audio
-        self.logger.info(f"🎥 Video file detected ({file_path.suffix}), extracting audio...")
+        # It's a video file, check if it has an audio track
+        self.logger.info(f"🎥 Video file detected ({file_path.suffix}), checking for audio track...")
+
+        if not self._has_audio_track(file_path):
+            self.logger.warning(f"⚠️ Video file has no audio track - cannot transcribe")
+            return None, False
+
+        self.logger.info(f"✅ Audio track detected, extracting audio...")
 
         # Create temporary audio file
         temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
@@ -159,6 +194,12 @@ class FileTranscriber(BaseProcessor):
 
             # Extract audio if it's a video file
             audio_path, needs_cleanup = self._extract_audio_if_needed(file_path)
+
+            # If no audio track found, return None to indicate no transcription possible
+            if audio_path is None:
+                self.logger.warning("⚠️ No audio track found - skipping transcription")
+                return None
+
             temp_audio_path = audio_path if needs_cleanup else None
 
             # Read audio file
@@ -284,6 +325,15 @@ class FileTranscriber(BaseProcessor):
         except Exception as e:
             self.logger.error(f"❌ Transcription failed: {e}")
             raise
+
+        finally:
+            # Clean up temporary audio file if we created one
+            if temp_audio_path and needs_cleanup:
+                try:
+                    Path(temp_audio_path).unlink()
+                    self.logger.info(f"🗑️ [CLEANUP] Removed temporary audio file")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp audio file: {e}")
 
     def _save_transcript(self, transcript_data, source_file):
         """Save transcript data to JSON file"""

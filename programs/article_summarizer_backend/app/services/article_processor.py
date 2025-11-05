@@ -465,15 +465,33 @@ class ArticleProcessor(BaseProcessor):
             # FileTranscriber handles both video and audio files
             transcript_result = self.file_transcriber.transcribe_file(temp_path)
 
-            if progress_callback:
-                await progress_callback("transcribe_complete", {"word_count": len(transcript_result['text'].split())})
-
             # Clean up the temporary file
             try:
                 os.unlink(temp_path)
                 self.logger.info(f"🗑️ [CLEANUP] Removed temporary file: {temp_path}")
             except Exception as e:
                 self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp file: {e}")
+
+            # Handle case where video has no audio track
+            transcripts = {}
+            if transcript_result is None:
+                self.logger.warning(f"⚠️ [{media_type.upper()}] No audio track found - will process without transcription")
+                if progress_callback:
+                    await progress_callback("no_audio_track", {"reason": "Video file has no audio track"})
+            else:
+                # Extract transcript data
+                transcript_data = transcript_result.get('transcript_data', {})
+                transcripts = {
+                    'main': {
+                        'text': transcript_data.get('text', ''),
+                        'segments': transcript_data.get('segments', []),
+                        'duration': transcript_data.get('duration'),
+                        'source': 'deepgram',
+                        'type': 'deepgram'
+                    }
+                }
+                if progress_callback:
+                    await progress_callback("transcribe_complete", {"word_count": len(transcript_data.get('text', '').split())})
 
             # Build metadata similar to video content
             return {
@@ -500,14 +518,7 @@ class ArticleProcessor(BaseProcessor):
                     'filename': filename,
                     'media_type': media_type
                 },
-                'transcripts': {
-                    'main': {
-                        'text': transcript_result['text'],
-                        'segments': transcript_result.get('segments', []),
-                        'duration': transcript_result.get('duration'),
-                        'source': 'deepgram'
-                    }
-                },
+                'transcripts': transcripts,
                 'article_text': '',
                 'images': []
             }
