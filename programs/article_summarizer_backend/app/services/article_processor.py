@@ -235,6 +235,12 @@ class ArticleProcessor(BaseProcessor):
         Returns:
             Dictionary containing metadata and content analysis
         """
+        # Check if URL points to a direct media file (video/audio)
+        is_media, media_type = self.content_detector.is_direct_media_url(url)
+        if is_media:
+            self.logger.info(f"🎥 [DIRECT MEDIA FILE] Detected direct {media_type} file URL")
+            return await self._process_direct_media_file(url, media_type, progress_callback)
+
         # Check if URL is a direct YouTube video link
         youtube_match = re.match(r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', url)
         if youtube_match:
@@ -391,6 +397,141 @@ class ArticleProcessor(BaseProcessor):
             'article_text': video_data.get('article_text', ''),
             'images': video_data.get('images', [])
         }
+
+    async def _process_direct_media_file(
+        self,
+        url: str,
+        media_type: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
+        """
+        Process a direct media file URL (video or audio file)
+
+        Args:
+            url: URL of the media file
+            media_type: 'video' or 'audio'
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Dict with metadata and transcript data
+        """
+        import tempfile
+        import os
+        from urllib.parse import urlparse, unquote
+
+        self.logger.info(f"📥 [DIRECT {media_type.upper()} FILE] Processing direct media file...")
+
+        # Extract filename from URL
+        parsed = urlparse(url)
+        path = unquote(parsed.path)
+        filename = os.path.basename(path) or f"media_file.{media_type[:3]}"
+
+        # Generate a simple title from the filename
+        title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+        self.logger.info(f"📝 [TITLE] Extracted title from filename: {title}")
+
+        # Emit progress
+        if progress_callback:
+            await progress_callback("fetch_complete", {"title": title})
+
+        # Download the media file to a temporary location
+        self.logger.info(f"⬇️ [DOWNLOAD] Downloading {media_type} file...")
+        if progress_callback:
+            await progress_callback("download_start", {"filename": filename})
+
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{filename.split('.')[-1]}") as tmp_file:
+                temp_path = tmp_file.name
+
+                # Stream download the file
+                response = self.session.get(url, stream=True, timeout=300)  # 5 min timeout
+                response.raise_for_status()
+
+                total_size = int(response.headers.get('content-length', 0))
+                self.logger.info(f"📦 [DOWNLOAD] File size: {total_size / (1024*1024):.2f} MB")
+
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    tmp_file.write(chunk)
+                    downloaded += len(chunk)
+
+                    # Log progress every 10MB
+                    if downloaded % (10 * 1024 * 1024) == 0:
+                        pct = (downloaded / total_size * 100) if total_size else 0
+                        self.logger.info(f"⬇️ [DOWNLOAD] {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)")
+
+                self.logger.info(f"✅ [DOWNLOAD] File downloaded to: {temp_path}")
+
+                if progress_callback:
+                    await progress_callback("download_complete", {"path": temp_path})
+
+            # Use FileTranscriber to extract audio and transcribe
+            if not self.file_transcriber:
+                raise Exception("FileTranscriber not available - cannot process media files")
+
+            self.logger.info(f"🎙️ [TRANSCRIBE] Extracting audio and transcribing...")
+            if progress_callback:
+                await progress_callback("transcribe_start", {})
+
+            # FileTranscriber handles both video and audio files
+            transcript_result = self.file_transcriber.transcribe_file(temp_path)
+
+            if progress_callback:
+                await progress_callback("transcribe_complete", {"word_count": len(transcript_result['text'].split())})
+
+            # Clean up the temporary file
+            try:
+                os.unlink(temp_path)
+                self.logger.info(f"🗑️ [CLEANUP] Removed temporary file: {temp_path}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp file: {e}")
+
+            # Build metadata similar to video content
+            return {
+                'url': url,
+                'title': title,
+                'source': urlparse(url).netloc,
+                'content_type': {
+                    'has_embedded_video': media_type == 'video',
+                    'has_embedded_audio': media_type == 'audio',
+                    'is_text_only': False,
+                    'video_urls': [{
+                        'url': url,
+                        'platform': 'direct_file',
+                        'context': f'direct_{media_type}_file'
+                    }] if media_type == 'video' else [],
+                    'audio_urls': [{
+                        'url': url,
+                        'platform': 'direct_file',
+                        'context': f'direct_{media_type}_file'
+                    }] if media_type == 'audio' else []
+                },
+                'media_info': {
+                    'file_url': url,
+                    'filename': filename,
+                    'media_type': media_type
+                },
+                'transcripts': {
+                    'main': {
+                        'text': transcript_result['text'],
+                        'segments': transcript_result.get('segments', []),
+                        'duration': transcript_result.get('duration'),
+                        'source': 'deepgram'
+                    }
+                },
+                'article_text': '',
+                'images': []
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ [ERROR] Failed to process media file: {e}")
+            # Clean up temp file if it exists
+            if 'temp_path' in locals():
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+            raise
 
     async def _process_direct_youtube_url(self, url: str, video_id: str) -> Dict:
         """

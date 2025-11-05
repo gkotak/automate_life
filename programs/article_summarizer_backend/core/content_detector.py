@@ -36,9 +36,44 @@ class ContentType:
 class ContentTypeDetector:
     """Detects whether content has embedded video, audio, or is text-only"""
 
+    # Supported video file extensions
+    VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg'}
+    # Supported audio file extensions
+    AUDIO_EXTENSIONS = {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma', '.opus'}
+
     def __init__(self, session: requests.Session = None):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.session = session if session else requests.Session()
+
+    def is_direct_media_url(self, url: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if URL points directly to a video or audio file
+
+        Args:
+            url: The URL to check
+
+        Returns:
+            Tuple of (is_media, media_type) where media_type is 'video', 'audio', or None
+        """
+        from urllib.parse import urlparse, unquote
+
+        # Parse URL and get the path
+        parsed = urlparse(url)
+        path = unquote(parsed.path.lower())
+
+        # Check for video extensions
+        for ext in self.VIDEO_EXTENSIONS:
+            if path.endswith(ext):
+                self.logger.info(f"🎥 Detected direct video file URL: {ext}")
+                return True, 'video'
+
+        # Check for audio extensions
+        for ext in self.AUDIO_EXTENSIONS:
+            if path.endswith(ext):
+                self.logger.info(f"🎵 Detected direct audio file URL: {ext}")
+                return True, 'audio'
+
+        return False, None
 
     def _extract_video_from_iframe_src(self, src: str) -> Optional[Dict]:
         """
@@ -208,6 +243,38 @@ class ContentTypeDetector:
             ContentType object with detection results
         """
         self.logger.info("🔍 [CONTENT DETECTION] Analyzing content type...")
+
+        # First, check if URL points to a direct media file (video/audio)
+        is_media, media_type = self.is_direct_media_url(url)
+        if is_media:
+            if media_type == 'video':
+                self.logger.info(f"🎯 [DIRECT VIDEO FILE] URL points to a video file")
+                return ContentType(
+                    has_embedded_video=True,
+                    has_embedded_audio=False,
+                    is_text_only=False,
+                    video_urls=[{
+                        'url': url,
+                        'platform': 'direct_file',
+                        'context': 'direct_video_file',
+                        'requires_download': True
+                    }],
+                    audio_urls=[]
+                )
+            elif media_type == 'audio':
+                self.logger.info(f"🎯 [DIRECT AUDIO FILE] URL points to an audio file")
+                return ContentType(
+                    has_embedded_video=False,
+                    has_embedded_audio=True,
+                    is_text_only=False,
+                    video_urls=[],
+                    audio_urls=[{
+                        'url': url,
+                        'platform': 'direct_file',
+                        'context': 'direct_audio_file',
+                        'requires_download': True
+                    }]
+                )
 
         # Check if the URL itself is a direct video link (Loom, YouTube, etc.)
         direct_video = self._detect_direct_video_url(url)
