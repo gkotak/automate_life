@@ -109,6 +109,34 @@ class FileTranscriber(BaseProcessor):
             # Assume it has audio if we can't check
             return True
 
+    def _has_video_stream(self, file_path):
+        """Check if file has a video stream using ffprobe"""
+        import subprocess
+
+        try:
+            cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=codec_type',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(file_path)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            # If ffprobe finds a video stream, it will output "video"
+            return result.stdout.strip() == 'video'
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not check for video stream: {e}")
+            return False
+
     def _extract_audio_if_needed(self, file_path):
         """Extract audio from video file if needed, return path to audio file or None if no audio"""
         import subprocess
@@ -116,11 +144,11 @@ class FileTranscriber(BaseProcessor):
 
         file_path = Path(file_path)
 
-        # Video extensions that need audio extraction
-        video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg'}
+        # Check if file has a video stream (regardless of extension)
+        has_video = self._has_video_stream(file_path)
 
-        # If it's not a video file, return original path
-        if file_path.suffix.lower() not in video_extensions:
+        if not has_video:
+            # It's an audio-only file, no extraction needed
             self.logger.info(f"📁 Audio file detected ({file_path.suffix}), no extraction needed")
             return str(file_path), False
 
