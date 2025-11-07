@@ -1234,10 +1234,10 @@ class ArticleProcessor(BaseProcessor):
                         platform = key.replace('_urls', '')
                         break
 
-                # For direct video files, save URL in audio_url field (no video_id)
+                # For direct video files, save URL in audio_url field and use URL as video_id
                 if platform == 'direct_file' and content_type.video_urls:
                     audio_url = content_type.video_urls[0].get('url')
-                    video_id = None  # No video_id for direct files
+                    video_id = 'direct_file'  # Special marker for direct files (web app will use audio_url)
 
             # Get audio URL if available (for audio-only content)
             if content_type.has_embedded_audio and not audio_url:
