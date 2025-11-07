@@ -288,6 +288,18 @@ class ContentTypeDetector:
                 audio_urls=[]
             )
 
+        # Check for Seeking Alpha earnings call audio
+        seekingalpha_audio = self._detect_seekingalpha_audio(url)
+        if seekingalpha_audio:
+            self.logger.info(f"🎯 [SEEKING ALPHA AUDIO] Detected earnings call audio")
+            return ContentType(
+                has_embedded_video=False,
+                has_embedded_audio=True,
+                is_text_only=False,
+                video_urls=[],
+                audio_urls=[seekingalpha_audio]
+            )
+
         # Check for embedded videos (highest priority)
         self.logger.info("🔍 [VIDEO DETECTION] Searching for video content...")
         video_urls = self._detect_embedded_videos(soup)
@@ -326,6 +338,51 @@ class ContentTypeDetector:
             self.logger.info("✅ [CONTENT TYPE] 📄 TEXT-ONLY content detected")
 
         return content_type
+
+    def _detect_seekingalpha_audio(self, url: str) -> Optional[Dict]:
+        """
+        Detect Seeking Alpha earnings call audio files
+
+        Seeking Alpha transcript articles have audio files at:
+        https://static.seekingalpha.com/cdn/s3/transcripts_audio/{article_id}.mp3
+
+        Args:
+            url: The article URL to check
+
+        Returns:
+            Audio dictionary if audio exists, None otherwise
+        """
+        # Check if this is a Seeking Alpha article URL
+        seekingalpha_pattern = r'seekingalpha\.com/article/(\d+)'
+        match = re.search(seekingalpha_pattern, url)
+
+        if not match:
+            return None
+
+        article_id = match.group(1)
+        audio_url = f'https://static.seekingalpha.com/cdn/s3/transcripts_audio/{article_id}.mp3'
+
+        # Check if the audio file actually exists (HEAD request)
+        try:
+            self.logger.info(f"🔍 [SEEKING ALPHA] Checking for audio file: {audio_url}")
+            response = self.session.head(audio_url, timeout=5, allow_redirects=True)
+
+            if response.status_code == 200:
+                self.logger.info(f"✅ [SEEKING ALPHA] Found audio file for article {article_id}")
+                return {
+                    'url': audio_url,
+                    'platform': 'seekingalpha',
+                    'context': 'earnings_call_audio',
+                    'article_id': article_id,
+                    'requires_download': True
+                }
+            else:
+                self.logger.info(f"ℹ️ [SEEKING ALPHA] No audio file found (status: {response.status_code})")
+                return None
+
+        except Exception as e:
+            self.logger.debug(f"Could not check Seeking Alpha audio: {e}")
+            return None
 
     def _detect_direct_video_url(self, url: str) -> Optional[Dict]:
         """
