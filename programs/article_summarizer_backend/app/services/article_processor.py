@@ -85,9 +85,9 @@ class ArticleProcessor(BaseProcessor):
             self.logger.warning(f"⚠️ File transcriber not available: {e}")
             self.file_transcriber = None
 
-        # Initialize Supabase client with secret key
+        # Initialize Supabase client with service role key
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
         self.supabase: Optional[Client] = None
 
         if supabase_url and supabase_key:
@@ -101,7 +101,7 @@ class ArticleProcessor(BaseProcessor):
             if not supabase_url:
                 missing.append('SUPABASE_URL')
             if not supabase_key:
-                missing.append('SUPABASE_SECRET_KEY')
+                missing.append('SUPABASE_SERVICE_ROLE_KEY')
             self.logger.warning(f"⚠️ Supabase credentials not found - database insertion will be skipped (missing: {', '.join(missing)})")
 
         # Initialize OpenAI client for embeddings
@@ -493,31 +493,49 @@ class ArticleProcessor(BaseProcessor):
                 if progress_callback:
                     await progress_callback("transcribe_complete", {"word_count": len(transcript_data.get('text', '').split())})
 
+            # Build ContentType object
+            from core.content_detector import ContentType
+            content_type = ContentType()
+            content_type.has_embedded_video = (media_type == 'video')
+            content_type.has_embedded_audio = (media_type == 'audio')
+            content_type.is_text_only = False
+
+            if media_type == 'video':
+                content_type.video_urls = [{
+                    'url': url,
+                    'platform': 'direct_file',
+                    'context': f'direct_{media_type}_file'
+                }]
+            elif media_type == 'audio':
+                content_type.audio_urls = [{
+                    'url': url,
+                    'platform': 'direct_file',
+                    'context': f'direct_{media_type}_file'
+                }]
+
             # Build metadata similar to video content
+            # Create media_info with proper platform URLs structure
+            media_info = {}
+            if media_type == 'video':
+                media_info['direct_file_urls'] = [{
+                    'url': url,
+                    'platform': 'direct_file',
+                    'video_id': None,  # No video_id for direct files
+                    'context': 'direct_video_file'
+                }]
+            elif media_type == 'audio':
+                media_info['audio_urls'] = [{
+                    'url': url,
+                    'platform': 'direct_file',
+                    'context': 'direct_audio_file'
+                }]
+
             return {
                 'url': url,
                 'title': title,
                 'source': urlparse(url).netloc,
-                'content_type': {
-                    'has_embedded_video': media_type == 'video',
-                    'has_embedded_audio': media_type == 'audio',
-                    'is_text_only': False,
-                    'video_urls': [{
-                        'url': url,
-                        'platform': 'direct_file',
-                        'context': f'direct_{media_type}_file'
-                    }] if media_type == 'video' else [],
-                    'audio_urls': [{
-                        'url': url,
-                        'platform': 'direct_file',
-                        'context': f'direct_{media_type}_file'
-                    }] if media_type == 'audio' else []
-                },
-                'media_info': {
-                    'file_url': url,
-                    'filename': filename,
-                    'media_type': media_type
-                },
+                'content_type': content_type,
+                'media_info': media_info,
                 'transcripts': transcripts,
                 'article_text': '',
                 'images': []
@@ -1021,11 +1039,13 @@ class ArticleProcessor(BaseProcessor):
         json_patterns = [
             (r'```json\s*(\{.*?\})\s*```', 'json code block'),
             (r'```\s*(\{.*?\})\s*```', 'generic code block'),
+            (r'"""\s*json\s*(\{.*?\})\s*"""', 'triple-quoted json block'),
+            (r'"""\s*(\{.*?\})\s*"""', 'triple-quoted block'),
             (r'(\{.*?\})', 'raw JSON')
         ]
 
         for pattern, pattern_name in json_patterns:
-            match = re.search(pattern, response, re.DOTALL)
+            match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
             if match:
                 try:
                     json_content = match.group(1)
@@ -1178,6 +1198,8 @@ class ArticleProcessor(BaseProcessor):
             # Get video ID and platform if available (support all platforms)
             video_id = None
             platform = None
+            audio_url = None
+
             if content_type.has_embedded_video:
                 media_info = metadata.get('media_info', {})
                 # Check for any platform URLs
@@ -1188,10 +1210,17 @@ class ArticleProcessor(BaseProcessor):
                         platform = key.replace('_urls', '')
                         break
 
-            # Get audio URL if available
-            audio_url = None
-            if content_type.has_embedded_audio and metadata.get('media_info', {}).get('audio_urls'):
-                audio_url = metadata['media_info']['audio_urls'][0].get('url')
+                # For direct video files, save URL in audio_url field (no video_id)
+                if platform == 'direct_file' and content_type.video_urls:
+                    audio_url = content_type.video_urls[0].get('url')
+                    video_id = None  # No video_id for direct files
+
+            # Get audio URL if available (for audio-only content)
+            if content_type.has_embedded_audio and not audio_url:
+                if metadata.get('media_info', {}).get('audio_urls'):
+                    audio_url = metadata['media_info']['audio_urls'][0].get('url')
+                elif content_type.audio_urls:
+                    audio_url = content_type.audio_urls[0].get('url')
 
             # Determine content source
             if content_type.has_embedded_video and content_type.has_embedded_audio:
@@ -1330,6 +1359,7 @@ class ArticleProcessor(BaseProcessor):
             'youtube': f"https://www.youtube.com/watch?v={video_id}",
             'loom': f"https://www.loom.com/share/{video_id}",
             'vimeo': f"https://vimeo.com/{video_id}",
+            'wistia': f"https://fast.wistia.net/embed/iframe/{video_id}",
             'dailymotion': f"https://www.dailymotion.com/video/{video_id}",
         }
 

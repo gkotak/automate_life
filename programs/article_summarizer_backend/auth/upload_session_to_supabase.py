@@ -32,11 +32,11 @@ def upload_session(platform: str = 'all'):
 
     # Load environment variables
     supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
     if not supabase_url or not supabase_key:
         print("❌ Missing Supabase credentials")
-        print("   Set SUPABASE_URL and SUPABASE_SECRET_KEY environment variables")
+        print("   Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables")
         sys.exit(1)
 
     # Initialize Supabase client

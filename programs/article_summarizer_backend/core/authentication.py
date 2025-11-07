@@ -34,6 +34,9 @@ class AuthenticationManager:
         from .browser_fetcher import BrowserFetcher
         self.browser_fetcher = BrowserFetcher(self.logger)
 
+        # Store full storage_state for Playwright (includes cookies + localStorage + sessionStorage)
+        self.storage_state = None
+
         # Load cookies from Playwright storage state (Railway)
         self._load_storage_state_cookies()
 
@@ -81,7 +84,7 @@ class AuthenticationManager:
 
         try:
             supabase_url = os.getenv('SUPABASE_URL')
-            supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+            supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
             if not supabase_url or not supabase_key:
                 self.logger.debug("Supabase credentials not configured")
@@ -146,6 +149,9 @@ class AuthenticationManager:
                 # Load storage state from file
                 with open(storage_state_file, 'r') as f:
                     storage_state = json.load(f)
+
+            # Store full storage_state for later use with Playwright
+            self.storage_state = storage_state
 
             cookies = storage_state.get('cookies', [])
             cookie_count = 0
@@ -475,8 +481,19 @@ class AuthenticationManager:
 
         self.logger.info(f"🌐 [BROWSER AUTH ASYNC] Using Playwright to fetch: {url}")
 
-        # Fetch using async Playwright with injected cookies
-        success, html_content, message = await self.browser_fetcher.fetch_with_playwright_async(url, self.session.cookies)
+        # Fetch using async Playwright with full storage_state (preferred) or fallback to cookies
+        if self.storage_state:
+            self.logger.info(f"🌐 [BROWSER AUTH ASYNC] Using storage_state (cookies + localStorage + sessionStorage)")
+            success, html_content, message = await self.browser_fetcher.fetch_with_playwright_async(
+                url,
+                storage_state=self.storage_state
+            )
+        else:
+            self.logger.info(f"🌐 [BROWSER AUTH ASYNC] Using session cookies only")
+            success, html_content, message = await self.browser_fetcher.fetch_with_playwright_async(
+                url,
+                cookies=self.session.cookies
+            )
 
         if success:
             self.logger.info(f"✅ [BROWSER AUTH ASYNC] Successfully fetched content via browser")

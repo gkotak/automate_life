@@ -23,10 +23,10 @@ def get_supabase_admin() -> Client:
 
     if _supabase_client is None:
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_SECRET_KEY')  # Using the service role key
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')  # Using the service role key
 
         if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must be set")
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
 
         _supabase_client = create_client(supabase_url, supabase_key)
         logger.info("✅ Supabase admin client initialized")

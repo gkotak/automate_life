@@ -155,11 +155,11 @@ def upload_to_supabase(storage_state, platform='all'):
     """Upload storage state to Supabase"""
     # Load environment variables
     supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
     if not supabase_url or not supabase_key:
         print("\n❌ ERROR: Missing Supabase credentials")
-        print("   Set SUPABASE_URL and SUPABASE_SECRET_KEY environment variables")
+        print("   Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables")
         print("   Cannot proceed without Supabase - cookies will not be uploaded")
         sys.exit(1)
 

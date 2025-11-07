@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Playwright Headless: {os.getenv('PLAYWRIGHT_HEADLESS', 'true')}")
 
     # Check critical environment variables
-    required_vars = ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'API_KEY']
+    required_vars = ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'API_KEY']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
 
     if missing_vars:
@@ -118,7 +118,7 @@ async def health_check():
     try:
         from supabase import create_client
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_SECRET_KEY')
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
         if supabase_url and supabase_key:
             supabase = create_client(supabase_url, supabase_key)
