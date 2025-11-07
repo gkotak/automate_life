@@ -494,6 +494,7 @@ class ArticleProcessor(BaseProcessor):
 
             # Handle case where video has no audio track
             transcripts = {}
+            article_text = ''
             if transcript_result is None:
                 self.logger.warning(f"⚠️ [{media_type.upper()}] No audio track found - will process without transcription")
                 if progress_callback:
@@ -501,17 +502,20 @@ class ArticleProcessor(BaseProcessor):
             else:
                 # Extract transcript data
                 transcript_data = transcript_result.get('transcript_data', {})
+                transcript_text = transcript_data.get('text', '')
                 transcripts = {
                     'main': {
-                        'text': transcript_data.get('text', ''),
+                        'text': transcript_text,
                         'segments': transcript_data.get('segments', []),
                         'duration': transcript_data.get('duration'),
                         'source': 'deepgram',
                         'type': 'deepgram'
                     }
                 }
+                # Use transcript text as article_text for AI analysis
+                article_text = transcript_text
                 if progress_callback:
-                    await progress_callback("transcribe_complete", {"word_count": len(transcript_data.get('text', '').split())})
+                    await progress_callback("transcribe_complete", {"word_count": len(transcript_text.split())})
 
             # Build ContentType object
             from core.content_detector import ContentType
@@ -557,7 +561,7 @@ class ArticleProcessor(BaseProcessor):
                 'content_type': content_type,
                 'media_info': media_info,
                 'transcripts': transcripts,
-                'article_text': '',
+                'article_text': article_text,
                 'images': []
             }
 
