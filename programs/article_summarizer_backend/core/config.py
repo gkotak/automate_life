@@ -16,7 +16,7 @@ class Config:
 
     # File processing limits
     MAX_TRANSCRIPT_CHARS = 150000
-    MAX_WHISPER_FILE_SIZE_MB = 25
+    MAX_DEEPGRAM_FILE_SIZE_MB = 25  # Files larger than this will be chunked
     RSS_POST_RECENCY_DAYS = 3
     TRACKING_CLEANUP_DAYS = 30
     MAX_ARTICLE_WORDS = 15000  # Limit for Claude CLI prompt size
@@ -34,8 +34,8 @@ class Config:
     CLAUDE_MODEL = "claude-3-5-sonnet-20241022"
     CLAUDE_MAX_TOKENS = 8192
 
-    # OpenAI Whisper settings
-    WHISPER_MODEL = "whisper-1"
+    # DeepGram API settings (used for audio/video transcription)
+    DEEPGRAM_MODEL = "nova-2"  # DeepGram's latest model
 
     # Processing settings
     RSS_FEED_ENTRY_LIMIT = 10

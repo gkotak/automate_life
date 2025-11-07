@@ -482,8 +482,15 @@ class ArticleProcessor(BaseProcessor):
             if progress_callback:
                 await progress_callback("transcribe_start", {})
 
-            # FileTranscriber handles both video and audio files
-            transcript_result = self.file_transcriber.transcribe_file(temp_path)
+            # Use centralized transcription method with automatic size checking and chunking
+            transcript_result = await self._transcribe_audio_with_size_check(
+                temp_path,
+                media_type='direct_file',
+                progress_callback=progress_callback
+            )
+
+            if not transcript_result:
+                raise Exception("Transcription failed")
 
             # Clean up the temporary file
             try:
@@ -504,7 +511,8 @@ class ArticleProcessor(BaseProcessor):
                 transcript_data = transcript_result.get('transcript_data', {})
                 transcript_text = transcript_data.get('text', '')
                 transcripts = {
-                    'main': {
+                    'direct_file': {  # Use 'direct_file' as key to match video_id
+                        'success': True,  # Mark as successful for transcript formatting
                         'text': transcript_text,
                         'segments': transcript_data.get('segments', []),
                         'duration': transcript_data.get('duration'),
@@ -520,39 +528,46 @@ class ArticleProcessor(BaseProcessor):
             # Build ContentType object
             from core.content_detector import ContentType
             content_type = ContentType()
-            content_type.has_embedded_video = (media_type == 'video')
-            content_type.has_embedded_audio = (media_type == 'audio')
             content_type.is_text_only = False
 
+            # Set flags based on what the web app needs to DISPLAY
+            # (DeepGram always transcribes audio regardless - we extract audio from MP4)
+            # Since VideoContextBuilder and AudioContextBuilder are now unified (MediaContextBuilder),
+            # we just set the flag based on what player the web app should show
             if media_type == 'video':
+                # MP4 file → show video player in web app
+                content_type.has_embedded_video = True
+                content_type.has_embedded_audio = False
                 content_type.video_urls = [{
                     'url': url,
                     'platform': 'direct_file',
+                    'video_id': 'direct_file',  # Special marker for HTML5 video
                     'context': f'direct_{media_type}_file'
                 }]
-            elif media_type == 'audio':
+                media_info = {
+                    'video_urls': [{
+                        'url': url,
+                        'platform': 'direct_file',
+                        'video_id': 'direct_file',
+                        'context': f'direct_{media_type}_file'
+                    }]
+                }
+            else:
+                # MP3/audio file → show audio player in web app
+                content_type.has_embedded_video = False
+                content_type.has_embedded_audio = True
                 content_type.audio_urls = [{
                     'url': url,
                     'platform': 'direct_file',
                     'context': f'direct_{media_type}_file'
                 }]
-
-            # Build metadata similar to video content
-            # Create media_info with proper platform URLs structure
-            media_info = {}
-            if media_type == 'video':
-                media_info['direct_file_urls'] = [{
-                    'url': url,
-                    'platform': 'direct_file',
-                    'video_id': None,  # No video_id for direct files
-                    'context': 'direct_video_file'
-                }]
-            elif media_type == 'audio':
-                media_info['audio_urls'] = [{
-                    'url': url,
-                    'platform': 'direct_file',
-                    'context': 'direct_audio_file'
-                }]
+                media_info = {
+                    'audio_urls': [{
+                        'url': url,
+                        'platform': 'direct_file',
+                        'context': f'direct_{media_type}_file'
+                    }]
+                }
 
             return {
                 'url': url,
@@ -615,24 +630,24 @@ class ArticleProcessor(BaseProcessor):
             error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
             self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
 
-            # Fallback: Try to download and transcribe video audio using Whisper
-            self.logger.info(f"      🎵 [FALLBACK] Attempting Whisper transcription for video...")
+            # Fallback: Try to download and transcribe video audio using DeepGram
+            self.logger.info(f"      🎵 [FALLBACK] Attempting DeepGram transcription for video...")
 
             # Extract audio URL using yt-dlp
             audio_url = self._extract_youtube_audio_url(video_id)
             if audio_url:
-                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper...")
+                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with DeepGram...")
                 transcript_data = await self._download_and_transcribe_media_async(audio_url, "video")
                 if transcript_data:
                     transcripts[video_id] = transcript_data
-                    self.logger.info(f"      ✓ Video transcription successful via Whisper")
+                    self.logger.info(f"      ✓ Video transcription successful via DeepGram")
 
                     # Extract text from transcript
                     if 'transcript' in transcript_data:
                         article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
-                        self.logger.info(f"      ✓ Extracted {len(article_text)} characters from Whisper transcript")
+                        self.logger.info(f"      ✓ Extracted {len(article_text)} characters from DeepGram transcript")
                 else:
-                    self.logger.info(f"      ✗ Whisper transcription failed")
+                    self.logger.info(f"      ✗ DeepGram transcription failed")
             else:
                 self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
                 self.logger.info(f"      ℹ️ [FALLBACK] Proceeding with title and metadata only")
@@ -725,10 +740,10 @@ class ArticleProcessor(BaseProcessor):
             # Step 2: GENERIC FALLBACK - works for ANY platform
             error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'No native transcript'
             self.logger.info(f"      ✗ No {platform} transcript available: {error_msg}")
-            self.logger.info(f"      🎵 [FALLBACK] Attempting audio extraction and transcription with Whisper/Deepgram...")
+            self.logger.info(f"      🎵 [FALLBACK] Attempting audio extraction and transcription with DeepGram...")
 
             if progress_callback:
-                await progress_callback("video_fallback_whisper", {"video_id": video_id})
+                await progress_callback("video_fallback_deepgram", {"video_id": video_id})
 
             # Try to download audio using yt-dlp (supports many platforms and HLS streams)
             try:
@@ -772,39 +787,39 @@ class ArticleProcessor(BaseProcessor):
                         last_error = f"Failed to download from {video_url[:50]}..."
                         self.logger.info(f"      ⚠️ Attempt {idx + 1} failed, trying next URL...")
                 if temp_path:
-                    # Check file size
+                    # Check if file is empty
                     file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
-                    self.logger.info(f"      📊 [FILE SIZE] {file_size_mb:.1f}MB")
-
-                    if file_size_mb > 0:
+                    if file_size_mb == 0:
+                        self.logger.warning(f"      ✗ Downloaded file is empty (0MB)")
+                    else:
                         # Transcribe the downloaded file
-                        self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with Whisper/Deepgram...")
-
-                        # Send progress callback: transcribing audio
-                        if progress_callback:
-                            await progress_callback("transcribing_audio", {"file_size_mb": file_size_mb})
+                        self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with DeepGram...")
 
                         if not self.file_transcriber:
                             self.logger.warning("   ⚠️ File transcriber not available")
                         else:
-                            result = self.file_transcriber.transcribe_file(temp_path)
+                            # Use centralized transcription method with automatic size checking and chunking
+                            result = await self._transcribe_audio_with_size_check(
+                                temp_path,
+                                media_type='video',
+                                progress_callback=progress_callback
+                            )
+
                             if result and result.get('transcript_data'):
                                 transcript_data = result['transcript_data']
 
-                                # Format to match expected structure
+                                # Format to match expected structure for video transcripts
                                 formatted_transcript = {
                                     'success': True,
-                                    'type': 'whisper',
+                                    'type': 'deepgram',
                                     'text': transcript_data.get('text', ''),
                                     'segments': transcript_data.get('segments', []),
                                     'language': transcript_data.get('language', 'en')
                                 }
                                 transcripts[video_id] = formatted_transcript
-                                self.logger.info(f"      ✓ Video transcription successful via Whisper/Deepgram")
+                                self.logger.info(f"      ✓ Video transcription successful via DeepGram")
                             else:
-                                self.logger.info(f"      ✗ Whisper/Deepgram transcription failed")
-                    else:
-                        self.logger.warning(f"      ✗ Downloaded file is empty (0MB)")
+                                self.logger.info(f"      ✗ DeepGram transcription failed")
 
                     # Clean up temp file
                     try:
@@ -844,8 +859,8 @@ class ArticleProcessor(BaseProcessor):
                 # Map internal type to frontend-expected method
                 if transcript_type == 'youtube' or transcript_type == 'youtube_generated':
                     transcript_method = 'youtube'
-                elif transcript_type == 'whisper':
-                    transcript_method = 'audio'  # Whisper transcription
+                elif transcript_type == 'deepgram':
+                    transcript_method = 'audio'  # DeepGram transcription
                 else:
                     transcript_method = 'youtube'  # Default for videos
 
@@ -1226,7 +1241,7 @@ class ArticleProcessor(BaseProcessor):
 
             if content_type.has_embedded_video:
                 media_info = metadata.get('media_info', {})
-                # Check for any platform URLs
+                # Check for any platform URLs (youtube_urls, video_urls, etc.)
                 for key in media_info.keys():
                     if key.endswith('_urls') and media_info[key]:
                         video_id = media_info[key][0].get('video_id')
@@ -1234,10 +1249,10 @@ class ArticleProcessor(BaseProcessor):
                         platform = key.replace('_urls', '')
                         break
 
-                # For direct video files, save URL in audio_url field and use URL as video_id
-                if platform == 'direct_file' and content_type.video_urls:
-                    audio_url = content_type.video_urls[0].get('url')
-                    video_id = 'direct_file'  # Special marker for direct files (web app will use audio_url)
+                # For direct video files, also save URL in audio_url for web app video player
+                # (platform='video' comes from 'video_urls' key, video_id='direct_file' marks it as direct file)
+                if video_id == 'direct_file' and media_info.get('video_urls'):
+                    audio_url = media_info['video_urls'][0].get('url')
 
             # Get audio URL if available (for audio-only content)
             if content_type.has_embedded_audio and not audio_url:
@@ -1246,7 +1261,7 @@ class ArticleProcessor(BaseProcessor):
                 elif content_type.audio_urls:
                     audio_url = content_type.audio_urls[0].get('url')
 
-            # Determine content source
+            # Determine content source based on what media is present
             if content_type.has_embedded_video and content_type.has_embedded_audio:
                 content_source = 'mixed'
             elif content_type.has_embedded_video:
@@ -1498,7 +1513,7 @@ class ArticleProcessor(BaseProcessor):
 
     def _download_and_transcribe_media(self, media_url: str, media_type: str = "audio") -> Optional[Dict]:
         """
-        Download and transcribe audio/video file using Whisper
+        Download and transcribe audio/video file using DeepGram
 
         Args:
             media_url: URL of the audio/video file
@@ -1516,7 +1531,7 @@ class ArticleProcessor(BaseProcessor):
             import requests
             import os
 
-            self.logger.info(f"   🎵 [WHISPER] Attempting to transcribe {media_type} from URL...")
+            self.logger.info(f"   🎵 [DEEPGRAM] Attempting to transcribe {media_type} from URL...")
 
             # Download media file to temp location
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
@@ -1530,7 +1545,7 @@ class ArticleProcessor(BaseProcessor):
                 for chunk in response.iter_content(chunk_size=8192):
                     temp_file.write(chunk)
 
-            # Check file size (OpenAI Whisper limit is 25MB)
+            # Check file size (OpenAI DeepGram limit is 25MB)
             file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
             self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
             self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
@@ -1560,12 +1575,12 @@ class ArticleProcessor(BaseProcessor):
                 'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
                 'text': transcript_data.get('text', ''),
                 'language': transcript_data.get('language', 'unknown'),
-                'type': 'whisper_transcription',
+                'type': 'deepgram_transcription',
                 'source': media_type,
                 'total_entries': len(transcript_list)
             }
 
-            self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
+            self.logger.info(f"   ✅ [DEEPGRAM] Transcription successful ({len(formatted_transcript['text'])} chars)")
 
             # Clean up temp files
             try:
@@ -1578,7 +1593,7 @@ class ArticleProcessor(BaseProcessor):
             return formatted_transcript
 
         except Exception as e:
-            self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
+            self.logger.warning(f"   ⚠️ [DEEPGRAM] Transcription failed: {str(e)}")
             return None
 
     async def _download_and_transcribe_media_async(
@@ -1588,7 +1603,7 @@ class ArticleProcessor(BaseProcessor):
         progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
     ) -> Optional[Dict]:
         """
-        Async version: Download and transcribe audio/video file using Whisper with progress callbacks
+        Async version: Download and transcribe audio/video file using DeepGram with progress callbacks
 
         Args:
             media_url: URL of the audio/video file
@@ -1607,7 +1622,7 @@ class ArticleProcessor(BaseProcessor):
             import requests
             import os
 
-            self.logger.info(f"   🎵 [WHISPER] Attempting to transcribe {media_type} from URL...")
+            self.logger.info(f"   🎵 [DEEPGRAM] Attempting to transcribe {media_type} from URL...")
 
             if progress_callback:
                 await progress_callback("downloading_audio", {"media_type": media_type})
@@ -1628,35 +1643,21 @@ class ArticleProcessor(BaseProcessor):
                     return temp_path
 
             temp_path = await asyncio.to_thread(download_file)
-
-            # Check file size (OpenAI Whisper limit is 25MB)
-            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
             self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
-            self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
 
-            # If file exceeds 25MB, split into chunks
-            if file_size_mb > 25:
-                self.logger.info(f"   ✂️ [CHUNKING] File exceeds 25MB limit, splitting into chunks...")
-                if progress_callback:
-                    await progress_callback("audio_chunking_required", {
-                        "file_size_mb": file_size_mb
-                    })
-                return await self._transcribe_large_audio_file_async(
-                    temp_path,
-                    media_type,
-                    progress_callback=progress_callback
-                )
-
-            # Transcribe the file (run in thread pool - blocking I/O)
-            if progress_callback:
-                await progress_callback("transcribing_audio", {"file_size_mb": file_size_mb})
-
-            result = await asyncio.to_thread(
-                self.file_transcriber.transcribe_file,
-                temp_path
+            # Use centralized transcription method with automatic size checking and chunking
+            result = await self._transcribe_audio_with_size_check(
+                temp_path,
+                media_type=media_type,
+                progress_callback=progress_callback
             )
+
+            if not result:
+                self.logger.warning(f"   ❌ Transcription failed")
+                return None
+
             transcript_data = result['transcript_data']
-            transcript_json_file = result['output_file']
+            transcript_json_file = result.get('output_file')
 
             # Format for our use - convert to same format as YouTube transcripts
             segments = transcript_data.get('segments', [])
@@ -1665,7 +1666,7 @@ class ArticleProcessor(BaseProcessor):
                 transcript_list.append({
                     'start': segment.get('start', 0),
                     'text': segment.get('text', ''),
-                    'duration': segment.get('end', 0) - segment.get('start', 0)
+                    'duration': segment.get('end', 0) - segment.get('start', 0) if segment.get('end') else segment.get('duration', 0)
                 })
 
             formatted_transcript = {
@@ -1673,17 +1674,18 @@ class ArticleProcessor(BaseProcessor):
                 'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
                 'text': transcript_data.get('text', ''),
                 'language': transcript_data.get('language', 'unknown'),
-                'type': 'whisper_transcription',
+                'type': transcript_data.get('type', 'deepgram_transcription'),
                 'source': media_type,
                 'total_entries': len(transcript_list)
             }
 
-            self.logger.info(f"   ✅ [WHISPER] Transcription successful ({len(formatted_transcript['text'])} chars)")
+            self.logger.info(f"   ✅ [DEEPGRAM] Transcription successful ({len(formatted_transcript['text'])} chars)")
 
             # Clean up temp files
             try:
                 await asyncio.to_thread(os.unlink, temp_path)  # Delete downloaded audio file
-                await asyncio.to_thread(os.unlink, transcript_json_file)  # Delete transcript JSON file
+                if transcript_json_file:  # Only delete if not None (chunking sets it to None)
+                    await asyncio.to_thread(os.unlink, transcript_json_file)  # Delete transcript JSON file
                 self.logger.info(f"   🧹 Cleaned up temp files")
             except Exception as cleanup_error:
                 self.logger.warning(f"   ⚠️ Could not clean up temp files: {cleanup_error}")
@@ -1691,8 +1693,74 @@ class ArticleProcessor(BaseProcessor):
             return formatted_transcript
 
         except Exception as e:
-            self.logger.warning(f"   ⚠️ [WHISPER] Transcription failed: {str(e)}")
+            self.logger.warning(f"   ⚠️ [DEEPGRAM] Transcription failed: {str(e)}")
             return None
+
+    async def _transcribe_audio_with_size_check(
+        self,
+        audio_path: str,
+        media_type: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Optional[Dict]:
+        """
+        Centralized method to transcribe audio with automatic chunking for large files.
+
+        This is the SINGLE entry point for all DeepGram transcription, ensuring consistent
+        file size checking and chunking logic across all code paths.
+
+        Args:
+            audio_path: Path to the audio file
+            media_type: Type of media (audio, video, direct_file, etc.)
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Transcript data dict with 'transcript_data' key, or None if transcription fails
+        """
+        import os
+
+        # Check file size
+        file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+        self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
+
+        # If file exceeds limit, use chunking
+        if file_size_mb > Config.MAX_DEEPGRAM_FILE_SIZE_MB:
+            self.logger.info(f"   ✂️ [CHUNKING] File exceeds {Config.MAX_DEEPGRAM_FILE_SIZE_MB}MB limit, splitting into chunks...")
+            if progress_callback:
+                await progress_callback("audio_chunking_required", {
+                    "file_size_mb": file_size_mb
+                })
+
+            # Use async chunking method
+            formatted_transcript = await self._transcribe_large_audio_file_async(
+                audio_path,
+                media_type,
+                progress_callback=progress_callback
+            )
+
+            if not formatted_transcript:
+                self.logger.warning(f"   ❌ Chunked transcription failed")
+                return None
+
+            # Format result to match expected structure
+            return {
+                'transcript_data': {
+                    'text': formatted_transcript.get('text', ''),
+                    'segments': formatted_transcript.get('transcript', []),
+                    'language': formatted_transcript.get('language', 'en'),
+                    'duration': max([seg.get('start', 0) + seg.get('duration', 0)
+                                   for seg in formatted_transcript.get('transcript', [])] or [0]),
+                    'provider': 'deepgram',
+                    'type': formatted_transcript.get('type', 'deepgram')
+                },
+                'output_file': None  # Chunking method handles cleanup
+            }
+        else:
+            # File is small enough, transcribe directly
+            self.logger.info(f"   🎤 [DIRECT] Transcribing with DeepGram (no chunking needed)...")
+            return await asyncio.to_thread(
+                self.file_transcriber.transcribe_file,
+                audio_path
+            )
 
     def _transcribe_large_audio_file(self, audio_path: str, media_type: str, max_duration_minutes: int = 30) -> Optional[Dict]:
         """
@@ -1729,7 +1797,7 @@ class ArticleProcessor(BaseProcessor):
             self.logger.info(f"   ⏰ [TIMEOUT] Will process for max {max_duration_minutes} minutes")
 
             # Split into 20-minute chunks (1200 seconds = 1,200,000 ms)
-            # At 128kbps: 20 minutes ≈ 19MB (well under 25MB Whisper API limit)
+            # At 128kbps: 20 minutes ≈ 19MB (well under 25MB DeepGram API limit)
             chunk_length_ms = 20 * 60 * 1000  # 20 minutes
             chunks = []
 
@@ -1805,7 +1873,7 @@ class ArticleProcessor(BaseProcessor):
                 'transcript': all_segments,
                 'text': ' '.join(all_text),
                 'language': 'unknown',
-                'type': 'whisper_transcription_chunked' + ('_partial' if is_partial else ''),
+                'type': 'deepgram_transcription_chunked' + ('_partial' if is_partial else ''),
                 'source': media_type,
                 'total_entries': len(all_segments),
                 'chunks_processed': chunks_completed,
@@ -1817,7 +1885,7 @@ class ArticleProcessor(BaseProcessor):
                 self.logger.warning(f"   ⚠️ [PARTIAL] Transcription incomplete: {chunks_completed}/{len(chunks)} chunks processed")
                 self.logger.info(f"   📊 [PARTIAL] Returning partial transcript ({len(formatted_transcript['text'])} chars)")
             else:
-                self.logger.info(f"   ✅ [WHISPER] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
+                self.logger.info(f"   ✅ [DEEPGRAM] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
 
             return formatted_transcript
 
@@ -1958,7 +2026,7 @@ class ArticleProcessor(BaseProcessor):
                 'transcript': all_segments,
                 'text': ' '.join(all_text),
                 'language': 'unknown',
-                'type': 'whisper_transcription_chunked' + ('_partial' if is_partial else ''),
+                'type': 'deepgram_transcription_chunked' + ('_partial' if is_partial else ''),
                 'source': media_type,
                 'total_entries': len(all_segments),
                 'chunks_processed': chunks_completed,
@@ -1970,7 +2038,7 @@ class ArticleProcessor(BaseProcessor):
                 self.logger.warning(f"   ⚠️ [PARTIAL] Transcription incomplete: {chunks_completed}/{len(chunks)} chunks processed")
                 self.logger.info(f"   📊 [PARTIAL] Returning partial transcript ({len(formatted_transcript['text'])} chars)")
             else:
-                self.logger.info(f"   ✅ [WHISPER] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
+                self.logger.info(f"   ✅ [DEEPGRAM] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
 
             return formatted_transcript
 

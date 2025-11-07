@@ -61,12 +61,12 @@ class FileTranscriber(BaseProcessor):
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Check file size (DeepGram can handle larger files than Whisper)
+        # Check file size (DeepGram can handle larger files)
         file_size = file_path.stat().st_size
-        max_size = Config.MAX_WHISPER_FILE_SIZE_MB * 1024 * 1024
+        max_size = Config.MAX_DEEPGRAM_FILE_SIZE_MB * 1024 * 1024
 
         if file_size > max_size:
-            self.logger.warning(f"⚠️ File size ({file_size / 1024 / 1024:.1f}MB) is large. DeepGram can handle it but processing may take time.")
+            self.logger.warning(f"⚠️ File size ({file_size / 1024 / 1024:.1f}MB) is large. Processing may take time.")
 
         # Check supported formats
         supported_formats = Config.get_supported_audio_formats()
