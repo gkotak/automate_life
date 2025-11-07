@@ -110,6 +110,32 @@ export default function ArticlePage() {
         }
       }
 
+      const setupDirectFilePlayer = () => {
+        const playerContainer = document.getElementById('video-player-container')
+        if (!playerContainer || !article.audio_url) {
+          console.warn('Video player container not found or no audio_url')
+          return
+        }
+
+        // Clear existing content
+        playerContainer.innerHTML = ''
+
+        // Create HTML5 video element for direct MP4/media files
+        const video = document.createElement('video')
+        video.style.width = '100%'
+        video.style.height = '100%'
+        video.controls = true
+        video.id = 'direct-video-player'
+        video.src = article.audio_url
+        video.playbackRate = 2.0  // Set to 2x speed by default
+
+        // Store video reference for timestamp jumping
+        ;(window as any).directVideoPlayer = video
+
+        playerContainer.appendChild(video)
+        console.log('Direct file video player embedded')
+      }
+
       const setupGenericPlayer = () => {
         const playerContainer = document.getElementById('video-player-container')
         if (!playerContainer) {
@@ -174,6 +200,19 @@ export default function ArticlePage() {
             setTimeout(() => {
               player.setPlaybackRate(2)
             }, 100)
+          }
+        } else if (platform === 'direct_file' || article.video_id === 'direct_file') {
+          // HTML5 video player for direct files
+          const video = document.getElementById('direct-video-player') as HTMLVideoElement
+          if (video) {
+            video.currentTime = seconds
+            video.play()
+            // Ensure 2x speed
+            video.playbackRate = 2.0
+
+            // Track which timestamp was clicked
+            setClickedTimestamp(seconds)
+            setTimeout(() => setClickedTimestamp(null), 5000)
           }
         } else if (platform === 'loom') {
           // Loom supports ?t= URL parameter for timestamp jumping
@@ -247,7 +286,10 @@ export default function ArticlePage() {
       setJumpToTimeFunc(() => jumpToTime)
 
       // Set up player based on platform
-      if (platform === 'youtube') {
+      if (article.video_id === 'direct_file') {
+        // Use HTML5 video player for direct media files
+        setupDirectFilePlayer()
+      } else if (platform === 'youtube') {
         // Load YouTube API if not already loaded
         if (!window.YT) {
           const script = document.createElement('script')
