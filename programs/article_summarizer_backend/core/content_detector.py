@@ -426,6 +426,14 @@ class ContentTypeDetector:
         if not main_content:
             main_content = soup  # Fallback to entire page
 
+        # FIRST: Check for async embeds (divs/scripts with video IDs for any platform)
+        async_embeds = self._detect_async_embeds(soup)
+        if async_embeds:
+            platform = async_embeds[0].get('platform', 'unknown').upper()
+            video_id = async_embeds[0].get('video_id', 'unknown')
+            self.logger.info(f"✅ [{platform} ASYNC] Found async embed: {video_id}")
+            return async_embeds
+
         # Look for video iframe embeds in main content only
         iframes = main_content.find_all('iframe')
         self.logger.info(f"🔍 [IFRAME SEARCH] Found {len(iframes)} total iframes in main content")
@@ -546,6 +554,93 @@ class ContentTypeDetector:
                 video_urls.append(video_data)
                 self.logger.info(f"✅ [IFRAME FOUND] {video_data['platform'].title()} video ID: {video_data['video_id']}")
                 return video_urls  # Return first video found
+
+        return video_urls
+
+    def _detect_async_embeds(self, soup: BeautifulSoup) -> List[Dict]:
+        """
+        Detect async JavaScript embeds for various video platforms (Wistia, Loom, Vimeo, etc.)
+
+        Many platforms support async embeds where the video is loaded via JavaScript
+        instead of iframes. Common patterns:
+        - Div with platform-specific class: <div class="wistia_async_VIDEO_ID">
+        - Script tag with platform URL: <script src="https://platform.com/embed/VIDEO_ID">
+
+        Args:
+            soup: BeautifulSoup object
+
+        Returns:
+            List with single video dict, or empty list
+        """
+        video_urls = []
+
+        # Platform configurations for async embeds
+        # Format: (class_pattern, url_template, embed_template, platform_name)
+        async_platforms = [
+            {
+                'name': 'wistia',
+                'class_pattern': r'wistia_async_([a-zA-Z0-9]+)',
+                'script_pattern': r'wistia\.(?:com|net)/embed/medias/([a-zA-Z0-9]+)',
+                'url_template': 'https://fast.wistia.net/embed/iframe/{video_id}',
+                'embed_template': 'https://fast.wistia.net/embed/iframe/{video_id}'
+            },
+            {
+                'name': 'loom',
+                'class_pattern': r'loom_async_([a-zA-Z0-9_-]+)',
+                'script_pattern': r'loom\.com/(?:embed|share)/([a-zA-Z0-9_-]+)',
+                'url_template': 'https://www.loom.com/share/{video_id}',
+                'embed_template': 'https://www.loom.com/embed/{video_id}'
+            },
+            {
+                'name': 'vimeo',
+                'class_pattern': r'vimeo_async_([0-9]+)',
+                'script_pattern': r'vimeo\.com/(?:video/)?([0-9]+)',
+                'url_template': 'https://vimeo.com/{video_id}',
+                'embed_template': 'https://player.vimeo.com/video/{video_id}'
+            }
+        ]
+
+        # Pattern 1: Look for divs with platform_async_[video_id] class patterns
+        for platform_config in async_platforms:
+            class_pattern = re.compile(platform_config['class_pattern'])
+
+            # Find all divs and check their classes
+            for div in soup.find_all('div'):
+                classes = div.get('class', [])
+                for cls in classes:
+                    match = class_pattern.search(str(cls))
+                    if match:
+                        video_id = match.group(1)
+                        video_data = {
+                            'video_id': video_id,
+                            'url': platform_config['url_template'].format(video_id=video_id),
+                            'embed_url': platform_config['embed_template'].format(video_id=video_id),
+                            'platform': platform_config['name'],
+                            'context': 'async_embed'
+                        }
+                        video_urls.append(video_data)
+                        self.logger.info(f"✅ [{platform_config['name'].upper()} ASYNC] Found async embed with video ID: {video_id}")
+                        return video_urls  # Return first one found
+
+        # Pattern 2: Look for script tags with platform-specific URLs
+        for script in soup.find_all('script', src=True):
+            src = script.get('src', '')
+
+            for platform_config in async_platforms:
+                script_pattern = platform_config['script_pattern']
+                match = re.search(script_pattern, src, re.IGNORECASE)
+                if match:
+                    video_id = match.group(1)
+                    video_data = {
+                        'video_id': video_id,
+                        'url': platform_config['url_template'].format(video_id=video_id),
+                        'embed_url': platform_config['embed_template'].format(video_id=video_id),
+                        'platform': platform_config['name'],
+                        'context': 'script_reference'
+                    }
+                    video_urls.append(video_data)
+                    self.logger.info(f"✅ [{platform_config['name'].upper()} SCRIPT] Found script reference with video ID: {video_id}")
+                    return video_urls  # Return first one found
 
         return video_urls
 

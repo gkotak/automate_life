@@ -41,13 +41,14 @@ class BrowserFetcher:
         """Check if Playwright is available"""
         return PLAYWRIGHT_AVAILABLE
 
-    async def fetch_with_playwright_async(self, url: str, cookies: Optional[Dict] = None) -> Tuple[bool, Optional[str], str]:
+    async def fetch_with_playwright_async(self, url: str, cookies: Optional[Dict] = None, storage_state: Optional[Dict] = None) -> Tuple[bool, Optional[str], str]:
         """
         Async version of fetch_with_playwright for use with FastAPI/async contexts
 
         Args:
             url: The URL to fetch
             cookies: Optional dictionary of cookies to inject (from requests.Session)
+            storage_state: Optional Playwright storage_state dict (includes cookies, localStorage, etc.)
 
         Returns:
             Tuple of (success, html_content, message)
@@ -57,6 +58,8 @@ class BrowserFetcher:
 
         self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Launching browser for: {url}")
         self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Headless: {self.headless}, Timeout: {self.timeout}ms")
+        if storage_state:
+            self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Using storage_state with {len(storage_state.get('cookies', []))} cookies")
 
         try:
             async with async_playwright() as p:
@@ -74,16 +77,22 @@ class BrowserFetcher:
                     ]
                 )
 
-                # Create context with realistic settings
-                context = await browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    locale='en-US',
-                    timezone_id='America/New_York',
-                )
+                # Create context with realistic settings + storage_state if provided
+                context_options = {
+                    'viewport': {'width': 1920, 'height': 1080},
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'locale': 'en-US',
+                    'timezone_id': 'America/New_York',
+                }
 
-                # Inject cookies if provided
-                if cookies:
+                # Use storage_state if provided (includes cookies + localStorage + sessionStorage)
+                if storage_state:
+                    context_options['storage_state'] = storage_state
+
+                context = await browser.new_context(**context_options)
+
+                # Only inject cookies manually if storage_state not provided
+                if not storage_state and cookies:
                     await self._inject_cookies_async(context, cookies, url)
 
                 # Create page and navigate
