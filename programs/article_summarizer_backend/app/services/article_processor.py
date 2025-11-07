@@ -256,10 +256,6 @@ class ArticleProcessor(BaseProcessor):
         # Load Chrome cookies for this specific URL domain (for Substack subdomains, etc.)
         self.auth_manager.load_cookies_for_url(url)
 
-        # Get page content
-        response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
-        soup = self._get_soup(response.content)
-
         # Detect platform first
         platform = self.auth_manager.detect_platform(url)
 
@@ -267,23 +263,47 @@ class ArticleProcessor(BaseProcessor):
         # This prevents unnecessary Playwright invocation for URLs with access_token params
         auth_required, auth_reason = self.auth_manager.check_authentication_required(url, platform)
 
-        # Only use browser fetch if no access token is present and anti-bot measures detected
+        # Check if browser fetch is needed BEFORE making initial request (to avoid redirect loops)
+        # Only skip browser fetch check if URL contains access token
         if auth_reason != "url_contains_auth_token":
-            should_use_browser = self.auth_manager.should_use_browser_fetch(url, response)
+            # Check domain-based browser fetch requirements (doesn't need response object)
+            should_use_browser = self.auth_manager.should_use_browser_fetch(url, None)
 
             if should_use_browser:
-                self.logger.info("🌐 [BROWSER FALLBACK] Anti-bot measures detected, switching to browser fetch...")
+                self.logger.info("🌐 [BROWSER FETCH] Domain configured for browser fetch, using Playwright...")
                 # Use async version for FastAPI compatibility
                 browser_success, html_content, browser_message = await self.auth_manager.fetch_with_browser_async(url)
 
                 if browser_success:
                     soup = self._get_soup(html_content)
-                    self.logger.info("✅ [BROWSER FALLBACK] Successfully retrieved content via browser")
+                    self.logger.info("✅ [BROWSER FETCH] Successfully retrieved content via browser")
                 else:
-                    self.logger.warning(f"⚠️ [BROWSER FALLBACK] Browser fetch failed: {browser_message}")
-                    self.logger.warning("⚠️ [BROWSER FALLBACK] Continuing with standard request content...")
+                    self.logger.warning(f"⚠️ [BROWSER FETCH] Browser fetch failed: {browser_message}")
+                    # Fall back to regular request
+                    response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
+                    soup = self._get_soup(response.content)
+            else:
+                # Make regular request first
+                response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
+                soup = self._get_soup(response.content)
+
+                # Check response for anti-bot measures and fallback to browser if needed
+                should_use_browser_fallback = self.auth_manager.should_use_browser_fetch(url, response)
+                if should_use_browser_fallback:
+                    self.logger.info("🌐 [BROWSER FALLBACK] Anti-bot measures detected in response, switching to browser fetch...")
+                    browser_success, html_content, browser_message = await self.auth_manager.fetch_with_browser_async(url)
+
+                    if browser_success:
+                        soup = self._get_soup(html_content)
+                        self.logger.info("✅ [BROWSER FALLBACK] Successfully retrieved content via browser")
+                    else:
+                        self.logger.warning(f"⚠️ [BROWSER FALLBACK] Browser fetch failed: {browser_message}")
+                        self.logger.warning("⚠️ [BROWSER FALLBACK] Continuing with standard request content...")
         else:
             self.logger.info("✅ [SKIP BROWSER] URL contains access token, using direct request")
+            # Get page content with regular request
+            response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
+            soup = self._get_soup(response.content)
 
         if auth_required:
             auth_success, auth_message = self.auth_manager.authenticate_if_needed(url, platform)

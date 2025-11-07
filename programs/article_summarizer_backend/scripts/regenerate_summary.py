@@ -66,6 +66,8 @@ def reconstruct_metadata(article: dict) -> dict:
     transcript_text = article.get('transcript_text', '')
     transcripts = {}
 
+    segments = []
+
     if transcript_text and article.get('video_id'):
         # Reconstruct transcript in the format expected by AI
         # Parse the [MM:SS] format from stored transcript

@@ -114,6 +114,9 @@ class BrowserFetcher:
                     if response:
                         self.logger.info(f"🌐 [BROWSER FETCH ASYNC] Response status: {response.status}")
 
+                    # Check for bot detection challenges and wait for manual completion
+                    await self._handle_bot_challenges_async(page, url)
+
                     # Wait for content to load
                     success = await self._wait_for_content_async(page)
 
@@ -423,6 +426,47 @@ class BrowserFetcher:
             self.logger.debug(f"Could not detect logged-in user: {e}")
 
         return None
+
+    async def _handle_bot_challenges_async(self, page: 'AsyncPage', url: str):
+        """
+        Detect and handle bot detection challenges (Press & Hold, CAPTCHA, etc.)
+        Waits for manual completion if challenge is detected
+        """
+        try:
+            # Check for "Press & Hold" challenges (common on Tegus, etc.)
+            press_and_hold_selectors = [
+                'text="Press & Hold"',
+                'text="press and hold"',
+                'text="confirm you are a human"',
+                'text="verify you are human"',
+            ]
+
+            for selector in press_and_hold_selectors:
+                try:
+                    element = page.locator(selector).first
+                    if await element.is_visible(timeout=2000):
+                        self.logger.warning(f"🤖 [BOT CHALLENGE] Detected '{selector}' challenge - waiting for manual completion...")
+                        self.logger.warning(f"⏳ [BOT CHALLENGE] Please complete the challenge in the browser window...")
+
+                        # Take screenshot of challenge
+                        screenshot_path = await self._take_screenshot_async(page, url)
+                        self.logger.info(f"📸 [BOT CHALLENGE] Screenshot saved: {screenshot_path}")
+
+                        # Wait up to 60 seconds for the challenge to disappear
+                        for i in range(12):  # 12 * 5 seconds = 60 seconds
+                            await page.wait_for_timeout(5000)
+                            if not await element.is_visible():
+                                self.logger.info(f"✅ [BOT CHALLENGE] Challenge completed after {(i+1)*5} seconds!")
+                                return
+                            self.logger.info(f"⏳ [BOT CHALLENGE] Still waiting... ({(i+1)*5}s elapsed)")
+
+                        self.logger.warning(f"⚠️ [BOT CHALLENGE] Challenge still present after 60 seconds - continuing anyway...")
+                        return
+                except Exception:
+                    continue
+
+        except Exception as e:
+            self.logger.debug(f"Bot challenge detection error (non-fatal): {e}")
 
     async def _take_screenshot_async(self, page: 'AsyncPage', url: str) -> str:
         """Async version of _take_screenshot"""

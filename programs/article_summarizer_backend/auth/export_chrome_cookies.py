@@ -16,6 +16,10 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+
+# Load environment variables from .env.local
+load_dotenv(Path(__file__).parent.parent / '.env.local')
 
 # Import from same directory
 try:
