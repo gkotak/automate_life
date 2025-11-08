@@ -8,6 +8,9 @@ import logging
 import asyncio
 from typing import Optional, Dict, List
 
+# Import generalized authentication helper
+from .playwright_auth import PlaywrightAuthenticator, get_pocketcasts_config
+
 
 class PodcastAuth:
     """Handle PocketCasts authentication using Playwright"""
@@ -21,6 +24,9 @@ class PodcastAuth:
         # Load credentials from environment
         self.email = os.getenv('POCKETCASTS_EMAIL')
         self.password = os.getenv('POCKETCASTS_PASSWORD')
+
+        # Initialize generalized authenticator
+        self.authenticator = PlaywrightAuthenticator(logger=self.logger)
 
         # Playwright context and cookies
         self.cookies = None
@@ -75,80 +81,16 @@ class PodcastAuth:
                 self.logger.info(f"Navigating to {self.LOGIN_URL}")
                 await page.goto(self.LOGIN_URL, wait_until='networkidle')
 
-                # Wait for login form to be visible
-                self.logger.info("Waiting for login form...")
-                await page.wait_for_selector('input[type="email"]', timeout=10000)
+                # Use generalized authenticator for login
+                self.logger.info("Using generalized authenticator for PocketCasts login...")
+                pocketcasts_config = get_pocketcasts_config(email=self.email, password=self.password)
+                login_success = await self.authenticator.login(page, pocketcasts_config)
 
-                # Fill in email
-                self.logger.info("Filling in email address...")
-                email_input = page.locator('input[type="email"]').first
-                await email_input.fill(self.email)
-
-                # Fill in password
-                self.logger.info("Filling in password...")
-                password_input = page.locator('input[type="password"]').first
-                await password_input.fill(self.password)
-
-                # Set up response handler to detect login success/failure
-                login_response_received = asyncio.Event()
-                login_success = False
-
-                async def check_login_response(response):
-                    nonlocal login_success
-                    url = response.url
-                    # Look for specific login/token API endpoints
-                    if ('api.pocketcasts.com' in url and
-                        ('login' in url or 'token' in url or 'user/' in url)):
-                        self.logger.info(f"🔐 Login API call detected: {url}")
-                        self.logger.info(f"   Status: {response.status}")
-                        try:
-                            if response.status == 200:
-                                json_data = await response.json()
-                                # Check if we got an access token (successful login)
-                                if isinstance(json_data, dict) and 'accessToken' in json_data:
-                                    self.logger.info(f"   ✅ Login successful - received access token")
-                                    login_success = True
-                                else:
-                                    self.logger.info(f"   Response keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'Not a dict'}")
-                            else:
-                                self.logger.warning(f"   Login request failed with status {response.status}")
-                        except:
-                            pass
-                        login_response_received.set()
-
-                page.on("response", check_login_response)
-
-                # Click the login button
-                self.logger.info("Clicking login button...")
-                login_button = page.locator('button:has-text("Log in"), button[type="submit"]').first
-
-                # Wait for either navigation or login API response
-                try:
-                    await login_button.click()
-
-                    # Wait for login response (with timeout)
-                    self.logger.info("Waiting for login API response...")
-                    try:
-                        await asyncio.wait_for(login_response_received.wait(), timeout=10.0)
-                    except asyncio.TimeoutError:
-                        self.logger.warning("⚠️  No login API response detected within 10 seconds")
-
-                    # Also wait for page to settle
-                    await page.wait_for_load_state('networkidle', timeout=15000)
-
-                    if not login_success:
-                        self.logger.error("❌ Login appears to have failed - no successful login API response")
-                        # Check current URL
-                        current_url = page.url
-                        self.logger.error(f"   Current URL: {current_url}")
-                        if 'login' in current_url:
-                            self.logger.error("   Still on login page - credentials may be incorrect")
-                            return None
-                except Exception as e:
-                    self.logger.error(f"Error during login: {e}")
+                if not login_success:
+                    self.logger.error("❌ PocketCasts login failed")
                     return None
 
-                self.logger.info("✅ Login completed successfully")
+                self.logger.info("✅ PocketCasts login completed successfully")
 
                 # Instead of scraping HTML, intercept API calls to get episode data
                 episodes_data = []

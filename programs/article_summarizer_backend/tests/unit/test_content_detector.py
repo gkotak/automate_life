@@ -310,3 +310,249 @@ class TestContentTypeDetectorInit:
         """Should have a logger instance"""
         detector = ContentTypeDetector()
         assert detector.logger is not None
+
+
+class TestDirectMediaFileDetection:
+    """Tests for direct media file URL detection (MP3, MP4, etc.)"""
+
+    @pytest.fixture
+    def detector(self):
+        """Create a ContentTypeDetector instance"""
+        return ContentTypeDetector()
+
+    # Direct Video File Tests
+    @pytest.mark.unit
+    def test_detects_direct_mp4_video(self, detector):
+        """Should detect .mp4 files as direct video"""
+        url = "https://example.com/video.mp4"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'video'
+
+    @pytest.mark.unit
+    def test_detects_cloudfront_mp4_video(self, detector):
+        """Should detect MP4 on CloudFront as direct video"""
+        url = "https://d123abc.cloudfront.net/videos/sample_video.mp4"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'video'
+
+    @pytest.mark.unit
+    def test_detects_mov_video(self, detector):
+        """Should detect .mov files as direct video"""
+        url = "https://example.com/recording.mov"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'video'
+
+    @pytest.mark.unit
+    def test_detects_webm_video(self, detector):
+        """Should detect .webm files as direct video"""
+        url = "https://example.com/clip.webm"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'video'
+
+    @pytest.mark.unit
+    def test_detects_mkv_video(self, detector):
+        """Should detect .mkv files as direct video"""
+        url = "https://example.com/movie.mkv"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'video'
+
+    # Direct Audio File Tests
+    @pytest.mark.unit
+    def test_detects_direct_mp3_audio(self, detector):
+        """Should detect .mp3 files as direct audio"""
+        url = "https://example.com/podcast.mp3"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+    @pytest.mark.unit
+    def test_detects_m4a_audio(self, detector):
+        """Should detect .m4a files as direct audio"""
+        url = "https://example.com/episode.m4a"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+    @pytest.mark.unit
+    def test_detects_wav_audio(self, detector):
+        """Should detect .wav files as direct audio"""
+        url = "https://example.com/recording.wav"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+    @pytest.mark.unit
+    def test_detects_ogg_audio(self, detector):
+        """Should detect .ogg files as direct audio"""
+        url = "https://example.com/audio.ogg"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+    # URLs with Query Parameters
+    @pytest.mark.unit
+    def test_detects_mp4_with_query_params(self, detector):
+        """Should detect MP4 even with query parameters"""
+        url = "https://example.com/video.mp4?token=abc123&expires=1234567890"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'video'
+
+    @pytest.mark.unit
+    def test_detects_mp3_with_query_params(self, detector):
+        """Should detect MP3 even with query parameters"""
+        url = "https://example.com/podcast.mp3?download=true&quality=high"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+    # Case Insensitivity
+    @pytest.mark.unit
+    def test_case_insensitive_mp4_detection(self, detector):
+        """Should detect MP4 regardless of case"""
+        urls = [
+            "https://example.com/video.MP4",
+            "https://example.com/video.Mp4",
+            "https://example.com/video.mP4"
+        ]
+        for url in urls:
+            is_media, media_type = detector.is_direct_media_url(url)
+            assert is_media is True
+            assert media_type == 'video'
+
+    @pytest.mark.unit
+    def test_case_insensitive_mp3_detection(self, detector):
+        """Should detect MP3 regardless of case"""
+        urls = [
+            "https://example.com/audio.MP3",
+            "https://example.com/audio.Mp3",
+            "https://example.com/audio.mP3"
+        ]
+        for url in urls:
+            is_media, media_type = detector.is_direct_media_url(url)
+            assert is_media is True
+            assert media_type == 'audio'
+
+    # Negative Cases
+    @pytest.mark.unit
+    def test_does_not_detect_non_media_urls(self, detector):
+        """Should not detect non-media URLs as media"""
+        urls = [
+            "https://example.com/article.html",
+            "https://example.com/page",
+            "https://example.com/image.jpg",
+            "https://example.com/document.pdf"
+        ]
+        for url in urls:
+            is_media, media_type = detector.is_direct_media_url(url)
+            assert is_media is False
+            assert media_type is None
+
+    @pytest.mark.unit
+    def test_does_not_detect_partial_extension_match(self, detector):
+        """Should not match partial extensions like 'ump4' or 'temp3'"""
+        urls = [
+            "https://example.com/jump4ward.html",
+            "https://example.com/temp3file.txt"
+        ]
+        for url in urls:
+            is_media, media_type = detector.is_direct_media_url(url)
+            assert is_media is False
+
+    # Real-World Examples
+    @pytest.mark.unit
+    def test_detects_seekingalpha_mp3(self, detector):
+        """Should detect Seeking Alpha audio files"""
+        url = "https://static.seekingalpha.com/cdn/s3/transcripts_audio/12345.mp3"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+    @pytest.mark.unit
+    def test_detects_pocketcasts_audio(self, detector):
+        """Should detect PocketCasts audio files"""
+        url = "https://chrt.fm/track/ABC123/audio.mp3"
+        is_media, media_type = detector.is_direct_media_url(url)
+
+        assert is_media is True
+        assert media_type == 'audio'
+
+
+class TestDirectMediaContentType:
+    """Tests for detect_content_type() with direct media files"""
+
+    @pytest.fixture
+    def detector(self):
+        """Create a ContentTypeDetector instance"""
+        return ContentTypeDetector()
+
+    @pytest.mark.unit
+    def test_detect_content_type_for_mp4(self, detector):
+        """Should return video content type for direct MP4 URL"""
+        from bs4 import BeautifulSoup
+
+        url = "https://example.com/video.mp4"
+        html = "<html><body>Video page</body></html>"
+        soup = BeautifulSoup(html, 'html.parser')
+
+        result = detector.detect_content_type(soup, url)
+
+        assert result.has_embedded_video is True
+        assert result.has_embedded_audio is False
+        assert result.is_text_only is False
+        assert len(result.video_urls) == 1
+        assert result.video_urls[0]['platform'] == 'direct_file'
+        assert result.video_urls[0]['url'] == url
+        assert result.video_urls[0]['context'] == 'direct_video_file'
+        assert result.video_urls[0]['requires_download'] is True
+
+    @pytest.mark.unit
+    def test_detect_content_type_for_mp3(self, detector):
+        """Should return audio content type for direct MP3 URL"""
+        from bs4 import BeautifulSoup
+
+        url = "https://example.com/podcast.mp3"
+        html = "<html><body>Audio page</body></html>"
+        soup = BeautifulSoup(html, 'html.parser')
+
+        result = detector.detect_content_type(soup, url)
+
+        assert result.has_embedded_video is False
+        assert result.has_embedded_audio is True
+        assert result.is_text_only is False
+        assert len(result.audio_urls) == 1
+        assert result.audio_urls[0]['platform'] == 'direct_file'
+        assert result.audio_urls[0]['url'] == url
+        assert result.audio_urls[0]['context'] == 'direct_audio_file'
+
+    @pytest.mark.unit
+    def test_direct_files_marked_requires_download(self, detector):
+        """Should mark direct files as requiring download"""
+        from bs4 import BeautifulSoup
+
+        video_url = "https://example.com/video.mp4"
+        audio_url = "https://example.com/audio.mp3"
+        empty_soup = BeautifulSoup("", 'html.parser')
+
+        video_result = detector.detect_content_type(empty_soup, video_url)
+        audio_result = detector.detect_content_type(empty_soup, audio_url)
+
+        assert video_result.video_urls[0]['requires_download'] is True
+        assert audio_result.audio_urls[0]['requires_download'] is True

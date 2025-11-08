@@ -70,6 +70,17 @@ ENV/
 # Codex review outputs
 .codex/
 
+# Backup files
+*.bak
+*.bak2
+*.bak3
+*.bak4
+
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/
+
 # Next.js
 .next/
 out/

@@ -768,6 +768,15 @@ class ArticleProcessor(BaseProcessor):
                     direct_url = f'https://vimeo.com/{video_id}'
                     urls_to_try = [embed_url, direct_url]
                     self.logger.info(f"      🎵 [VIMEO] Will try embed URL first, then direct URL")
+                elif platform == 'html5_video':
+                    # For HTML5 video, use the direct URL from the video object (e.g., Q4 Inc MP4 files)
+                    video_url = video.get('url')
+                    if video_url:
+                        urls_to_try = [video_url]
+                        self.logger.info(f"      🎵 [HTML5] Using direct video URL: {video_url[:80]}...")
+                    else:
+                        self.logger.error(f"      ❌ [HTML5] No URL found in video object")
+                        urls_to_try = []
                 else:
                     # For other platforms, use the standard URL
                     urls_to_try = [self._build_video_url(platform, video_id)]

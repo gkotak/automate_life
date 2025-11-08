@@ -454,8 +454,14 @@ class ContentTypeDetector:
             self.logger.info(f"🎯 [IFRAME PRIORITY] Found {len(iframe_videos)} iframe video(s) - using first one as main content")
             return iframe_videos[:1]  # Max 1 iframe video
 
-        # 2. FALLBACK: Video links in main body content only
-        self.logger.info("🔍 [FALLBACK] No iframe videos found, searching for video links in main content...")
+        # 2. HTML5 VIDEO TAGS: Direct <video> elements (e.g., Q4 Inc)
+        html5_videos = self._detect_html5_videos(soup)
+        if html5_videos:
+            self.logger.info(f"🎯 [HTML5 VIDEO] Found {len(html5_videos)} <video> element(s) - using as main content")
+            return html5_videos[:1]  # Max 1 HTML5 video
+
+        # 3. FALLBACK: Video links in main body content only
+        self.logger.info("🔍 [FALLBACK] No iframe or HTML5 videos found, searching for video links in main content...")
         main_body_videos = self._detect_video_links_in_main_body(soup)
 
         if not main_body_videos:
@@ -1207,6 +1213,7 @@ class ContentTypeDetector:
         video_urls = []
 
         video_elements = soup.find_all('video')
+        self.logger.info(f"🔍 [HTML5 VIDEO] Found {len(video_elements)} <video> tag(s) in page")
         for video in video_elements:
             src = video.get('src', '')
 

@@ -22,12 +22,20 @@ export default function Nav() {
               Article Summarizer
             </Link>
             {user && (
-              <Link
-                href="/new/article"
-                className="text-slate-300 hover:text-white transition-colors"
-              >
-                Add Article
-              </Link>
+              <>
+                <Link
+                  href="/new/article"
+                  className="text-slate-300 hover:text-white transition-colors"
+                >
+                  Add Article
+                </Link>
+                <Link
+                  href="/earnings"
+                  className="text-slate-300 hover:text-white transition-colors"
+                >
+                  Earnings
+                </Link>
+              </>
             )}
           </div>
 

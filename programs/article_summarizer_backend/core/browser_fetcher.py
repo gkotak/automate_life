@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 # Try to import Playwright (both sync and async APIs)
 try:
     from playwright.sync_api import sync_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
-    from playwright.async_api import async_playwright, Browser as AsyncBrowser, Page as AsyncPage
+    from playwright.async_api import async_playwright, Browser as AsyncBrowser, Page as AsyncPage, TimeoutError as AsyncPlaywrightTimeoutError
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     logger.warning("Playwright not available - browser fetching disabled. Install with: pip install playwright && playwright install chromium")
+
+# Import generalized authentication helper
+from .playwright_auth import PlaywrightAuthenticator, get_q4_config
 
 
 class BrowserFetcher:
@@ -31,6 +34,9 @@ class BrowserFetcher:
         self.headless = os.getenv('PLAYWRIGHT_HEADLESS', 'true').lower() == 'true'
         self.timeout = int(os.getenv('PLAYWRIGHT_TIMEOUT', '30000'))
         self.screenshot_on_error = os.getenv('PLAYWRIGHT_SCREENSHOT_ON_ERROR', 'false').lower() == 'true'
+
+        # Initialize generalized authenticator
+        self.authenticator = PlaywrightAuthenticator(logger=self.logger)
 
         if not PLAYWRIGHT_AVAILABLE:
             self.logger.warning("⚠️ [BROWSER FETCHER] Playwright not available")
@@ -63,18 +69,40 @@ class BrowserFetcher:
 
         try:
             async with async_playwright() as p:
+                # Detect Q4 Inc URLs which need special handling (crash with --single-process)
+                is_q4_url = 'q4inc.com' in url or 'q4web.com' in url
+
+                # Base args that work for most sites
+                browser_args = [
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                ]
+
+                # Only add --single-process and --no-zygote for non-Q4 URLs
+                # Q4 Inc uses heavy JavaScript/WebAssembly that crashes with these flags
+                if not is_q4_url:
+                    browser_args.extend([
+                        '--single-process',
+                        '--no-zygote',
+                        '--disable-gpu',
+                    ])
+                else:
+                    # Q4-specific args: enable media features for video player
+                    self.logger.info(f"🎯 [Q4 DETECTION] Q4 Inc URL detected, using media-enabled browser args")
+                    browser_args.extend([
+                        '--enable-features=WebRTC,WebAudio,MediaStreamTrack',
+                        '--use-fake-ui-for-media-stream',  # Auto-grant media permissions
+                        '--use-fake-device-for-media-stream',  # Provide fake media devices
+                        '--autoplay-policy=no-user-gesture-required',  # Allow autoplay
+                        '--disable-features=IsolateOrigins,site-per-process',  # Better compatibility
+                    ])
+
                 # Launch browser
                 browser = await p.chromium.launch(
                     headless=self.headless,
-                    args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-dev-shm-usage',
-                        '--no-sandbox',
-                        '--disable-gpu',
-                        '--disable-setuid-sandbox',
-                        '--single-process',
-                        '--no-zygote',
-                    ]
+                    args=browser_args
                 )
 
                 # Create context with realistic settings + storage_state if provided
@@ -116,6 +144,45 @@ class BrowserFetcher:
 
                     # Check for bot detection challenges and wait for manual completion
                     await self._handle_bot_challenges_async(page, url)
+
+                    # Check if Q4 Inc URL and perform automated login if needed
+                    if 'q4inc.com' in url:
+                        q4_email = os.getenv('Q4_EMAIL')
+                        q4_password = os.getenv('Q4_PASSWORD')
+
+                        if q4_email and q4_password:
+                            # Wait for page to render and check if login is needed
+                            await page.wait_for_timeout(2000)
+
+                            # Check if we're on a registration/login page
+                            register_button = page.locator('button:has-text("Register with a Q4 Account")')
+                            has_register_button = await register_button.count() > 0
+
+                            if has_register_button:
+                                self.logger.info("🔐 [Q4 AUTH] Detected Q4 registration page, performing automated login...")
+
+                                # Use generalized authenticator
+                                q4_config = get_q4_config(email=q4_email, password=q4_password)
+                                login_success = await self.authenticator.login(page, q4_config)
+
+                                if login_success:
+                                    self.logger.info("✅ [Q4 AUTH] Automated login successful")
+                                    # Wait for React app to load and video element to appear
+                                    self.logger.info("⏳ [Q4 AUTH] Waiting for React app and video element to load...")
+                                    try:
+                                        await page.wait_for_selector('video', timeout=15000, state='attached')
+                                        self.logger.info("✅ [Q4 AUTH] Video element loaded successfully")
+                                        # Give video a bit more time to be fully ready
+                                        await page.wait_for_timeout(2000)
+                                    except AsyncPlaywrightTimeoutError:
+                                        self.logger.warning("⚠️ [Q4 AUTH] Video element not found after login, continuing anyway...")
+                                        await page.wait_for_timeout(3000)
+                                else:
+                                    self.logger.error("❌ [Q4 AUTH] Automated login failed")
+                            else:
+                                self.logger.info("✅ [Q4 AUTH] Already authenticated (no registration page)")
+                        else:
+                            self.logger.warning("⚠️ [Q4 AUTH] Q4_EMAIL or Q4_PASSWORD not set in environment")
 
                     # Wait for content to load
                     success = await self._wait_for_content_async(page)
@@ -376,7 +443,7 @@ class BrowserFetcher:
 
                 self.logger.info("✅ [BROWSER FETCH ASYNC] Scrolled page to trigger lazy-loaded images")
                 return True
-            except PlaywrightTimeoutError:
+            except AsyncPlaywrightTimeoutError:
                 continue
 
         # If no specific content selector found, just wait a bit for JS to execute
@@ -481,3 +548,6 @@ class BrowserFetcher:
         await page.screenshot(path=screenshot_path, full_page=True)
 
         return screenshot_path
+
+    # Old Q4-specific login method removed - now using generalized PlaywrightAuthenticator
+    # See playwright_auth.py for the new implementation

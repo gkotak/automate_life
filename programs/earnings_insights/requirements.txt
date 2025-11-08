@@ -1,0 +1,19 @@
+# Earnings Insights Requirements
+# Install: pip install -r requirements.txt
+
+# Web scraping & browser automation
+playwright==1.43.0
+beautifulsoup4==4.12.3
+requests==2.31.0
+aiohttp==3.9.3
+
+# Supabase & database
+supabase>=2.0.0
+psycopg2-binary==2.9.9
+
+# AI & transcription
+deepgram-sdk==3.2.7
+anthropic==0.25.0  # Claude API
+
+# Utilities
+python-dotenv==1.0.1

@@ -43,3 +43,75 @@ export type Article = {
   word_count: number | null
   topics: string[] | null
 }
+
+// Earnings insights types
+export interface EarningsMetric {
+  value: string
+  speaker: string
+  timestamp: string
+}
+
+export interface EarningsHighlight {
+  text: string
+  speaker: string
+  timestamp: string
+}
+
+export interface EarningsRisk {
+  text: string
+  context: string
+  speaker: string
+  timestamp: string
+}
+
+export interface EarningsQuote {
+  quote: string
+  context: string
+  speaker: string
+  timestamp: string
+}
+
+export interface EarningsInsights {
+  id: number
+  earnings_call_id: number
+  company_id: number
+  symbol: string
+  quarter: string
+  key_metrics: Record<string, EarningsMetric>
+  business_highlights: EarningsHighlight[]
+  guidance: Record<string, EarningsMetric>
+  risks_concerns: EarningsRisk[]
+  positives: EarningsHighlight[]
+  notable_quotes: EarningsQuote[]
+  created_at: string
+  updated_at: string
+}
+
+export interface EarningsCall {
+  id: number
+  company_id: number
+  symbol: string
+  quarter: string
+  fiscal_year: number
+  call_date: string | null
+  earnings_url: string | null
+  transcript_text: string | null
+  transcript_json: any
+  audio_url: string | null
+  processing_status: 'pending' | 'processing' | 'completed' | 'failed'
+  error_message: string | null
+  summary_json: any
+  created_at: string
+  updated_at: string
+}
+
+export interface EarningsCompany {
+  id: number
+  symbol: string
+  name: string
+  sector: string | null
+  industry: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}

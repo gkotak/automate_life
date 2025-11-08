@@ -1,0 +1,3 @@
+"""
+Prompts for Earnings Insights
+"""

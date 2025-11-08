@@ -61,6 +61,7 @@ def get_chrome_cookies_for_domains(domains=None):
     """
     if domains is None:
         # Common subscription/paywall sites
+        # NOTE: Q4 Inc is NOT included - it uses username/password auth instead of cookies
         domains = [
             'seekingalpha.com',
             'substack.com',

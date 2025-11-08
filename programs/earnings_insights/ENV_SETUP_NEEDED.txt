@@ -1,0 +1,42 @@
+ENVIRONMENT VARIABLES SETUP NEEDED
+====================================
+
+The earnings_insights system needs these environment variables:
+
+Required:
+- SUPABASE_URL (your Supabase project URL)
+- SUPABASE_SERVICE_ROLE_KEY (your Supabase service role key)  
+- DEEPGRAM_API_KEY (for audio transcription)
+- ANTHROPIC_API_KEY (for Claude AI analysis)
+
+You mentioned these keys are already available from article_summarizer.
+
+To set them up:
+
+Option 1: Create .env.local in project root
+--------------------------------------------
+Create a file: /Users/gauravkotak/cursor-projects-1/automate_life/.env.local
+
+Add:
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+DEEPGRAM_API_KEY=your_deepgram_key
+ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+Option 2: Export to current shell
+----------------------------------
+export SUPABASE_URL="..."
+export SUPABASE_SERVICE_ROLE_KEY="..."
+export DEEPGRAM_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+
+Then all scripts will work.
+
+Next Steps:
+-----------
+1. Set up environment variables (above)
+2. Run: python scripts/earnings_insights/initialize_companies.py
+3. Run: python scripts/earnings_insights/backfill_earnings_calls.py --symbol AAPL --quarters 1
+4. Run: python scripts/earnings_insights/process_single_earning.py --symbol AAPL --quarter "Q4 2024"

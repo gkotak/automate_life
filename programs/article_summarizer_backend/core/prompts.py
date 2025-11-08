@@ -105,27 +105,40 @@ CRITICAL TIMESTAMP RULES:
 """
 
 
-class VideoContextBuilder:
-    """Build context string for video content with transcripts"""
+class MediaContextBuilder:
+    """Unified builder for all media content (video/audio) with transcripts"""
 
     @staticmethod
     def build(metadata: Dict, max_transcript_chars: int = 150000) -> str:
         """
-        Build video analysis context
+        Build media analysis context for video or audio content
 
         Args:
-            metadata: Article metadata with video_urls and transcripts
+            metadata: Article metadata with media URLs and transcripts
             max_transcript_chars: Maximum characters to include from transcript
 
         Returns:
-            Formatted context string for video content
+            Formatted context string for media content
         """
-        # Get video URLs from any platform (youtube_urls, loom_urls, vimeo_urls, etc.)
+        # Get all media URLs and determine media type
         media_info = metadata.get('media_info', {})
-        video_urls = []
+        media_urls = []
+        media_type = 'media'  # default fallback
+        platform = 'unknown'
+
+        # Collect all media URLs and determine type
         for key in media_info.keys():
             if key.endswith('_urls'):
-                video_urls.extend(media_info[key])
+                urls = media_info[key]
+                media_urls.extend(urls)
+                # Determine type from key (e.g., 'video_urls' -> 'video', 'audio_urls' -> 'audio')
+                if 'video' in key:
+                    media_type = 'video'
+                elif 'audio' in key:
+                    media_type = 'audio'
+                # Get platform from first URL if available
+                if urls and 'platform' in urls[0]:
+                    platform = urls[0]['platform']
 
         transcripts = metadata.get('transcripts', {})
         article_text = metadata.get('article_text', 'Content not available')
@@ -135,9 +148,9 @@ class VideoContextBuilder:
         transcript_content = ""
 
         if transcripts:
-            for video_id, transcript_data in transcripts.items():
+            for media_id, transcript_data in transcripts.items():
                 if transcript_data.get('success'):
-                    formatted_transcript = VideoContextBuilder._format_transcript(transcript_data)
+                    formatted_transcript = MediaContextBuilder._format_transcript(transcript_data)
                     if formatted_transcript:
                         has_transcript_data = True
                         truncated = formatted_transcript[:max_transcript_chars]
@@ -146,38 +159,46 @@ class VideoContextBuilder:
 
                         transcript_content += f"""
 
-VIDEO TRANSCRIPT for {video_id} ({transcript_data.get('type', 'unknown')} transcript):
+{media_type.upper()} TRANSCRIPT for {media_id} ({transcript_data.get('type', 'unknown')} transcript):
 {truncated}
 """
+
+        # Customize wording based on media type
+        action_word = "happens" if media_type == 'video' else "is discussed"
+        extra_detail = "demonstrations" if media_type == 'video' else "main themes"
+        platform_line = f"{media_type.capitalize()} Platform: {platform}\n" if media_type == 'audio' else ""
 
         # Build context based on whether we have transcript data
         if has_transcript_data:
             return f"""
-IMPORTANT: This article contains video content. Video URLs found: {video_urls}
-Please focus on extracting video timestamps with the following format:
+IMPORTANT: This article contains {media_type}/podcast content. {media_type.capitalize()} URLs found: {media_urls}
+Please focus on extracting {media_type} timestamps with the following format:
 - Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
-- Provide detailed descriptions of what happens at each timestamp
+- Provide detailed descriptions of what {action_word} at each timestamp
 - Aim for 5-8 key timestamps that represent the most valuable content
-- Include timestamps for: key insights, important discussions, actionable advice, demonstrations
-{transcript_content}
+- Include timestamps for: key insights, important discussions, actionable advice, {extra_detail}
+{platform_line}{transcript_content}
 
 ARTICLE TEXT CONTENT:
 {article_text}
 
-Please analyze both the article text and the video transcript to provide comprehensive insights.
+Please analyze both the article text and the {media_type} transcript to provide comprehensive insights.
 """
         else:
+            speaker_note = "\n- Note the participants/speakers if mentioned in the content" if media_type == 'audio' else ""
             return f"""
-IMPORTANT: This article contains video content. Video URLs found: {video_urls}
-Note: No video transcripts are available, so please focus on the article content itself.
+IMPORTANT: This article contains {media_type}/podcast content. {media_type.capitalize()} URLs found: {media_urls}
+Note: No {media_type} transcripts are available, so please focus on the article content itself.
 DO NOT include any timestamps or time-based references in your response.
 - Focus on key insights and takeaways mentioned in the article text
 - Extract actionable advice from the article content
-- Identify main themes and discussion points referenced in the article
-- Base your analysis only on the article text, not on video content
-
+- Identify main themes and discussion points referenced in the article{speaker_note}
+- Base your analysis only on the article text, not on {media_type} content
+{platform_line}
 ARTICLE TEXT CONTENT:
 {article_text}
+
+Please analyze the article text to provide comprehensive insights about the {media_type} content.
 """
 
     @staticmethod
@@ -205,103 +226,9 @@ ARTICLE TEXT CONTENT:
         return "\n".join(formatted_text)
 
 
-class AudioContextBuilder:
-    """Build context string for audio content with transcripts"""
-
-    @staticmethod
-    def build(metadata: Dict, max_transcript_chars: int = 150000) -> str:
-        """
-        Build audio analysis context
-
-        Args:
-            metadata: Article metadata with audio_urls and transcripts
-            max_transcript_chars: Maximum characters to include from transcript
-
-        Returns:
-            Formatted context string for audio content
-        """
-        audio_urls = metadata.get('media_info', {}).get('audio_urls', [])
-        transcripts = metadata.get('transcripts', {})
-        article_text = metadata.get('article_text', 'Content not available')
-
-        # Check if we have any successful transcripts
-        has_transcript_data = False
-        transcript_content = ""
-
-        if transcripts:
-            for audio_id, transcript_data in transcripts.items():
-                if transcript_data.get('success'):
-                    formatted_transcript = AudioContextBuilder._format_transcript(transcript_data)
-                    if formatted_transcript:
-                        has_transcript_data = True
-                        truncated = formatted_transcript[:max_transcript_chars]
-                        if len(formatted_transcript) > max_transcript_chars:
-                            truncated += "..."
-
-                        transcript_content += f"""
-
-AUDIO TRANSCRIPT for {audio_id} ({transcript_data.get('type', 'unknown')} transcript):
-{truncated}
-"""
-
-        # Build context based on whether we have transcript data
-        if has_transcript_data:
-            return f"""
-IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
-Please focus on extracting audio timestamps with the following format:
-- Use MM:SS format for timestamps (e.g., "5:23", "12:45", "1:02:30")
-- Provide detailed descriptions of what is discussed at each timestamp
-- Aim for 5-8 key timestamps that represent the most valuable content
-- Include timestamps for: key insights, important discussions, actionable advice, main themes
-Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
-{transcript_content}
-
-ARTICLE TEXT CONTENT:
-{article_text}
-
-Please analyze both the article text and the audio transcript to provide comprehensive insights.
-"""
-        else:
-            return f"""
-IMPORTANT: This article contains audio/podcast content. Audio URLs found: {audio_urls}
-Note: No audio transcripts are available, so please focus on the article content itself.
-DO NOT include any timestamps or time-based references in your response.
-- Focus on key insights and takeaways mentioned in the article text
-- Extract actionable advice from the article content
-- Identify main themes and discussion points referenced in the article
-- Note the participants/speakers if mentioned in the content
-- Base your analysis only on the article text, not on audio content
-Audio Platform: {audio_urls[0]['platform'] if audio_urls else 'unknown'}
-
-ARTICLE TEXT CONTENT:
-{article_text}
-
-Please analyze the article text to provide comprehensive insights about the audio content.
-"""
-
-    @staticmethod
-    def _format_transcript(transcript_data: Dict) -> str:
-        """Format transcript for AI analysis (line-by-line)"""
-        if not transcript_data or not transcript_data.get('success'):
-            return ""
-
-        # Handle both YouTube API format ('transcript') and DeepGram format ('segments')
-        transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
-        formatted_text = []
-
-        for entry in transcript:
-            start_time = entry.get('start', 0)
-            text = entry.get('text', '').strip()
-
-            # Convert seconds to MM:SS format
-            minutes = int(start_time // 60)
-            seconds = int(start_time % 60)
-            timestamp = f"{minutes}:{seconds:02d}"
-
-            if text:
-                formatted_text.append(f"[{timestamp}] {text}")
-
-        return "\n".join(formatted_text)
+# Keep backward compatibility aliases
+VideoContextBuilder = MediaContextBuilder
+AudioContextBuilder = MediaContextBuilder
 
 
 class TextContextBuilder:
