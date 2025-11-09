@@ -1258,9 +1258,14 @@ class ArticleProcessor(BaseProcessor):
                         platform = key.replace('_urls', '')
                         break
 
-                # For direct video files, also save URL in audio_url for web app video player
-                # (platform='video' comes from 'video_urls' key, video_id='direct_file' marks it as direct file)
-                if video_id == 'direct_file' and media_info.get('video_urls'):
+                # For direct video files (HTML5 <video> tags or direct file URLs),
+                # set video_id='direct_file' and save URL in audio_url for web app video player
+                if platform == 'html5_video' and media_info.get('html5_video_urls'):
+                    # HTML5 video tag (e.g., Q4 Inc events)
+                    video_id = 'direct_file'
+                    audio_url = media_info['html5_video_urls'][0].get('url')
+                elif video_id == 'direct_file' and media_info.get('video_urls'):
+                    # Generic direct video file
                     audio_url = media_info['video_urls'][0].get('url')
 
             # Get audio URL if available (for audio-only content)
@@ -1439,8 +1444,12 @@ class ArticleProcessor(BaseProcessor):
                 'nocheckcertificate': True,  # Bypass SSL certificate verification
                 'no_check_certificate': True,  # Alternative flag
                 'ignoreerrors': False,  # We want to see errors to handle them
-                # Don't use postprocessors - DeepGram can handle various audio formats
-                # This avoids dependency on ffmpeg/ffprobe
+                # Use postprocessor to extract audio if downloaded file contains video
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
             }
 
             # Add referer if provided (helps with embedded videos like Vimeo)
@@ -1458,7 +1467,14 @@ class ArticleProcessor(BaseProcessor):
 
             if matching_files:
                 actual_path = matching_files[0]
+                file_size_mb = os.path.getsize(actual_path) / (1024 * 1024)
+                file_ext = os.path.splitext(actual_path)[1]
                 self.logger.info(f"      ✅ [YT-DLP] Download successful: {actual_path}")
+                self.logger.info(f"      📊 [DOWNLOADED FILE] Size: {file_size_mb:.1f}MB, Format: {file_ext}")
+
+                # Note: file_transcriber._extract_audio_if_needed() will validate and extract audio if needed
+                # before transcription. No need for duplicate validation here.
+
                 return actual_path
             else:
                 # Maybe no extension was added
@@ -1729,7 +1745,8 @@ class ArticleProcessor(BaseProcessor):
 
         # Check file size
         file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-        self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
+        file_ext = os.path.splitext(audio_path)[1]
+        self.logger.info(f"   📊 [AUDIO FILE] Size: {file_size_mb:.1f}MB, Format: {file_ext}")
 
         # If file exceeds limit, use chunking
         if file_size_mb > Config.MAX_DEEPGRAM_FILE_SIZE_MB:
@@ -1835,6 +1852,10 @@ class ArticleProcessor(BaseProcessor):
                 with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as chunk_file:
                     chunk_path = chunk_file.name
                     chunk.export(chunk_path, format='mp3')
+
+                # Log chunk file size
+                chunk_size_mb = os.path.getsize(chunk_path) / (1024 * 1024)
+                self.logger.info(f"   📊 [CHUNK {chunk_idx + 1}] File size: {chunk_size_mb:.1f}MB (sending to DeepGram API)")
 
                 try:
                     # Transcribe this chunk

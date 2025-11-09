@@ -37,7 +37,7 @@ class FileTranscriber(BaseProcessor):
         self._setup_deepgram()
 
     def _setup_deepgram(self):
-        """Setup DeepGram client with API key"""
+        """Setup DeepGram client with API key and custom timeout"""
         try:
             # Get API key from config
             api_keys = Config.get_api_keys()
@@ -46,9 +46,11 @@ class FileTranscriber(BaseProcessor):
             if not api_key:
                 raise ValueError("DeepGram API key not found. Please set DEEPGRAM_API_KEY environment variable or add it to .env file")
 
-            # Initialize DeepGram client
-            self.client = DeepgramClient(api_key=api_key)
-            self.logger.info("✅ DeepGram client initialized successfully")
+            # Initialize DeepGram client with extended timeout
+            # Default timeout is 60s which is insufficient for uploading 18-20MB audio chunks
+            # Set to 300s (5 minutes) to allow for slower network connections and large uploads
+            self.client = DeepgramClient(api_key=api_key, timeout=300.0)
+            self.logger.info("✅ DeepGram client initialized successfully (timeout: 300s)")
 
         except Exception as e:
             self.logger.error(f"❌ Error setting up DeepGram client: {e}")
@@ -110,7 +112,7 @@ class FileTranscriber(BaseProcessor):
             return True
 
     def _has_video_stream(self, file_path):
-        """Check if file has a video stream using ffprobe"""
+        """Check if file has a video stream using ffprobe (checks actual streams, not file extension)"""
         import subprocess
 
         try:
@@ -123,6 +125,7 @@ class FileTranscriber(BaseProcessor):
                 str(file_path)
             ]
 
+            self.logger.info(f"🔍 [FFPROBE] Checking file for video streams: {Path(file_path).name}")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -131,10 +134,13 @@ class FileTranscriber(BaseProcessor):
             )
 
             # If ffprobe finds a video stream, it will output "video"
-            return result.stdout.strip() == 'video'
+            has_video = result.stdout.strip() == 'video'
+            self.logger.info(f"🔍 [FFPROBE] Result: {'Has video stream' if has_video else 'Audio-only (no video stream)'}")
+            return has_video
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not check for video stream: {e}")
+            self.logger.error(f"❌ [FFPROBE] Could not check for video stream: {e}")
+            self.logger.warning(f"⚠️ [FFPROBE] Assuming no video stream due to error")
             return False
 
     def _extract_audio_if_needed(self, file_path):
@@ -143,23 +149,27 @@ class FileTranscriber(BaseProcessor):
         import tempfile
 
         file_path = Path(file_path)
+        file_size_mb = file_path.stat().st_size / (1024 * 1024)
+
+        self.logger.info(f"🔍 [VALIDATION] Checking file: {file_path.name} ({file_size_mb:.1f}MB, {file_path.suffix})")
 
         # Check if file has a video stream (regardless of extension)
         has_video = self._has_video_stream(file_path)
 
         if not has_video:
             # It's an audio-only file, no extraction needed
-            self.logger.info(f"📁 Audio file detected ({file_path.suffix}), no extraction needed")
+            self.logger.info(f"✅ [AUDIO-ONLY] File contains no video stream, sending directly to DeepGram")
             return str(file_path), False
 
         # It's a video file, check if it has an audio track
-        self.logger.info(f"🎥 Video file detected ({file_path.suffix}), checking for audio track...")
+        self.logger.warning(f"⚠️ [VIDEO DETECTED] File contains video stream, extracting audio with ffmpeg...")
+        self.logger.info(f"🎥 [VIDEO] Checking for audio track...")
 
         if not self._has_audio_track(file_path):
-            self.logger.warning(f"⚠️ Video file has no audio track - cannot transcribe")
+            self.logger.error(f"❌ [NO AUDIO] Video file has no audio track - cannot transcribe")
             return None, False
 
-        self.logger.info(f"✅ Audio track detected, extracting audio...")
+        self.logger.info(f"✅ [AUDIO FOUND] Audio track detected in video, extracting...")
 
         # Create temporary audio file
         temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
@@ -178,7 +188,7 @@ class FileTranscriber(BaseProcessor):
                 temp_audio_path
             ]
 
-            self.logger.info(f"🔧 Running ffmpeg to extract audio...")
+            self.logger.info(f"🔧 [FFMPEG] Extracting audio stream (removing video)...")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -187,7 +197,7 @@ class FileTranscriber(BaseProcessor):
             )
 
             if result.returncode != 0:
-                self.logger.error(f"❌ ffmpeg failed: {result.stderr}")
+                self.logger.error(f"❌ [FFMPEG] Extraction failed: {result.stderr[:200]}")
                 raise Exception(f"Audio extraction failed: {result.stderr}")
 
             # Verify the audio file was created
@@ -196,7 +206,8 @@ class FileTranscriber(BaseProcessor):
                 raise Exception("Audio extraction failed - output file is empty or missing")
 
             audio_size = audio_path.stat().st_size / (1024 * 1024)
-            self.logger.info(f"✅ Audio extracted: {audio_size:.1f}MB")
+            self.logger.info(f"✅ [AUDIO EXTRACTED] Audio-only file created: {audio_size:.1f}MB (was {file_size_mb:.1f}MB)")
+            self.logger.info(f"📊 [SIZE REDUCTION] Saved {file_size_mb - audio_size:.1f}MB by removing video stream")
 
             return temp_audio_path, True
 
