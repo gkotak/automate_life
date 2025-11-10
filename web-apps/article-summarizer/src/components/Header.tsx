@@ -26,12 +26,12 @@ export default function Header() {
 
     if (showNewDropdown || showProfileDropdown) {
       document.addEventListener('mousedown', handleClickOutside)
-      document.addEventListener('touchstart', handleClickOutside as any)
+      document.addEventListener('touchstart', handleClickOutside as any, { passive: true })
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('touchstart', handleClickOutside as any)
+      document.removeEventListener('touchstart', handleClickOutside as any, { passive: true } as any)
     }
   }, [showNewDropdown, showProfileDropdown])
 
