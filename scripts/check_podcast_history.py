@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI wrapper for checking new podcast episodes
+CLI wrapper for checking PocketCasts listening history
 Calls the content_checker_backend API
 """
 
@@ -21,17 +21,17 @@ CONTENT_CHECKER_API_URL = os.getenv('CONTENT_CHECKER_API_URL', 'http://localhost
 API_KEY = os.getenv('CONTENT_CHECKER_API_KEY', '')
 
 
-async def check_podcasts():
-    """Call the content_checker_backend API to check for new podcast episodes"""
+async def check_podcast_history():
+    """Call the content_checker_backend API to check PocketCasts listening history"""
 
-    print("🎙️  Checking for new podcast episodes...")
+    print("🎙️  Checking PocketCasts listening history for new episodes...")
     print(f"📡 API: {CONTENT_CHECKER_API_URL}")
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             # Call the check endpoint
             response = await client.post(
-                f"{CONTENT_CHECKER_API_URL}/api/podcasts/check",
+                f"{CONTENT_CHECKER_API_URL}/api/podcast-history/check",
                 headers={"X-API-Key": API_KEY}
             )
 
@@ -75,7 +75,7 @@ async def check_podcasts():
 
 def main():
     """Main entry point"""
-    exit_code = asyncio.run(check_podcasts())
+    exit_code = asyncio.run(check_podcast_history())
     sys.exit(exit_code)
 
 

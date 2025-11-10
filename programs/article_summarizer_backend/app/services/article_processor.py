@@ -223,7 +223,8 @@ class ArticleProcessor(BaseProcessor):
     async def _extract_metadata(
         self,
         url: str,
-        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None,
+        extract_demo_frames: bool = False
     ) -> Dict:
         """
         Extract metadata and detect content type
@@ -231,6 +232,7 @@ class ArticleProcessor(BaseProcessor):
         Args:
             url: URL to analyze
             progress_callback: Optional async callback for progress updates
+            extract_demo_frames: If True, extract video frames for demo videos
 
         Returns:
             Dictionary containing metadata and content analysis
@@ -239,19 +241,19 @@ class ArticleProcessor(BaseProcessor):
         is_media, media_type = self.content_detector.is_direct_media_url(url)
         if is_media:
             self.logger.info(f"🎥 [DIRECT MEDIA FILE] Detected direct {media_type} file URL")
-            return await self._process_direct_media_file(url, media_type, progress_callback)
+            return await self._process_direct_media_file(url, media_type, progress_callback, extract_demo_frames)
 
         # Check if URL is a direct YouTube video link
         youtube_match = re.match(r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', url)
         if youtube_match:
             self.logger.info("🎥 [DIRECT YOUTUBE] Detected direct YouTube video URL")
-            return await self._process_direct_youtube_url(url, youtube_match.group(1))
+            return await self._process_direct_youtube_url(url, youtube_match.group(1), extract_demo_frames)
 
         # Check if URL is a direct Loom video link
         loom_match = re.match(r'(?:https?://)?(?:www\.)?loom\.com/(?:share|embed)/([a-zA-Z0-9]+)', url)
         if loom_match:
             self.logger.info("🎥 [DIRECT LOOM] Detected direct Loom video URL")
-            return await self._process_direct_loom_url(url, loom_match.group(1), progress_callback)
+            return await self._process_direct_loom_url(url, loom_match.group(1), progress_callback, extract_demo_frames)
 
         # Load Chrome cookies for this specific URL domain (for Substack subdomains, etc.)
         self.auth_manager.load_cookies_for_url(url)
@@ -358,7 +360,8 @@ class ArticleProcessor(BaseProcessor):
         self,
         url: str,
         video_id: str,
-        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None,
+        extract_demo_frames: bool = False
     ) -> Dict:
         """
         Process a direct Loom video URL (e.g., https://www.loom.com/share/xyz)
@@ -367,6 +370,7 @@ class ArticleProcessor(BaseProcessor):
             url: The Loom video URL
             video_id: Extracted Loom video ID
             progress_callback: Optional async callback for progress updates
+            extract_demo_frames: If True, download video and extract frames
 
         Returns:
             Dictionary containing metadata for direct Loom video with transcript
@@ -393,14 +397,102 @@ class ArticleProcessor(BaseProcessor):
         # Extract transcript using the generic async video processing
         self.logger.info(f"   🎥 [EXTRACTING] Transcript for Loom video...")
 
-        # Create a minimal soup object (not needed for direct video URL)
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup('', 'html.parser')
+        # OPTIMIZATION: If we need frames, download video once and extract audio from it
+        # Otherwise, use standard audio-only download path
+        video_frames = []
+        video_temp_path = None
+        transcripts = {}
+        article_text = ''
 
-        # Process the video using the async processing path
-        video_data = await self._process_video_content_async(
-            video_urls, soup, url, progress_callback
-        )
+        if extract_demo_frames:
+            self.logger.info("🎬 [DEMO VIDEO MODE] Downloading video once for both frames and audio...")
+            try:
+                # Step 1: Download full video using unified method
+                import tempfile
+                temp_dir = tempfile.mkdtemp(prefix="demo_video_")
+                temp_template = os.path.join(temp_dir, f'video_{video_id}')
+
+                video_temp_path = self._download_video_with_ytdlp(
+                    url,
+                    temp_template,
+                    referer=url,
+                    download_video=True  # Download full video, not just audio
+                )
+
+                if video_temp_path:
+                    # Step 2: Extract audio from video using ffmpeg (reuse existing method)
+                    audio_temp_path = await self._extract_audio_from_video(video_temp_path)
+
+                    if audio_temp_path:
+                        # Step 3: Transcribe the extracted audio
+                        self.logger.info(f"🎵 [DEMO VIDEO MODE] Transcribing extracted audio...")
+                        result = await self._transcribe_audio_with_size_check(
+                            audio_temp_path,
+                            media_type='video',
+                            progress_callback=progress_callback
+                        )
+
+                        if result and result.get('transcript_data'):
+                            transcript_data = result['transcript_data']
+                            formatted_transcript = {
+                                'success': True,
+                                'type': 'deepgram',
+                                'text': transcript_data.get('text', ''),
+                                'segments': transcript_data.get('segments', []),
+                                'language': transcript_data.get('language', 'en')
+                            }
+                            transcripts[video_id] = formatted_transcript
+                            article_text = transcript_data.get('text', '')
+                            self.logger.info(f"✅ [DEMO VIDEO MODE] Transcription successful")
+                        else:
+                            self.logger.warning(f"⚠️ [DEMO VIDEO MODE] Transcription failed")
+                    else:
+                        self.logger.warning(f"⚠️ [DEMO VIDEO MODE] Could not extract audio from video")
+
+                    # Step 4: Extract frames from same video file
+                    video_frames = await self._extract_and_upload_frames(video_temp_path, url)
+                    self.logger.info(f"✅ [FRAME EXTRACTION] Extracted {len(video_frames)} frames")
+
+                    # TODO: TEMPORARY - Remove cleanup to preserve video for testing
+                    # Clean up temp directory
+                    # try:
+                    #     import shutil
+                    #     shutil.rmtree(temp_dir)
+                    #     self.logger.info(f"🧹 Cleaned up temp directory: {temp_dir}")
+                    # except Exception as e:
+                    #     self.logger.warning(f"⚠️ Failed to remove temp directory: {e}")
+                    self.logger.info(f"💾 [TEMPORARY] Video file preserved at: {video_temp_path}")
+                    self.logger.info(f"📂 [TEMPORARY] Temp directory preserved at: {temp_dir}")
+                else:
+                    self.logger.warning("⚠️ [DEMO VIDEO MODE] Could not download video, falling back to audio-only")
+                    # Fall back to standard processing
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup('', 'html.parser')
+                    video_data = await self._process_video_content_async(
+                        video_urls, soup, url, progress_callback
+                    )
+                    transcripts = video_data.get('transcripts', {})
+                    article_text = video_data.get('article_text', '')
+
+            except Exception as e:
+                self.logger.error(f"❌ [DEMO VIDEO MODE] Failed: {e}", exc_info=True)
+                # Fall back to standard processing
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup('', 'html.parser')
+                video_data = await self._process_video_content_async(
+                    video_urls, soup, url, progress_callback
+                )
+                transcripts = video_data.get('transcripts', {})
+                article_text = video_data.get('article_text', '')
+        else:
+            # Standard path: audio-only download
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup('', 'html.parser')
+            video_data = await self._process_video_content_async(
+                video_urls, soup, url, progress_callback
+            )
+            transcripts = video_data.get('transcripts', {})
+            article_text = video_data.get('article_text', '')
 
         return {
             'title': title,
@@ -412,17 +504,19 @@ class ArticleProcessor(BaseProcessor):
                 'is_text_only': False
             })(),
             'extracted_at': datetime.now().isoformat(),
-            'media_info': video_data.get('media_info', {'loom_urls': video_urls}),
-            'transcripts': video_data.get('transcripts', {}),
-            'article_text': video_data.get('article_text', ''),
-            'images': video_data.get('images', [])
+            'media_info': {'loom_urls': video_urls},
+            'transcripts': transcripts,
+            'article_text': article_text,
+            'images': [],
+            'video_frames': video_frames
         }
 
     async def _process_direct_media_file(
         self,
         url: str,
         media_type: str,
-        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None,
+        extract_demo_frames: bool = False
     ) -> Dict:
         """
         Process a direct media file URL (video or audio file)
@@ -431,6 +525,7 @@ class ArticleProcessor(BaseProcessor):
             url: URL of the media file
             media_type: 'video' or 'audio'
             progress_callback: Optional async callback for progress updates
+            extract_demo_frames: If True and media_type is video, extract frames
 
         Returns:
             Dict with metadata and transcript data
@@ -492,10 +587,41 @@ class ArticleProcessor(BaseProcessor):
             if not transcript_result:
                 raise Exception("Transcription failed")
 
-            # Clean up the temporary file
+            # Extract video frames if requested (for demo videos)
+            video_frames = []
+            if extract_demo_frames and media_type == 'video':
+                self.logger.info("🎬 [FRAME EXTRACTION] Extracting frames from demo video...")
+                if progress_callback:
+                    await progress_callback("extracting_frames", {"message": "Extracting video frames..."})
+
+                try:
+                    # Download full video file (not just audio) for frame extraction
+                    video_temp_path = await self._download_video_for_frames(url)
+
+                    if video_temp_path:
+                        video_frames = await self._extract_and_upload_frames(video_temp_path, url)
+                        self.logger.info(f"✅ [FRAME EXTRACTION] Extracted {len(video_frames)} frames")
+
+                        # Clean up video file
+                        try:
+                            os.unlink(video_temp_path)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to remove video temp file: {e}")
+
+                        if progress_callback:
+                            await progress_callback("frames_extracted", {"frame_count": len(video_frames)})
+                    else:
+                        self.logger.warning("⚠️ [FRAME EXTRACTION] Could not download video for frame extraction")
+
+                except Exception as e:
+                    self.logger.error(f"❌ [FRAME EXTRACTION] Failed: {e}", exc_info=True)
+                    if progress_callback:
+                        await progress_callback("frame_extraction_failed", {"error": str(e)})
+
+            # Clean up the audio temporary file
             try:
                 os.unlink(temp_path)
-                self.logger.info(f"🗑️ [CLEANUP] Removed temporary file: {temp_path}")
+                self.logger.info(f"🗑️ [CLEANUP] Removed temporary audio file: {temp_path}")
             except Exception as e:
                 self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp file: {e}")
 
@@ -577,7 +703,8 @@ class ArticleProcessor(BaseProcessor):
                 'media_info': media_info,
                 'transcripts': transcripts,
                 'article_text': article_text,
-                'images': []
+                'images': [],
+                'video_frames': video_frames
             }
 
         except Exception as e:
@@ -590,13 +717,14 @@ class ArticleProcessor(BaseProcessor):
                     pass
             raise
 
-    async def _process_direct_youtube_url(self, url: str, video_id: str) -> Dict:
+    async def _process_direct_youtube_url(self, url: str, video_id: str, extract_demo_frames: bool = False) -> Dict:
         """
         Process a direct YouTube video URL (e.g., https://www.youtube.com/watch?v=xyz)
 
         Args:
             url: The YouTube video URL
             video_id: Extracted YouTube video ID
+            extract_demo_frames: If True, download video and extract frames
 
         Returns:
             Dictionary containing metadata for direct YouTube video
@@ -661,6 +789,33 @@ class ArticleProcessor(BaseProcessor):
             'relevance_score': 1.0
         }]
 
+        # Extract video frames if requested (for demo videos)
+        # For YouTube, we have native transcripts so only download video when needed for frames
+        video_frames = []
+        if extract_demo_frames:
+            self.logger.info("🎬 [FRAME EXTRACTION] Extracting frames from YouTube video...")
+            try:
+                # Download full YouTube video for frame extraction
+                video_temp_path = await self._download_video_for_frames(url)
+
+                if video_temp_path:
+                    video_frames = await self._extract_and_upload_frames(video_temp_path, url)
+                    self.logger.info(f"✅ [FRAME EXTRACTION] Extracted {len(video_frames)} frames")
+
+                    # Clean up video file and temp directory
+                    try:
+                        import shutil
+                        temp_dir = os.path.dirname(video_temp_path)
+                        shutil.rmtree(temp_dir)
+                        self.logger.info(f"🧹 Cleaned up temp directory: {temp_dir}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to remove temp directory: {e}")
+                else:
+                    self.logger.warning("⚠️ [FRAME EXTRACTION] Could not download YouTube video for frame extraction")
+
+            except Exception as e:
+                self.logger.error(f"❌ [FRAME EXTRACTION] Failed: {e}", exc_info=True)
+
         return {
             'title': title,
             'url': url,
@@ -673,7 +828,8 @@ class ArticleProcessor(BaseProcessor):
             'extracted_at': datetime.now().isoformat(),
             'media_info': {'youtube_urls': video_urls},
             'transcripts': transcripts,
-            'article_text': article_text
+            'article_text': article_text,
+            'video_frames': video_frames
         }
 
     async def _process_video_content_async(
@@ -1312,6 +1468,7 @@ class ArticleProcessor(BaseProcessor):
                 'key_insights': ai_summary.get('key_insights', []),
                 'quotes': ai_summary.get('quotes', []),
                 'images': metadata.get('images', []),
+                'video_frames': metadata.get('video_frames', []),
 
                 # Metadata
                 'duration_minutes': ai_summary.get('duration_minutes'),
@@ -1418,14 +1575,21 @@ class ArticleProcessor(BaseProcessor):
 
         return platform_urls.get(platform.lower(), f"https://{platform}.com/{video_id}")
 
-    def _download_video_with_ytdlp(self, video_url: str, output_template: str, referer: Optional[str] = None) -> Optional[str]:
+    def _download_video_with_ytdlp(
+        self,
+        video_url: str,
+        output_template: str,
+        referer: Optional[str] = None,
+        download_video: bool = False
+    ) -> Optional[str]:
         """
         Download video/audio using yt-dlp (handles HLS streams, not just direct URLs)
 
         Args:
             video_url: Video URL to download
-            output_template: Path template where to save the audio file (extension will be added by yt-dlp)
+            output_template: Path template where to save the file (extension will be added by yt-dlp)
             referer: Optional referer URL for platforms that require it (e.g., embedded Vimeo)
+            download_video: If True, download full video. If False, download audio only (default)
 
         Returns:
             Path to downloaded file if successful, None otherwise
@@ -1434,23 +1598,46 @@ class ArticleProcessor(BaseProcessor):
             import yt_dlp
             import glob
 
-            self.logger.info(f"      🔧 [YT-DLP] Downloading audio with yt-dlp...")
+            # Clean up any existing files matching this output template
+            pattern = output_template + "*"
+            existing_files = glob.glob(pattern)
+            for f in existing_files:
+                try:
+                    os.unlink(f)
+                    self.logger.info(f"      🧹 Cleaned up existing file: {f}")
+                except Exception as e:
+                    self.logger.warning(f"      ⚠️ Could not clean up existing file {f}: {e}")
 
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': output_template,
-                'quiet': True,
-                'no_warnings': True,
-                'nocheckcertificate': True,  # Bypass SSL certificate verification
-                'no_check_certificate': True,  # Alternative flag
-                'ignoreerrors': False,  # We want to see errors to handle them
-                # Use postprocessor to extract audio if downloaded file contains video
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-            }
+            if download_video:
+                self.logger.info(f"      🔧 [YT-DLP] Downloading full video with yt-dlp...")
+                ydl_opts = {
+                    'format': 'bestvideo+bestaudio/best',  # Download both streams and merge, fallback to best single file
+                    'outtmpl': output_template,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'nocheckcertificate': True,
+                    'no_check_certificate': True,
+                    'ignoreerrors': False,
+                    'merge_output_format': 'mp4',  # Merge to MP4 if separate video/audio streams
+                    # No postprocessor - keep video as-is (ffmpeg will merge streams automatically)
+                }
+            else:
+                self.logger.info(f"      🔧 [YT-DLP] Downloading audio with yt-dlp...")
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': output_template,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'nocheckcertificate': True,  # Bypass SSL certificate verification
+                    'no_check_certificate': True,  # Alternative flag
+                    'ignoreerrors': False,  # We want to see errors to handle them
+                    # Use postprocessor to extract audio if downloaded file contains video
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }],
+                }
 
             # Add referer if provided (helps with embedded videos like Vimeo)
             if referer:
@@ -2353,6 +2540,182 @@ class ArticleProcessor(BaseProcessor):
             html = html + '</p>'
 
         return html
+
+    async def _extract_audio_from_video(self, video_path: str) -> Optional[str]:
+        """
+        Extract audio from video file using ffmpeg
+
+        Args:
+            video_path: Path to video file
+
+        Returns:
+            Path to extracted audio file (MP3), or None if failed
+        """
+        import tempfile
+        import subprocess
+
+        try:
+            # Create temp audio file
+            temp_dir = os.path.dirname(video_path)
+            audio_path = os.path.join(temp_dir, "extracted_audio.mp3")
+
+            self.logger.info(f"🎵 [AUDIO EXTRACTION] Extracting audio from video using ffmpeg...")
+
+            # Use ffmpeg to extract audio
+            cmd = [
+                "ffmpeg",
+                "-i", video_path,
+                "-vn",  # No video
+                "-acodec", "libmp3lame",  # MP3 codec
+                "-b:a", "192k",  # 192kbps bitrate
+                "-y",  # Overwrite output file
+                audio_path
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0 and os.path.exists(audio_path):
+                file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+                self.logger.info(f"✅ [AUDIO EXTRACTION] Extracted audio: {file_size_mb:.1f}MB")
+                return audio_path
+            else:
+                error_msg = stderr.decode('utf-8', errors='ignore')[:500]
+                self.logger.error(f"❌ [AUDIO EXTRACTION] Failed: {error_msg}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"❌ [AUDIO EXTRACTION] Error: {e}", exc_info=True)
+            return None
+
+    async def _download_video_for_frames(self, url: str) -> Optional[str]:
+        """
+        Download full video file for frame extraction
+
+        This is a wrapper around _download_video_with_ytdlp that creates
+        a temp directory and downloads the full video (not just audio).
+
+        Args:
+            url: Video URL
+
+        Returns:
+            Path to downloaded video file, or None if failed
+        """
+        import tempfile
+        import glob
+
+        try:
+            # Clean up any old video_frames_* temp directories first
+            temp_base = tempfile.gettempdir()
+            old_temp_dirs = glob.glob(os.path.join(temp_base, "video_frames_*"))
+            for old_dir in old_temp_dirs:
+                try:
+                    import shutil
+                    shutil.rmtree(old_dir)
+                    self.logger.info(f"🧹 Cleaned up old temp directory: {old_dir}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not clean up old temp directory {old_dir}: {e}")
+
+            # Create temp directory
+            temp_dir = tempfile.mkdtemp(prefix="video_frames_")
+            temp_template = os.path.join(temp_dir, f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+
+            self.logger.info(f"📥 [VIDEO DOWNLOAD] Downloading video from: {url[:100]}...")
+
+            # Use unified download method with download_video=True
+            downloaded_path = self._download_video_with_ytdlp(
+                url,
+                temp_template,
+                referer=url,
+                download_video=True  # Download full video, not audio
+            )
+
+            if downloaded_path:
+                self.logger.info(f"✅ Downloaded video for frames: {downloaded_path}")
+                return downloaded_path
+            else:
+                self.logger.error(f"❌ Video download failed")
+                # Clean up temp directory
+                try:
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                except:
+                    pass
+                return None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error downloading video: {e}", exc_info=True)
+            return None
+
+    async def _extract_and_upload_frames(
+        self,
+        video_path: str,
+        article_url: str,
+        article_id: Optional[int] = None
+    ) -> List[Dict[str, any]]:
+        """
+        Extract frames from video and upload to Supabase storage
+
+        Args:
+            video_path: Path to video file
+            article_url: URL of the article (for logging)
+            article_id: Article ID for storage path (optional, will use temp ID if not provided)
+
+        Returns:
+            List of frame dictionaries with URLs and timestamps
+        """
+        from processors.frame_extractor import FrameExtractor
+        from core.storage_manager import StorageManager
+
+        try:
+            # Use a temporary article ID if not provided (will be updated later)
+            temp_article_id = article_id or 0
+
+            # Extract frames
+            extractor = FrameExtractor(min_interval_seconds=30)
+            frames = await extractor.extract_frames(video_path)
+
+            if not frames:
+                self.logger.warning("⚠️ No frames extracted from video")
+                extractor.cleanup()
+                return []
+
+            # Upload frames to Supabase storage
+            storage_manager = StorageManager()
+            uploaded_frames = []
+
+            for frame in frames:
+                success, storage_path, public_url = storage_manager.upload_frame(
+                    frame["path"],
+                    temp_article_id,
+                    frame["timestamp_seconds"]
+                )
+
+                if success:
+                    uploaded_frames.append({
+                        "url": public_url,
+                        "storage_path": storage_path,
+                        "timestamp_seconds": frame["timestamp_seconds"],
+                        "time_formatted": frame["time_formatted"],
+                        "perceptual_hash": frame.get("hash")
+                    })
+                else:
+                    self.logger.warning(f"⚠️ Failed to upload frame at {frame['time_formatted']}")
+
+            # Clean up temporary frames
+            extractor.cleanup()
+
+            self.logger.info(f"✅ Uploaded {len(uploaded_frames)} frames to storage")
+            return uploaded_frames
+
+        except Exception as e:
+            self.logger.error(f"❌ Frame extraction and upload failed: {e}", exc_info=True)
+            return []
 
 
 

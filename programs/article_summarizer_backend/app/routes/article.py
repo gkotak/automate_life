@@ -97,6 +97,7 @@ class ProcessArticleStreamResponse(BaseModel):
 async def process_article_direct(
     url: str,
     force_reprocess: bool = False,
+    demo_video: bool = False,
     token: Optional[str] = None
 ):
     """
@@ -110,6 +111,7 @@ async def process_article_direct(
     Args:
         url: Article URL to process
         force_reprocess: If True, reprocess article even if it already exists
+        demo_video: If True, extract video frames for demo videos (screen shares)
         token: Supabase JWT token (passed as query param for SSE compatibility)
 
     Returns:
@@ -272,13 +274,17 @@ async def process_article_direct(
             }
             await asyncio.sleep(0)
 
-            logger.info(f"Starting metadata extraction for: {url}")
+            logger.info(f"Starting metadata extraction for: {url} (demo_video={demo_video})")
 
             # Run metadata extraction in background task
             async def extract_metadata_task():
                 nonlocal metadata_result, extraction_error
                 try:
-                    metadata_result = await processor._extract_metadata(url, progress_callback=progress_callback)
+                    metadata_result = await processor._extract_metadata(
+                        url,
+                        progress_callback=progress_callback,
+                        extract_demo_frames=demo_video
+                    )
                     # Signal completion
                     await event_queue.put(None)
                 except Exception as e:

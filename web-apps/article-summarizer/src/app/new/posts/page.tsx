@@ -9,6 +9,7 @@ interface Post {
   id: string;
   title: string;
   url: string;
+  content_type: string;
   channel_title: string | null;
   channel_url: string | null;
   source_feed: string | null;
@@ -17,7 +18,7 @@ interface Post {
   is_new: boolean;
 }
 
-type SortField = 'title' | 'published_date' | 'found_at';
+type SortField = 'title' | 'content_type' | 'published_date' | 'found_at';
 type SortDirection = 'asc' | 'desc';
 
 export default function PostsAdminPage() {
@@ -58,6 +59,8 @@ export default function PostsAdminPage() {
 
     try {
       const data = await getDiscoveredPosts(200);
+      console.log('API Response:', data);
+      console.log('First post:', data.posts[0]);
       setPosts(data.posts);
       setTotalCount(data.total);
 
@@ -133,6 +136,10 @@ export default function PostsAdminPage() {
           aValue = a.title.toLowerCase();
           bValue = b.title.toLowerCase();
           break;
+        case 'content_type':
+          aValue = a.content_type.toLowerCase();
+          bValue = b.content_type.toLowerCase();
+          break;
         case 'published_date':
           aValue = a.published_date ? new Date(a.published_date).getTime() : 0;
           bValue = b.published_date ? new Date(b.published_date).getTime() : 0;
@@ -149,6 +156,12 @@ export default function PostsAdminPage() {
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
+  };
+
+  const formatContentType = (contentType: string) => {
+    if (contentType === 'podcast_episode') return 'Podcast';
+    if (contentType === 'article') return 'Article';
+    return contentType;
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -287,10 +300,11 @@ export default function PostsAdminPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <SortableHeader field="title" label="Title" className="w-[45%]" />
-                      <SortableHeader field="published_date" label="Published Date" />
-                      <SortableHeader field="found_at" label="Found Date" />
-                      <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <SortableHeader field="title" label="Title" className="w-auto" />
+                      <SortableHeader field="content_type" label="Type" className="w-24" />
+                      <SortableHeader field="published_date" label="Published" className="w-28" />
+                      <SortableHeader field="found_at" label="Found" className="w-28" />
+                      <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                         Action
                       </th>
                     </tr>
@@ -324,6 +338,9 @@ export default function PostsAdminPage() {
                                 </span>
                               )}
                             </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatContentType(post.content_type)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatDate(post.published_date)}

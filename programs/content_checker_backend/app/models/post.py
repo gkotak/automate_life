@@ -11,6 +11,7 @@ class Post(BaseModel):
     id: str
     title: str
     url: str
+    content_type: str
     channel_title: Optional[str] = None
     channel_url: Optional[str] = None
     platform: str

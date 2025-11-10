@@ -15,6 +15,7 @@ import email.utils
 from supabase import create_client, Client
 
 from core.config import Config
+from core.youtube_discovery import YouTubeDiscoveryService
 
 
 class PostCheckerService:
@@ -36,6 +37,9 @@ class PostCheckerService:
         # Setup HTTP session
         self.session = requests.Session()
         self.session.headers.update(Config.get_default_headers())
+
+        # Initialize YouTube discovery service
+        self.youtube_discovery = YouTubeDiscoveryService(self.logger)
 
     async def check_for_new_posts(self, user_id: str) -> Dict:
         """
@@ -86,21 +90,32 @@ class PostCheckerService:
                 self.logger.info(f"No posts found from {source_url}")
                 continue
 
+            self.logger.info(f"Found {len(posts)} posts from {source_url}, checking for new content...")
+
             # Check each post
             for post in posts:
                 post_url = post['url']
 
                 # Check if already tracked
                 if post_url in existing_urls:
+                    self.logger.debug(f"Skipping already tracked: {post.get('title', '')[:60]}")
                     continue
 
                 # Check if recent
                 published_date = post.get('published')
                 if not self._is_recent_post(post_url, published_date):
+                    if published_date:
+                        days_ago = (datetime.now() - published_date).days
+                        self.logger.debug(f"Skipping old post ({days_ago} days ago): {post.get('title', '')[:60]}")
+                    else:
+                        self.logger.debug(f"Skipping post (no date or too old): {post.get('title', '')[:60]}")
                     continue
 
                 self.logger.info(f"New post found: {post['title']}")
                 new_posts_found += 1
+
+                # Try to find YouTube URL for this post (pass source_url)
+                self._discover_youtube_url_for_post(post, source_url)
 
                 # Save to database and get the ID
                 post_id = self._save_post_to_queue(post, source_url, user_id)
@@ -134,12 +149,12 @@ class PostCheckerService:
             return []
 
     def _get_existing_post_urls(self, user_id: str) -> set:
-        """Get set of existing post URLs from content_queue for a specific user"""
+        """Get set of existing post URLs from content_queue for a specific user (RSS feed source only)"""
         try:
             result = self.supabase.table('content_queue').select('url').eq(
                 'user_id', user_id
             ).eq(
-                'content_type', 'article'
+                'source', 'rss_feed'
             ).execute()
 
             return {row['url'] for row in result.data}
@@ -228,6 +243,13 @@ class PostCheckerService:
     def _extract_posts_from_feed(self, url: str, platform_type: str) -> List[Dict]:
         """Extract posts from a content source (RSS feed or webpage)"""
         try:
+            # Check if this is a PocketCasts channel URL
+            if 'pocketcasts.com/podcast/' in url:
+                self.logger.warning(f"⚠️ PocketCasts channel URLs are not currently supported in post_checker.")
+                self.logger.warning(f"   Please use the podcast's RSS feed URL instead.")
+                self.logger.warning(f"   Tip: Most podcasts have an RSS feed you can find via their website or podcast directories.")
+                return []
+
             response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
             response.raise_for_status()
 
@@ -384,6 +406,22 @@ class PostCheckerService:
             if feed.bozo:
                 self.logger.warning(f"Feed parsing warning: {feed.bozo_exception}")
 
+            # Detect if this is a podcast feed (has audio enclosures)
+            is_podcast_feed = False
+            if feed.entries:
+                # Check first few entries for audio enclosures
+                for entry in feed.entries[:3]:
+                    if hasattr(entry, 'enclosures'):
+                        for enclosure in entry.enclosures:
+                            if enclosure.get('type', '').startswith('audio/'):
+                                is_podcast_feed = True
+                                break
+                    if is_podcast_feed:
+                        break
+
+            if is_podcast_feed:
+                self.logger.info(f"Detected podcast RSS feed (has audio enclosures)")
+
             posts = []
             for entry in feed.entries:
                 # Extract title and link
@@ -400,18 +438,160 @@ class PostCheckerService:
                     except:
                         pass
 
-                if title and link:
-                    posts.append({
-                        'title': title,
-                        'url': link,
-                        'platform': 'rss_feed',
-                        'published': published
-                    })
+                # Extract audio enclosure URL for podcasts
+                audio_url = None
+                duration = None
+                if hasattr(entry, 'enclosures'):
+                    for enclosure in entry.enclosures:
+                        if enclosure.get('type', '').startswith('audio/'):
+                            audio_url = enclosure.get('href') or enclosure.get('url')
+                            # Try to get duration from itunes:duration
+                            if hasattr(entry, 'itunes_duration'):
+                                try:
+                                    # Duration can be in seconds or HH:MM:SS format
+                                    duration_str = entry.itunes_duration
+                                    if ':' in duration_str:
+                                        parts = duration_str.split(':')
+                                        if len(parts) == 3:
+                                            duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                                        elif len(parts) == 2:
+                                            duration = int(parts[0]) * 60 + int(parts[1])
+                                    else:
+                                        duration = int(duration_str)
+                                except:
+                                    pass
+                            break
+
+                # For podcast episodes without a link, use the audio URL as the primary URL
+                # This allows the content to be processed (audio transcription, etc.)
+                if not link and audio_url and is_podcast_feed:
+                    link = audio_url
+                    self.logger.debug(f"Using audio URL as primary URL for: {title[:60]}")
+
+                # Skip entries without a valid URL
+                if not title or not link:
+                    self.logger.debug(f"Skipping entry without title or URL: {entry.get('id', 'unknown')}")
+                    continue
+
+                post_data = {
+                    'title': title,
+                    'url': link,
+                    'platform': 'podcast_rss' if is_podcast_feed else 'rss_feed',
+                    'published': published,
+                    'audio_url': audio_url,
+                    'duration': duration
+                }
+                posts.append(post_data)
+
+            # Extract channel info from feed metadata
+            channel_title = feed.feed.get('title', 'Unknown')
+            channel_link = feed.feed.get('link', url)
+
+            # Add channel info to each post
+            for post in posts:
+                post['channel_title'] = channel_title
+                post['channel_link'] = channel_link
 
             return posts[:Config.RSS_FEED_ENTRY_LIMIT]
 
         except Exception as e:
             self.logger.error(f"Error parsing RSS feed {url}: {e}")
+            return []
+
+    def _extract_episodes_from_pocketcasts(self, url: str) -> List[Dict]:
+        """Extract podcast episodes from PocketCasts podcast page"""
+        try:
+            import json
+            import re
+
+            self.logger.info(f"Scraping PocketCasts podcast page: {url}")
+            response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Extract podcast title from page
+            podcast_title = 'Unknown Podcast'
+            title_tag = soup.find('h1')
+            if title_tag:
+                podcast_title = title_tag.get_text().strip()
+
+            self.logger.info(f"Podcast title: {podcast_title}")
+
+            # Try to find embedded JSON data with episodes
+            episodes = []
+            scripts = soup.find_all('script', type='application/json')
+
+            for script in scripts:
+                if not script.string:
+                    continue
+
+                try:
+                    data = json.loads(script.string)
+
+                    # Look for episodes in various locations
+                    if isinstance(data, dict):
+                        props = data.get('props', {})
+                        page_props = props.get('pageProps', {})
+
+                        # Try different paths
+                        episodes_data = None
+                        if 'episodes' in page_props:
+                            episodes_data = page_props['episodes']
+                        elif 'podcast' in page_props and 'episodes' in page_props['podcast']:
+                            episodes_data = page_props['podcast']['episodes']
+
+                        if episodes_data:
+                            self.logger.info(f"Found {len(episodes_data)} episodes in JSON data")
+
+                            for ep in episodes_data:
+                                # Extract episode details
+                                ep_uuid = ep.get('uuid', '')
+                                ep_title = ep.get('title', 'Unknown Episode')
+                                ep_slug = ep.get('slug', '')
+                                podcast_slug = ep.get('podcastSlug', '')
+                                podcast_uuid = ep.get('podcastUuid', '')
+
+                                # Build episode URL
+                                if podcast_slug and ep_slug and podcast_uuid and ep_uuid:
+                                    episode_url = f"https://pocketcasts.com/podcast/{podcast_slug}/{podcast_uuid}/{ep_slug}/{ep_uuid}"
+                                else:
+                                    episode_url = f"https://pocketcasts.com/episode/{ep_uuid}"
+
+                                # Extract published date
+                                published = None
+                                if ep.get('published'):
+                                    try:
+                                        published = datetime.fromisoformat(ep['published'].replace('Z', '+00:00'))
+                                    except:
+                                        pass
+
+                                # Extract duration
+                                duration = ep.get('duration', 0)
+
+                                episodes.append({
+                                    'title': ep_title,
+                                    'url': episode_url,
+                                    'platform': 'pocketcasts',
+                                    'published': published,
+                                    'audio_url': None,  # PocketCasts doesn't expose direct audio URLs
+                                    'duration': duration,
+                                    'channel_title': podcast_title,
+                                    'channel_link': url
+                                })
+
+                            break
+
+                except json.JSONDecodeError:
+                    continue
+
+            if not episodes:
+                self.logger.warning("No episodes found in PocketCasts page JSON")
+
+            return episodes[:Config.RSS_FEED_ENTRY_LIMIT]
+
+        except Exception as e:
+            self.logger.error(f"Error extracting episodes from PocketCasts: {e}")
             return []
 
     def _is_recent_post(self, post_url: str, published_date: Optional[datetime] = None) -> bool:
@@ -462,20 +642,30 @@ class PostCheckerService:
     def _save_post_to_queue(self, post: Dict, source_feed: str, user_id: str) -> Optional[str]:
         """Save post to content_queue table with user_id"""
         try:
-            # Extract channel info
-            channel_title, channel_url = self._extract_channel_info(post['url'], source_feed)
+            # Determine if this is a podcast episode
+            is_podcast = post.get('platform') == 'podcast_rss' or post.get('audio_url') is not None
+
+            # Extract channel info (prefer from RSS metadata if available)
+            channel_title = post.get('channel_title')
+            channel_url = post.get('channel_link')
+
+            if not channel_title or not channel_url:
+                channel_title, channel_url = self._extract_channel_info(post['url'], source_feed)
 
             record = {
                 'url': post['url'],
                 'title': post['title'],
-                'content_type': 'article',
+                'content_type': 'podcast_episode' if is_podcast else 'article',
+                'source': 'rss_feed',
                 'channel_title': channel_title,
                 'channel_url': channel_url,
-                'video_url': None,
+                'video_url': None,  # Will be populated by YouTube discovery later
+                'audio_url': post.get('audio_url'),  # Direct audio file URL from RSS
                 'platform': post.get('platform', 'generic'),
                 'source_feed': source_feed,
                 'found_at': datetime.now().isoformat(),
                 'published_date': post['published'].isoformat() if post.get('published') else None,
+                'duration_seconds': post.get('duration'),
                 'status': 'discovered',
                 'user_id': user_id
             }
@@ -492,6 +682,54 @@ class PostCheckerService:
         except Exception as e:
             self.logger.error(f"Error saving post to queue: {e}")
             return None
+
+    def _discover_youtube_url_for_post(self, post: Dict, source_feed: str) -> None:
+        """
+        Discover YouTube URL for a post and add it to the post dict
+
+        Args:
+            post: Post dictionary (modified in-place to add 'video_url')
+            source_feed: The source feed URL (from content_sources)
+        """
+        try:
+            post_url = post['url']
+            post_title = post.get('title', '')
+
+            # Skip if we already have a YouTube URL (from podcast RSS)
+            if post.get('video_url'):
+                return
+
+            self.logger.info(f"🔍 [YOUTUBE DISCOVERY] Searching for video: {post_title[:60]}...")
+
+            # Step 1: Check known_channels table by source URL
+            if source_feed:
+                try:
+                    youtube_url = self.youtube_discovery.get_youtube_url_for_known_source(
+                        source_feed,
+                        self.supabase
+                    )
+                    if youtube_url:
+                        post['video_url'] = youtube_url
+                        self.logger.info(f"✅ [YOUTUBE] Found via known_channels table (source URL match)")
+                        return
+                except Exception as e:
+                    # Table might not exist yet, that's okay
+                    self.logger.debug(f"known_channels table lookup failed: {e}")
+
+            # Step 2: Scrape the post URL for YouTube links
+            youtube_url = self.youtube_discovery.extract_youtube_url_from_page(
+                post_url,
+                content_type='article' if post.get('platform') != 'podcast_rss' else 'podcast'
+            )
+
+            if youtube_url:
+                post['video_url'] = youtube_url
+                self.logger.info(f"✅ [YOUTUBE] Found on page: {youtube_url[:60]}...")
+            else:
+                self.logger.info(f"ℹ️ [YOUTUBE] No YouTube URL found")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ [YOUTUBE] Error discovering YouTube URL: {e}")
 
     def _extract_channel_info(self, url: str, source_feed: str = None) -> tuple:
         """Extract channel title and URL from article URL"""
@@ -520,12 +758,12 @@ class PostCheckerService:
             return None, None
 
     async def get_discovered_posts(self, user_id: str, limit: int = 200) -> List[Dict]:
-        """Get discovered posts from content_queue for a specific user"""
+        """Get discovered posts from content_queue for a specific user (RSS feed content only)"""
         try:
             result = self.supabase.table('content_queue').select('*').eq(
                 'user_id', user_id
             ).eq(
-                'content_type', 'article'
+                'source', 'rss_feed'
             ).order('found_at', desc=True).limit(limit).execute()
 
             # Transform to match expected format
@@ -535,6 +773,7 @@ class PostCheckerService:
                     'id': row['id'],
                     'title': row['title'],
                     'url': row['url'],
+                    'content_type': row.get('content_type', 'article'),
                     'channel_title': row.get('channel_title'),
                     'channel_url': row.get('channel_url'),
                     'platform': row.get('platform', 'generic'),

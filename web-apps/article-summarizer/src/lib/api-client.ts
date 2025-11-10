@@ -141,6 +141,7 @@ export async function getDiscoveredPosts(limit: number = 200): Promise<{
     id: string
     title: string
     url: string
+    content_type: string
     channel_title?: string
     channel_url?: string
     platform: string

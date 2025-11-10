@@ -121,7 +121,7 @@ class Config:
     @staticmethod
     def setup_logging(session_name: str, base_dir: Path) -> logging.Logger:
         """
-        Set up logging for a processing session
+        Set up logging for a processing session (with rotation)
 
         Args:
             session_name: Name for this session (e.g., 'ArticleSummarizer')
@@ -130,22 +130,35 @@ class Config:
         Returns:
             Configured logger instance
         """
+        from logging.handlers import RotatingFileHandler
+
         # Create logs directory
-        logs_dir = base_dir / "programs" / "video_summarizer" / "logs"
+        logs_dir = base_dir / "programs" / "article_summarizer_backend" / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create log filename with current date
-        log_filename = f"{session_name.lower()}_{datetime.now().strftime('%Y%m%d')}.log"
+        # Create log filename (without date suffix)
+        log_filename = f"{session_name.lower()}.log"
         log_file = logs_dir / log_filename
+
+        # Create rotating file handler
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10_000_000,  # 10MB per file
+            backupCount=5,  # Keep 5 backup files
+            encoding='utf-8'
+        )
+        console_handler = logging.StreamHandler()
+
+        # Set format
+        log_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        file_handler.setFormatter(log_format)
+        console_handler.setFormatter(log_format)
 
         # Configure logging
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
+            handlers=[file_handler, console_handler]
         )
 
         logger = logging.getLogger(session_name)

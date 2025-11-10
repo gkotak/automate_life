@@ -25,6 +25,7 @@ function AdminPageContent() {
   const searchParams = useSearchParams();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isDemoVideo, setIsDemoVideo] = useState(false);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
   const [result, setResult] = useState<{
     status: 'success' | 'error' | 'info';
@@ -55,18 +56,12 @@ function AdminPageContent() {
     }
   }, [user, authLoading, router]);
 
-  // Read URL parameter and auto-populate/submit
+  // Read URL parameter and auto-populate (no auto-submit)
   useEffect(() => {
-    if (user && !hasAutoSubmittedRef.current) {
+    if (user) {
       const urlParam = searchParams.get('url');
       if (urlParam) {
         setUrl(urlParam);
-        hasAutoSubmittedRef.current = true;
-
-        // Auto-submit after a short delay to ensure the form is ready
-        setTimeout(() => {
-          formRef.current?.requestSubmit();
-        }, 100);
       }
     }
   }, [user, searchParams]);
@@ -149,6 +144,9 @@ function AdminPageContent() {
       let streamUrl = `${API_URL}/api/process-direct?url=${encodedUrl}&token=${encodeURIComponent(session.access_token)}`;
       if (forceReprocess) {
         streamUrl += '&force_reprocess=true';
+      }
+      if (isDemoVideo) {
+        streamUrl += '&demo_video=true';
       }
 
       const eventSource = new EventSource(streamUrl);
@@ -375,6 +373,20 @@ function AdminPageContent() {
                 disabled={loading}
                 required
               />
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="demoVideo"
+                checked={isDemoVideo}
+                onChange={(e) => setIsDemoVideo(e.target.checked)}
+                disabled={loading}
+                className="h-4 w-4 text-[#077331] focus:ring-[#077331] border-gray-300 rounded"
+              />
+              <label htmlFor="demoVideo" className="ml-2 block text-sm text-gray-700">
+                Process as Demo Video (extract screen snapshots every 30 seconds)
+              </label>
             </div>
 
             <button

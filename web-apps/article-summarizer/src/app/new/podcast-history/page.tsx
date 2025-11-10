@@ -25,7 +25,7 @@ interface PodcastEpisode {
 type SortField = 'title' | 'published_date' | 'found_at' | 'duration_seconds' | 'status';
 type SortDirection = 'asc' | 'desc';
 
-export default function PodcastsAdminPage() {
+export default function PodcastHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [podcasts, setPodcasts] = useState<PodcastEpisode[]>([]);
@@ -68,12 +68,12 @@ export default function PodcastsAdminPage() {
       }
 
       const response = await fetch(
-        `${CONTENT_CHECKER_API_URL}/api/podcasts/discovered?limit=200`,
+        `${CONTENT_CHECKER_API_URL}/api/podcast-history/discovered?limit=200`,
         { headers }
       );
 
       if (!response.ok) {
-        throw new Error('Failed to load podcasts');
+        throw new Error('Failed to load podcast history');
       }
 
       const data = await response.json();
@@ -82,11 +82,11 @@ export default function PodcastsAdminPage() {
 
       // Don't show message when just loading from database
     } catch (error) {
-      console.error('Error loading podcasts:', error);
+      console.error('Error loading podcast history:', error);
       if (!silent) {
         setMessage({
           type: 'error',
-          text: error instanceof Error ? error.message : 'Failed to load podcasts'
+          text: error instanceof Error ? error.message : 'Failed to load podcast history'
         });
       }
     } finally {
@@ -109,7 +109,7 @@ export default function PodcastsAdminPage() {
       }
 
       const response = await fetch(
-        `${CONTENT_CHECKER_API_URL}/api/podcasts/check`,
+        `${CONTENT_CHECKER_API_URL}/api/podcast-history/check`,
         {
           method: 'POST',
           headers
@@ -117,7 +117,7 @@ export default function PodcastsAdminPage() {
       );
 
       if (!response.ok) {
-        throw new Error('Failed to check podcasts');
+        throw new Error('Failed to check podcast history');
       }
 
       const data = await response.json();
@@ -135,10 +135,10 @@ export default function PodcastsAdminPage() {
       // Refresh the podcast list
       await loadPodcasts(true);
     } catch (error) {
-      console.error('Error checking podcasts:', error);
+      console.error('Error checking podcast history:', error);
       setMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to check podcasts'
+        text: error instanceof Error ? error.message : 'Failed to check podcast history'
       });
     } finally {
       setChecking(false);
@@ -178,7 +178,7 @@ export default function PodcastsAdminPage() {
           break;
         case 'found_at':
           aValue = a.found_at ? new Date(a.found_at).getTime() : 0;
-          bValue = b.found_at ? new Date(b.found_at).getTime() : 0;
+          bValue = b.found_at ? new Date(a.found_at).getTime() : 0;
           break;
         case 'duration_seconds':
           aValue = a.duration_seconds || 0;
@@ -287,10 +287,10 @@ export default function PodcastsAdminPage() {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Podcast Discovery
+              Podcast Listening History
             </h1>
             <p className="text-gray-600">
-              Check PocketCasts for new podcast episodes and process them
+              Episodes from your PocketCasts listening history
             </p>
           </div>
 
@@ -314,7 +314,7 @@ export default function PodcastsAdminPage() {
                   Checking...
                 </span>
               ) : (
-                'Check for New Podcasts'
+                'Check Listening History'
               )}
             </button>
           </div>
@@ -338,19 +338,19 @@ export default function PodcastsAdminPage() {
           {loading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#077331]"></div>
-              <p className="mt-4 text-gray-600">Loading podcasts...</p>
+              <p className="mt-4 text-gray-600">Loading podcast history...</p>
             </div>
           ) : podcasts.length === 0 ? (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
               </svg>
-              <p className="mt-4 text-gray-600">No discovered podcasts found</p>
+              <p className="mt-4 text-gray-600">No listening history found</p>
               <button
                 onClick={checkNewPodcasts}
                 className="mt-4 px-4 py-2 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] transition-colors"
               >
-                Check for Podcasts
+                Check Listening History
               </button>
             </div>
           ) : (

@@ -16,6 +16,8 @@ playwright>=1.40.0
 youtube-transcript-api>=0.6.0
 yt-dlp>=2023.0.0
 pydub>=0.25.0
+imagehash>=4.3.0
+pillow>=10.0.0
 
 # Database
 supabase>=2.0.0

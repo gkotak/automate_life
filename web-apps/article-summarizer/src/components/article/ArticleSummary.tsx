@@ -1,17 +1,19 @@
 import { Article } from '@/lib/supabase'
 import InsightsList from './InsightsList'
 import QuotesList from './QuotesList'
+import VideoFramesList from './VideoFramesList'
 import { highlightKeywords } from '@/lib/textHighlight'
 import { useMemo } from 'react'
 
 interface ArticleSummaryProps {
   article: Article
   onTimestampClick?: (seconds: number) => void
+  onTabSwitch?: (tab: string) => void
   searchQuery?: string
   clickedTimestamp?: number | null
 }
 
-export default function ArticleSummary({ article, onTimestampClick, searchQuery, clickedTimestamp }: ArticleSummaryProps) {
+export default function ArticleSummary({ article, onTimestampClick, onTabSwitch, searchQuery, clickedTimestamp }: ArticleSummaryProps) {
   const highlightedSummary = useMemo(() => {
     if (!searchQuery || !article.summary_text) return article.summary_text
     return highlightKeywords(article.summary_text, searchQuery)
@@ -28,6 +30,17 @@ export default function ArticleSummary({ article, onTimestampClick, searchQuery,
             dangerouslySetInnerHTML={{ __html: highlightedSummary }}
           />
         </div>
+      )}
+
+      {/* Video Frames (for demo videos) */}
+      {article.video_frames && article.video_frames.length > 0 && (
+        <VideoFramesList
+          frames={article.video_frames}
+          transcript={article.transcript_text}
+          onTimestampClick={onTimestampClick}
+          onTabSwitch={onTabSwitch}
+          clickedTimestamp={clickedTimestamp}
+        />
       )}
 
       {/* Key Insights (Combined: insights, main points, takeaways) */}

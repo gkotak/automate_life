@@ -5,23 +5,45 @@ Provides API for checking new podcasts and posts
 
 import os
 import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.routes import podcasts, posts, sources
+from app.routes import podcast_history, posts, sources
 
 # Load environment variables
 load_dotenv('.env.local')
 
-# Configure logging
+# Setup logging with rotation
+logs_dir = Path(__file__).parent.parent / 'logs'
+logs_dir.mkdir(parents=True, exist_ok=True)
+log_file = logs_dir / 'content_checker_backend.log'
+
+# Create handlers
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=10_000_000,  # 10MB per file
+    backupCount=5,  # Keep 5 backup files
+    encoding='utf-8'
+)
+console_handler = logging.StreamHandler()
+
+# Set format
+log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(log_format)
+console_handler.setFormatter(log_format)
+
+# Configure root logger
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    handlers=[file_handler, console_handler]
 )
 
 logger = logging.getLogger(__name__)
+logger.info(f"Logging to file: {log_file}")
 
 
 @asynccontextmanager
@@ -51,7 +73,7 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
+app.include_router(podcast_history.router, prefix="/api", tags=["podcast_history"])
 app.include_router(posts.router, prefix="/api", tags=["posts"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 

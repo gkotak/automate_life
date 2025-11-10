@@ -1,5 +1,5 @@
 """
-Podcast checking service - refactored for API usage
+Podcast history checking service - tracks PocketCasts listening history
 """
 
 import os
@@ -12,8 +12,8 @@ from supabase import create_client, Client
 from core.podcast_auth import PodcastAuth
 
 
-class PodcastCheckerService:
-    """Service for checking PocketCasts for new podcast episodes"""
+class PodcastHistoryCheckerService:
+    """Service for checking PocketCasts listening history for new podcast episodes"""
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -33,12 +33,12 @@ class PodcastCheckerService:
 
     async def check_for_new_podcasts(self) -> Dict:
         """
-        Check PocketCasts for new podcast episodes
+        Check PocketCasts listening history for new podcast episodes
 
         Returns:
             Dictionary with results including newly_discovered_ids
         """
-        self.logger.info("Starting PocketCasts podcast check...")
+        self.logger.info("Starting PocketCasts history check...")
 
         # Fetch in-progress episodes
         in_progress_episodes = await self._fetch_in_progress_episodes()
@@ -279,10 +279,12 @@ class PodcastCheckerService:
             return None
 
     def _get_existing_podcast_urls(self) -> set:
-        """Get all existing podcast URLs from database"""
+        """Get all existing podcast URLs from database (podcast_history source only)"""
         try:
             result = self.supabase.table('content_queue').select('url').eq(
                 'content_type', 'podcast_episode'
+            ).eq(
+                'source', 'podcast_history'
             ).execute()
 
             return set(row['url'] for row in result.data)
@@ -293,7 +295,7 @@ class PodcastCheckerService:
 
     def _get_known_podcast_youtube_url(self, podcast_title: str) -> Optional[str]:
         """
-        Check if podcast is in known_podcasts table and return YouTube URL
+        Check if podcast is in known_channels table and return YouTube URL
 
         Args:
             podcast_title: The podcast title to check
@@ -302,9 +304,9 @@ class PodcastCheckerService:
             YouTube channel or playlist URL if known, None otherwise
         """
         try:
-            result = self.supabase.table('known_podcasts')\
+            result = self.supabase.table('known_channels')\
                 .select('youtube_url')\
-                .eq('podcast_title', podcast_title)\
+                .eq('channel_name', podcast_title)\
                 .eq('is_active', True)\
                 .single()\
                 .execute()
@@ -312,13 +314,13 @@ class PodcastCheckerService:
             if result.data:
                 youtube_url = result.data.get('youtube_url')
                 if youtube_url:
-                    self.logger.info(f"      ✅ [KNOWN PODCAST] Found YouTube URL for '{podcast_title}': {youtube_url}")
+                    self.logger.info(f"      ✅ [KNOWN CHANNEL] Found YouTube URL for '{podcast_title}': {youtube_url}")
                     return youtube_url
 
         except Exception as e:
             # Not found is expected for unknown podcasts
             if 'PGRST116' not in str(e):  # Ignore "no rows returned" error
-                self.logger.debug(f"      ℹ️ [KNOWN PODCAST] Podcast not in database: {podcast_title}")
+                self.logger.debug(f"      ℹ️ [KNOWN CHANNEL] Podcast not in database: {podcast_title}")
 
         return None
 
@@ -718,7 +720,7 @@ class PodcastCheckerService:
                 self.logger.info(f"      ✅ [YOUTUBE SEARCH] Direct video validated!")
                 return youtube_url
             else:
-                self.logger.info(f"      �� [YOUTUBE SEARCH] Direct video did not match")
+                self.logger.info(f"      ℹ️ [YOUTUBE SEARCH] Direct video did not match")
                 return None
 
         # Step 1b: If it's a playlist/channel, scrape it for the episode
@@ -742,7 +744,7 @@ class PodcastCheckerService:
 
     def _save_podcast_episode(self, episode_details: Dict) -> Optional[str]:
         """
-        Save podcast episode to database
+        Save podcast episode to database with source='podcast_history'
 
         Returns:
             The ID of the saved episode, or None on error
@@ -760,6 +762,7 @@ class PodcastCheckerService:
                 'url': episode_details['episode_url'],
                 'title': episode_details['episode_title'],
                 'content_type': 'podcast_episode',
+                'source': 'podcast_history',
                 'channel_title': episode_details['podcast_title'],
                 'channel_url': f"https://pocketcasts.com/podcast/{episode_details['podcast_uuid']}",
                 'video_url': video_url,
@@ -794,17 +797,19 @@ class PodcastCheckerService:
 
     async def get_discovered_podcasts(self, limit: int = 100) -> List[Dict]:
         """
-        Get discovered podcast episodes from database
+        Get discovered podcast episodes from listening history
 
         Args:
             limit: Maximum number of podcasts to return
 
         Returns:
-            List of podcast episodes
+            List of podcast episodes from history
         """
         try:
             result = self.supabase.table('content_queue').select('*').eq(
                 'content_type', 'podcast_episode'
+            ).eq(
+                'source', 'podcast_history'
             ).order('found_at', desc=True).limit(limit).execute()
 
             podcasts = []

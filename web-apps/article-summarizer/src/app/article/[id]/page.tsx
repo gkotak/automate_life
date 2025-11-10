@@ -32,6 +32,8 @@ export default function ArticlePage() {
   const contentRef = useRef<HTMLDivElement>(null)
   const [highlightTerms, setHighlightTerms] = useState<string>('')
   const [clickedTimestamp, setClickedTimestamp] = useState<number | null>(null)
+  const [currentPlaybackTime, setCurrentPlaybackTime] = useState<number>(0)
+  const transcriptRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
   // Use extracted terms from URL (passed from search results)
   useEffect(() => {
@@ -215,24 +217,18 @@ export default function ArticlePage() {
             setTimeout(() => setClickedTimestamp(null), 5000)
           }
         } else if (platform === 'loom') {
-          // Loom supports ?t= URL parameter for timestamp jumping
-          const playerContainer = document.getElementById('video-player-container')
-          if (playerContainer) {
-            // Recreate iframe with new URL to jump to timestamp
-            playerContainer.innerHTML = ''
-
-            const iframe = document.createElement('iframe')
-            iframe.style.width = '100%'
-            iframe.style.height = '100%'
-            iframe.style.border = 'none'
-            iframe.allowFullscreen = true
-            iframe.id = 'generic-video-player'
-            iframe.setAttribute('allow', 'autoplay; fullscreen')
-
-            const baseUrl = `https://www.loom.com/embed/${article.video_id}`
-            iframe.src = `${baseUrl}?t=${seconds}`
-
-            playerContainer.appendChild(iframe)
+          // Loom supports postMessage API (player.js) for timestamp jumping
+          const iframe = document.getElementById('generic-video-player') as HTMLIFrameElement
+          if (iframe && iframe.contentWindow) {
+            // Use Loom Player API to seek to timestamp
+            iframe.contentWindow.postMessage(
+              {
+                method: 'setCurrentTime',
+                value: seconds,
+                context: 'player.js'
+              },
+              '*'
+            )
 
             // Track which timestamp was clicked
             setClickedTimestamp(seconds)
@@ -353,6 +349,107 @@ export default function ArticlePage() {
       }
     }
   }, [article])
+
+  // Poll current playback time for transcript highlighting
+  useEffect(() => {
+    if (!article) return
+
+    let loomCurrentTime = 0
+
+    // Listen for ALL postMessage events to debug
+    const handleLoomMessage = (event: MessageEvent) => {
+      // Log to see what messages we're getting
+      if (event.data && typeof event.data === 'object' && event.origin.includes('loom')) {
+        console.log('[Loom Message]', event.data)
+      }
+
+      if (event.data && event.data.context === 'player.js') {
+        if (event.data.event === 'timeupdate' && typeof event.data.value === 'number') {
+          loomCurrentTime = event.data.value
+          console.log('[Loom Time]', loomCurrentTime)
+        }
+      }
+    }
+
+    window.addEventListener('message', handleLoomMessage)
+
+    // Alternative: Try getting Loom SDK directly
+    const setupLoomTracking = () => {
+      const loomIframe = document.getElementById('generic-video-player') as HTMLIFrameElement
+      if (loomIframe && article.platform === 'loom') {
+        console.log('[Loom] Setting up player tracking')
+
+        // Method 1: Request time updates via postMessage
+        if (loomIframe.contentWindow) {
+          loomIframe.contentWindow.postMessage({
+            method: 'addEventListener',
+            value: 'timeupdate',
+            context: 'player.js'
+          }, '*')
+          console.log('[Loom] Sent addEventListener request')
+        }
+
+        // Method 2: Try to get current time periodically via postMessage
+        setInterval(() => {
+          if (loomIframe.contentWindow) {
+            loomIframe.contentWindow.postMessage({
+              method: 'getCurrentTime',
+              context: 'player.js'
+            }, '*')
+          }
+        }, 1000)
+      }
+    }
+
+    setTimeout(setupLoomTracking, 1000)
+    setTimeout(setupLoomTracking, 3000) // Retry after 3s in case player loads slowly
+
+    const interval = setInterval(() => {
+      let currentTime = 0
+
+      // Get current time from YouTube player
+      if ((window as any).youtubePlayer && (window as any).youtubePlayer.getCurrentTime) {
+        currentTime = (window as any).youtubePlayer.getCurrentTime()
+      }
+      // Get current time from Loom player
+      else if (article.platform === 'loom' && loomCurrentTime > 0) {
+        currentTime = loomCurrentTime
+      }
+      // Get current time from audio player
+      else if ((window as any).audioPlayer) {
+        currentTime = (window as any).audioPlayer.currentTime || 0
+      }
+      // Get current time from HTML5 video player
+      else {
+        const videoPlayer = document.querySelector('video') as HTMLVideoElement
+        if (videoPlayer) {
+          currentTime = videoPlayer.currentTime || 0
+        }
+      }
+
+      if (currentTime > 0) {
+        setCurrentPlaybackTime(Math.floor(currentTime))
+      }
+    }, 500) // Poll every 500ms
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('message', handleLoomMessage)
+    }
+  }, [article])
+
+  // Auto-scroll transcript to current line
+  useEffect(() => {
+    if (activeTab === 'transcript' && currentPlaybackTime > 0) {
+      const currentRef = transcriptRefs.current.get(currentPlaybackTime)
+      if (currentRef) {
+        currentRef.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        })
+      }
+    }
+  }, [currentPlaybackTime, activeTab])
 
   const fetchArticle = async (id: number) => {
     try {
@@ -562,6 +659,11 @@ export default function ArticlePage() {
                 }`}
               >
                 Transcript
+                {currentPlaybackTime > 0 && activeTab === 'transcript' && (
+                  <span className="ml-2 text-xs text-gray-400">
+                    {Math.floor(currentPlaybackTime / 60)}:{(currentPlaybackTime % 60).toString().padStart(2, '0')}
+                  </span>
+                )}
               </button>
             )}
           </nav>
@@ -574,6 +676,7 @@ export default function ArticlePage() {
               <ArticleSummary
                 article={article}
                 onTimestampClick={jumpToTimeFunc || undefined}
+                onTabSwitch={setActiveTab}
                 searchQuery={highlightTerms}
                 clickedTimestamp={clickedTimestamp}
               />
@@ -618,8 +721,28 @@ export default function ArticlePage() {
                       ? `${timestampMatch[1]}:${timestampMatch[2]}:${timestampMatch[3]}`
                       : `${timestampMatch[1]}:${timestampMatch[2]}`
 
+                    // Check if this line is currently playing
+                    const isCurrentLine = currentPlaybackTime >= totalSeconds &&
+                      (index === article.transcript_text.split('\n').length - 1 ||
+                       currentPlaybackTime < (article.transcript_text.split('\n')[index + 1]?.match(/^\[(\d+):(\d+)(?::(\d+))?\]/)
+                         ? (() => {
+                             const nextMatch = article.transcript_text.split('\n')[index + 1]?.match(/^\[(\d+):(\d+)(?::(\d+))?\]/)
+                             if (!nextMatch) return Infinity
+                             const h = nextMatch[3] ? parseInt(nextMatch[1]) : 0
+                             const m = nextMatch[3] ? parseInt(nextMatch[2]) : parseInt(nextMatch[1])
+                             const s = nextMatch[3] ? parseInt(nextMatch[3]) : parseInt(nextMatch[2])
+                             return h * 3600 + m * 60 + s
+                           })()
+                         : Infinity))
+
                     return (
-                      <div key={index}>
+                      <div
+                        key={index}
+                        ref={(el) => {
+                          if (el) transcriptRefs.current.set(totalSeconds, el)
+                        }}
+                        className={`transition-all rounded-lg p-2 ${isCurrentLine ? 'bg-yellow-200' : ''}`}
+                      >
                         <div className="flex gap-3">
                           <button
                             onClick={() => jumpToTimeFunc?.(totalSeconds)}

@@ -18,6 +18,14 @@ export interface Quote {
   context?: string
 }
 
+export interface VideoFrame {
+  url: string
+  storage_path?: string
+  timestamp_seconds: number
+  time_formatted: string
+  perceptual_hash?: string
+}
+
 export type Article = {
   id: number
   title: string
@@ -39,6 +47,7 @@ export type Article = {
   key_insights: Insight[] | null
   quotes: Quote[] | null
   images: string[] | null  // Array of image URLs
+  video_frames: VideoFrame[] | null  // Array of video frame thumbnails
   duration_minutes: number | null
   word_count: number | null
   topics: string[] | null
