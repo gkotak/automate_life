@@ -2034,10 +2034,13 @@ class ArticleProcessor(BaseProcessor):
                 last_error = None
                 for format_str in format_options:
                     try:
+                        # Log which format we're trying
                         if format_str == 'worst':
-                            self.logger.info(f"      🔄 [YT-DLP FALLBACK] Trying lowest quality format to bypass restrictions...")
+                            self.logger.info(f"      🔄 [YT-DLP] Trying format: '{format_str}' (lowest quality)")
+                        elif format_str == 'best':
+                            self.logger.info(f"      🔄 [YT-DLP] Trying format: '{format_str}' (fallback)")
                         else:
-                            self.logger.info(f"      🔧 [YT-DLP] Downloading video for frame extraction (max 480p to optimize size)...")
+                            self.logger.info(f"      🔧 [YT-DLP] Trying format: '{format_str}'")
 
                         ydl_opts = {
                             'format': format_str,
@@ -2059,9 +2062,8 @@ class ArticleProcessor(BaseProcessor):
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             ydl.download([video_url])
 
-                        # If we get here, download succeeded - break out of retry loop
-                        if format_str == 'worst':
-                            self.logger.info(f"      ✅ [YT-DLP FALLBACK] Successfully downloaded with lower quality format")
+                        # If we get here, download succeeded
+                        self.logger.info(f"      ✅ [YT-DLP] Successfully downloaded using format: '{format_str}'")
                         break
 
                     except Exception as e:
