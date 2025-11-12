@@ -2019,11 +2019,16 @@ class ArticleProcessor(BaseProcessor):
                     format_options = ['worst', 'best']
                 else:
                     # For other platforms, try a variety of format strategies
+                    # This order is optimized based on testing:
+                    # - Vimeo: Supports height filters and bestvideo+bestaudio, not worst/best
+                    # - Loom: Only supports bestvideo+bestaudio (no height filters, no worst/best)
+                    # - Wistia: Supports height<=480 and worst/best, not bestvideo+bestaudio
                     format_options = [
-                        'bestvideo[height<=480]+bestaudio/best[height<=480]',  # Try 480p
-                        'bestvideo[height<=720]+bestaudio',  # Try 720p
-                        'bestvideo+bestaudio',  # Try best available (works for Loom)
-                        'bestvideo',  # Video only fallback
+                        'bestvideo[height<=480]+bestaudio/best[height<=480]',  # Vimeo: 360p, Wistia: 360p
+                        'bestvideo[height<=720]+bestaudio',  # Vimeo: 720p
+                        'bestvideo+bestaudio',  # Vimeo: 1080p, Loom: 800p
+                        'worst',  # Wistia: 400x224 (fallback)
+                        'best',   # Final fallback for all platforms
                     ]
 
                 last_error = None
