@@ -2009,19 +2009,22 @@ class ArticleProcessor(BaseProcessor):
             if download_video:
                 # For frame extraction, we don't need high quality - use lower quality formats
                 # This significantly reduces download size and processing time
-                # Try multiple format strategies with graceful fallbacks:
-                # 1. Prefer 480p if available (good balance of quality/size)
-                # 2. Fall back to 'worst' (lowest quality available)
-                # 3. Finally try 'best' as last resort
-                format_options = [
-                    'bestvideo[height<=480]+bestaudio/best[height<=480]',  # Prefer 480p
-                    'worst',  # Fallback to lowest quality
-                    'best'    # Last resort - use whatever is available
-                ]
+                # Different platforms support different format selectors:
+                # - YouTube: supports 'worst', 'best', height filters
+                # - Loom: only supports 'bestvideo+bestaudio' or 'bestvideo' (no 'worst'/'best')
+                # - Vimeo/Wistia: support standard selectors
 
                 if is_youtube:
                     # YouTube often blocks higher quality, so prioritize 'worst' first
                     format_options = ['worst', 'best']
+                else:
+                    # For other platforms, try a variety of format strategies
+                    format_options = [
+                        'bestvideo[height<=480]+bestaudio/best[height<=480]',  # Try 480p
+                        'bestvideo[height<=720]+bestaudio',  # Try 720p
+                        'bestvideo+bestaudio',  # Try best available (works for Loom)
+                        'bestvideo',  # Video only fallback
+                    ]
 
                 last_error = None
                 for format_str in format_options:
