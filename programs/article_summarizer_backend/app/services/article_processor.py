@@ -2007,18 +2007,21 @@ class ArticleProcessor(BaseProcessor):
             is_youtube = 'youtube.com' in video_url or 'youtu.be' in video_url
 
             if download_video:
-                # Try best quality first, fall back to worst on 403 for YouTube
-                format_options = ['bestvideo+bestaudio/best']
+                # For frame extraction, we don't need high quality - use lower quality formats
+                # This significantly reduces download size (17MB vs 200+MB) and processing time
+                # 480p or lower is sufficient for generating thumbnail frames
+                format_options = ['bestvideo[height<=480]+bestaudio/best[height<=480]/worst']
                 if is_youtube:
-                    format_options.append('worst')  # Fallback for YouTube when best quality is blocked
+                    # YouTube often blocks even medium quality, so add worst as fallback
+                    format_options.append('worst')
 
                 last_error = None
                 for format_str in format_options:
                     try:
                         if format_str == 'worst':
-                            self.logger.info(f"      🔄 [YT-DLP FALLBACK] Trying lower quality format (worst) to bypass restrictions...")
+                            self.logger.info(f"      🔄 [YT-DLP FALLBACK] Trying lowest quality format to bypass restrictions...")
                         else:
-                            self.logger.info(f"      🔧 [YT-DLP] Downloading full video with yt-dlp...")
+                            self.logger.info(f"      🔧 [YT-DLP] Downloading video for frame extraction (max 480p to optimize size)...")
 
                         ydl_opts = {
                             'format': format_str,
