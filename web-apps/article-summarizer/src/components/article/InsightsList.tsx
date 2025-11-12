@@ -1,6 +1,7 @@
 import { Insight } from '@/lib/supabase'
 import { Clock, Play } from 'lucide-react'
 import HighlightedText from '../HighlightedText'
+import { useState } from 'react'
 
 interface InsightsListProps {
   insights: Insight[]
@@ -10,6 +11,8 @@ interface InsightsListProps {
 }
 
 export default function InsightsList({ insights, onTimestampClick, searchQuery, clickedTimestamp }: InsightsListProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false) // Expanded by default
+
   if (!insights || insights.length === 0) {
     return null
   }
@@ -22,12 +25,26 @@ export default function InsightsList({ insights, onTimestampClick, searchQuery, 
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-[#030712] flex items-center gap-2">
-        💡 Key Insights
-        <span className="text-sm font-normal text-[#475569]">({insights.length})</span>
-      </h3>
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="flex items-center justify-between w-full text-left group"
+      >
+        <h3 className="text-lg font-semibold text-[#030712] flex items-center gap-2">
+          💡 Key Insights
+          <span className="text-sm font-normal text-[#475569]">({insights.length})</span>
+        </h3>
+        <svg
+          className={`w-5 h-5 text-gray-500 transition-transform ${isCollapsed ? '' : 'rotate-180'}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
 
-      <div className="space-y-3">
+      {!isCollapsed && (
+        <div className="space-y-3">
         {insights.map((insight, index) => (
           <div
             key={index}
@@ -61,7 +78,8 @@ export default function InsightsList({ insights, onTimestampClick, searchQuery, 
             )}
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

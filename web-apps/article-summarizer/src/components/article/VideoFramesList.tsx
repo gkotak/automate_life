@@ -1,85 +1,19 @@
 'use client'
 
 import { VideoFrame } from '@/lib/supabase'
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 
 interface VideoFramesListProps {
   frames: VideoFrame[]
-  transcript?: string | null
   onTimestampClick?: (seconds: number) => void
   onTabSwitch?: (tab: string) => void
   clickedTimestamp?: number | null
 }
 
-// Helper function to extract transcript segment between timestamps
-function extractTranscriptSegment(transcript: string, startSeconds: number, endSeconds: number): string {
-  // Transcript format: [MM:SS] text or [HH:MM:SS] text
-  const lines = transcript.split('\n')
-  let excerptLines: string[] = []
-
-  for (const line of lines) {
-    const timestampMatch = line.match(/\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]/)
-    if (timestampMatch) {
-      const hours = timestampMatch[3] ? parseInt(timestampMatch[1]) : 0
-      const minutes = timestampMatch[3] ? parseInt(timestampMatch[2]) : parseInt(timestampMatch[1])
-      const seconds = timestampMatch[3] ? parseInt(timestampMatch[3]) : parseInt(timestampMatch[2])
-      const lineSeconds = hours * 3600 + minutes * 60 + seconds
-
-      if (lineSeconds >= startSeconds && lineSeconds < endSeconds) {
-        // Remove timestamp from line
-        const text = line.replace(/\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*/, '')
-        if (text.trim()) {
-          excerptLines.push(text.trim())
-        }
-      }
-    }
-  }
-
-  return excerptLines.join(' ')
-}
-
-// Generate a brief summary title for the transcript segment
-function generateSummary(excerpt: string, timestamp: string): string {
-  if (!excerpt || excerpt.length < 20) {
-    return 'Content at' + ' ' + timestamp
-  }
-
-  // Simple heuristic: take first meaningful sentence or ~60 chars
-  const firstSentence = excerpt.match(/^[^.!?]+[.!?]/)
-  if (firstSentence && firstSentence[0].length <= 80) {
-    return firstSentence[0].trim()
-  }
-
-  // Fallback: truncate to ~60 chars at word boundary
-  const truncated = excerpt.substring(0, 80)
-  const lastSpace = truncated.lastIndexOf(' ')
-  return lastSpace > 40 ? truncated.substring(0, lastSpace) + '...' : truncated + '...'
-}
-
 export default function VideoFramesList(props: VideoFramesListProps) {
-  const { frames, transcript, onTimestampClick, onTabSwitch, clickedTimestamp } = props
+  const { frames, onTimestampClick, onTabSwitch, clickedTimestamp } = props
   const [selectedFrame, setSelectedFrame] = useState<VideoFrame | null>(null)
-
-  // Extract transcript excerpts for each frame
-  const frameExcerpts = useMemo(() => {
-    if (!transcript) return new Map<number, { text: string; summary: string }>()
-
-    const excerpts = new Map<number, { text: string; summary: string }>()
-
-    frames.forEach((frame, index) => {
-      const nextFrame = frames[index + 1]
-      const startTime = frame.timestamp_seconds
-      const endTime = nextFrame ? nextFrame.timestamp_seconds : startTime + 120 // 2 minutes window
-
-      // Extract text between timestamps
-      const excerpt = extractTranscriptSegment(transcript, startTime, endTime)
-      const summary = generateSummary(excerpt, frame.time_formatted)
-
-      excerpts.set(frame.timestamp_seconds, { text: excerpt, summary })
-    })
-
-    return excerpts
-  }, [frames, transcript])
+  const [isCollapsed, setIsCollapsed] = useState(true) // Collapsed by default
 
   if (!frames || frames.length === 0) {
     return null
@@ -110,17 +44,33 @@ export default function VideoFramesList(props: VideoFramesListProps) {
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
-        Video Snapshots
-        <span className="ml-2 text-sm font-normal text-gray-500">
-          ({frames.length} frame{frames.length !== 1 ? 's' : ''})
-        </span>
-      </h3>
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="flex items-center justify-between w-full text-left group"
+      >
+        <h3 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center gap-2">
+          Video Snapshots
+          <span className="text-sm font-normal text-gray-500">
+            ({frames.length} frame{frames.length !== 1 ? 's' : ''})
+          </span>
+        </h3>
+        <svg
+          className={`w-5 h-5 text-gray-500 transition-transform ${isCollapsed ? '' : 'rotate-180'}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
 
-      <div className="space-y-6">
+      {!isCollapsed && (
+        <div className="space-y-6">
         {frames.map((frame, index) => {
-          const excerpt = frameExcerpts.get(frame.timestamp_seconds)
-          const hasTranscript = excerpt && excerpt.text.length > 0
+          // Use pre-computed data from backend
+          const transcriptExcerpt = frame.transcript_excerpt || ''
+          const transcriptSummary = frame.transcript_summary || `Content at ${frame.time_formatted}`
+          const hasTranscript = transcriptExcerpt.length > 0
 
           return (
             <div
@@ -166,14 +116,14 @@ export default function VideoFramesList(props: VideoFramesListProps) {
                 {hasTranscript ? (
                   <div className="space-y-2">
                     <h4 className="text-base font-semibold text-gray-900 line-clamp-2">
-                      {excerpt.summary}
+                      {transcriptSummary}
                     </h4>
 
                     <p className="text-sm text-gray-700 leading-relaxed line-clamp-4">
-                      {excerpt.text}
+                      {transcriptExcerpt}
                     </p>
 
-                    {excerpt.text.length > 200 && (
+                    {transcriptExcerpt.length > 200 && (
                       <button
                         onClick={handleTranscriptLink}
                         className="text-sm text-[#077331] hover:text-[#055a24] font-medium inline-flex items-center gap-1"
@@ -194,7 +144,8 @@ export default function VideoFramesList(props: VideoFramesListProps) {
             </div>
           )
         })}
-      </div>
+        </div>
+      )}
 
       {selectedFrame && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={handleCloseModal}>

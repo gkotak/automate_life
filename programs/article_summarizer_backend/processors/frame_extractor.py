@@ -47,7 +47,11 @@ class FrameExtractor:
 
     async def extract_frames(self, video_path: str) -> List[Dict[str, any]]:
         """
-        Extract unique frames from video using scene detection and perceptual hashing
+        Extract frames from video using scene detection with minimum interval enforcement.
+
+        Uses ffmpeg's scene detection to identify visual changes, with a built-in filter
+        to ensure frames are at least min_interval_seconds apart. Falls back to fixed
+        interval extraction if scene detection finds no changes.
 
         Args:
             video_path: Path to video file
@@ -56,8 +60,8 @@ class FrameExtractor:
             List of frame dictionaries with:
                 - path: File path to extracted frame
                 - timestamp_seconds: Timestamp in video
-                - time_formatted: Formatted timestamp (MM:SS)
-                - hash: Perceptual hash of the frame
+                - time_formatted: Formatted timestamp (MM:SS or HH:MM:SS)
+                - hash: Perceptual hash of the frame (for metadata only)
         """
         logger.info(f"🎬 Starting frame extraction from video: {video_path}")
 
@@ -70,19 +74,27 @@ class FrameExtractor:
         logger.info(f"📁 Created temp directory: {self.temp_dir}")
 
         try:
-            # Step 1: Use ffmpeg scene detection to find significant changes
-            scene_frames = await self._detect_scene_changes(video_path)
-            logger.info(f"🎯 Detected {len(scene_frames)} scene changes")
+            # Use ffmpeg scene detection to find significant changes
+            # The ffmpeg filter enforces minimum interval during extraction
+            frames = await self._detect_scene_changes(video_path)
+            logger.info(f"🎯 Detected {len(frames)} scene changes")
 
-            if not scene_frames:
+            if not frames:
                 logger.warning("⚠️ No scene changes detected, falling back to interval extraction")
-                scene_frames = await self._extract_by_interval(video_path)
+                frames = await self._extract_by_interval(video_path)
 
-            # Step 2: Filter frames by minimum interval and perceptual hash similarity
-            unique_frames = await self._filter_unique_frames(scene_frames)
-            logger.info(f"✅ Extracted {len(unique_frames)} unique frames")
+            # Compute perceptual hashes for metadata (not used for filtering)
+            for frame in frames:
+                try:
+                    img = Image.open(frame["path"])
+                    phash = imagehash.phash(img)
+                    frame["hash"] = str(phash)
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not compute hash for frame {frame['path']}: {e}")
+                    frame["hash"] = None
 
-            return unique_frames
+            logger.info(f"✅ Extracted {len(frames)} unique frames")
+            return frames
 
         except Exception as e:
             logger.error(f"❌ Frame extraction failed: {e}", exc_info=True)
@@ -98,12 +110,11 @@ class FrameExtractor:
         logger.info("🔍 Running ffmpeg scene detection...")
 
         try:
-            # Use ffmpeg select filter with scene detection
+            # Use ffmpeg select filter for scene detection only
             # scene=0.2 means detect scenes with 20% change (lower = more sensitive)
-            # metadata=print writes pts_time into frame metadata which we can parse
-            filter_complex = (
-                f"select='gt(scene,0.2)',metadata=print:file={self.temp_dir}/timestamps.txt"
-            )
+            # Minimum interval filtering is done in Python post-processing for reliability
+            # showinfo writes frame info to stderr for timestamp extraction
+            filter_complex = "select='gt(scene,0.2)',showinfo"
 
             output_pattern = os.path.join(self.temp_dir, "scene_%04d.jpg")
 
@@ -132,13 +143,8 @@ class FrameExtractor:
             # Get frame files
             frame_files = sorted(Path(self.temp_dir).glob("scene_*.jpg"))
 
-            # Read timestamps from metadata file if it exists
-            timestamp_file = os.path.join(self.temp_dir, "timestamps.txt")
-            timestamps = []
-            if os.path.exists(timestamp_file):
-                with open(timestamp_file, 'r') as f:
-                    content = f.read()
-                    timestamps = self._parse_metadata_timestamps(content)
+            # Parse timestamps from stderr (showinfo output)
+            timestamps = self._parse_showinfo_timestamps(stderr_text)
 
             logger.info(f"📊 Found {len(frame_files)} frames and {len(timestamps)} timestamps")
 
@@ -159,7 +165,22 @@ class FrameExtractor:
                     "hash": None  # Will be computed later
                 })
 
-            return frames
+            # Post-process filter: Enforce minimum interval
+            # The ffmpeg filter sometimes lets through frames that are too close
+            filtered_frames = []
+            last_timestamp = -self.min_interval_seconds  # Allow first frame
+
+            for frame in frames:
+                if frame["timestamp_seconds"] - last_timestamp >= self.min_interval_seconds:
+                    filtered_frames.append(frame)
+                    last_timestamp = frame["timestamp_seconds"]
+                else:
+                    logger.debug(f"🔍 Filtered out frame at {frame['time_formatted']} (too close to previous)")
+
+            if len(filtered_frames) < len(frames):
+                logger.info(f"🔍 Filtered {len(frames) - len(filtered_frames)} frames that were too close together")
+
+            return filtered_frames
 
         except Exception as e:
             logger.error(f"❌ Scene detection failed: {e}", exc_info=True)
@@ -221,43 +242,6 @@ class FrameExtractor:
             logger.error(f"❌ Interval extraction failed: {e}", exc_info=True)
             return []
 
-    async def _filter_unique_frames(self, frames: List[Dict[str, any]]) -> List[Dict[str, any]]:
-        """
-        Filter frames to keep only unique ones based on minimum time interval.
-        Perceptual hash filtering is disabled for demo videos as similar-looking
-        frames may contain different content (e.g., same UI with different data).
-
-        Returns:
-            Filtered list of unique frames
-        """
-        if not frames:
-            return []
-
-        logger.info(f"🔍 Filtering {len(frames)} frames by time interval ({self.min_interval_seconds}s)...")
-
-        unique_frames = []
-        last_timestamp = -self.min_interval_seconds  # Allow first frame
-
-        for frame in frames:
-            # Check minimum interval
-            if frame["timestamp_seconds"] - last_timestamp < self.min_interval_seconds:
-                continue
-
-            # Compute perceptual hash for metadata (optional, not used for filtering)
-            try:
-                img = Image.open(frame["path"])
-                phash = imagehash.phash(img)
-                frame["hash"] = str(phash)
-            except Exception as e:
-                logger.warning(f"⚠️ Could not compute hash for frame {frame['path']}: {e}")
-                frame["hash"] = None
-
-            # Frame passes time interval check
-            unique_frames.append(frame)
-            last_timestamp = frame["timestamp_seconds"]
-
-        logger.info(f"✅ Kept {len(unique_frames)} frames after time filtering")
-        return unique_frames
 
     async def _get_video_duration(self, video_path: str) -> Optional[float]:
         """Get video duration in seconds using ffprobe"""
@@ -301,21 +285,22 @@ class FrameExtractor:
 
         return timestamps
 
-    def _parse_metadata_timestamps(self, metadata_text: str) -> List[float]:
-        """Parse timestamps from ffmpeg metadata filter output"""
+    def _parse_showinfo_timestamps(self, stderr_text: str) -> List[float]:
+        """Parse timestamps from ffmpeg showinfo filter output in stderr"""
         import re
 
         timestamps = []
-        # Look for pts_time=X.XXX or lavfi.pts_time=X.XXX in metadata output
-        pattern = r'(?:lavfi\.)?pts_time[=:]([\d.]+)'
+        # showinfo outputs lines like: [Parsed_showinfo_1 @ 0x...] n:0 pts:18304 pts_time:1.144 ...
+        # Note: pts_time is followed by a space and value, not a colon
+        pattern = r'\[Parsed_showinfo.*?\]\s+n:\s*\d+.*?pts_time:([\d.]+)'
 
-        for match in re.finditer(pattern, metadata_text):
+        for match in re.finditer(pattern, stderr_text):
             try:
                 timestamps.append(float(match.group(1)))
             except ValueError:
                 continue
 
-        logger.info(f"📋 Parsed {len(timestamps)} timestamps from metadata")
+        logger.info(f"📋 Parsed {len(timestamps)} timestamps from showinfo")
         return timestamps
 
     def _format_timestamp(self, seconds: float) -> str:

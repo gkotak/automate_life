@@ -24,6 +24,8 @@ export interface VideoFrame {
   timestamp_seconds: number
   time_formatted: string
   perceptual_hash?: string
+  transcript_excerpt?: string
+  transcript_summary?: string
 }
 
 export type Article = {

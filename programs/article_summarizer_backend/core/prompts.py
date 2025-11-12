@@ -61,6 +61,13 @@ class ArticleAnalysisPrompt:
             media_type_indicator = "content"
             jump_function = "jumpToTime"
 
+        # Check if we have video frames that need summaries
+        video_frames = metadata.get('video_frames', [])
+        frame_summaries_section = ""
+
+        if video_frames:
+            frame_summaries_section = ',\n    "frame_summaries": [\n        {"frame_index": 0, "summary": "10-word summary of what happens at this timestamp"},\n        {"frame_index": 1, "summary": "Another 10-word summary"}\n    ]'
+
         return f"""
 Analyze this article: {url}
 
@@ -85,22 +92,20 @@ Return your response in this JSON format:
     ],
     "duration_minutes": 45,
     "word_count": 5000,
-    "topics": ["AI", "Product", "Engineering"]
+    "topics": ["AI", "Product", "Engineering"]{frame_summaries_section}
 }}
 
 CRITICAL TIMESTAMP RULES:
-- Each timestamp section should cover AT LEAST 30 SECONDS of continuous content
-- Each description should include COMPLETE SENTENCES and full thoughts - never break mid-sentence
-- Group related ideas that span 30-60 seconds into a single timestamp entry with comprehensive description
-- Provide detailed summaries that capture the full context of what's discussed in that 30+ second window
+- Use PRECISE timestamps from the transcript - find the exact moment where the insight/quote begins
+- Search the transcript for the specific phrase or concept and use that exact timestamp
 - Use null for timestamp_seconds and time_formatted if you cannot find the EXACT content in the provided transcript
 - NEVER guess or estimate timestamps - if you can't find it in the transcript, use null
-- For quotes: search the transcript for the exact quote text and use that timestamp
-- For insights: provide comprehensive descriptions that summarize the complete topic discussed in that 30+ second section
+- For quotes: search the transcript for the exact quote text and use that precise timestamp
+- For insights: identify where the key concept or discussion begins and use that timestamp
 - Only include timestamps for content you can find in the provided transcript
 - If transcript is truncated, only use timestamps from the visible portion
 - key_insights should be 8-12 items combining key learnings, main points, and actionable takeaways
-- Each insight with a timestamp should describe the complete topic/discussion in that time window, not just a single point
+- Each insight should be a clear, concise statement of the key learning or takeaway
 - quotes should be memorable/important quotes with exact speaker attribution and context
 """
 
@@ -130,6 +135,8 @@ class MediaContextBuilder:
         for key in media_info.keys():
             if key.endswith('_urls'):
                 urls = media_info[key]
+                if not urls:  # Skip empty lists
+                    continue
                 media_urls.extend(urls)
                 # Determine type from key (e.g., 'video_urls' -> 'video', 'audio_urls' -> 'audio')
                 if 'video' in key:
@@ -168,6 +175,41 @@ class MediaContextBuilder:
         extra_detail = "demonstrations" if media_type == 'video' else "main themes"
         platform_line = f"{media_type.capitalize()} Platform: {platform}\n" if media_type == 'audio' else ""
 
+        # Check if we have video frames with transcript excerpts
+        video_frames = metadata.get('video_frames', [])
+        frames_section = ""
+
+        if video_frames and media_type == 'video':
+            frames_data = []
+            for i, frame in enumerate(video_frames):
+                excerpt = frame.get('transcript_excerpt', '')
+                if excerpt:
+                    frames_data.append({
+                        "frame_index": i,
+                        "timestamp": frame.get('time_formatted', ''),
+                        "transcript_excerpt": excerpt
+                    })
+
+            if frames_data:
+                frames_section = f"""
+
+VIDEO FRAMES FOR SUMMARY GENERATION:
+The following video frames have been extracted at key moments. For each frame, generate a concise 10-word (maximum) summary based on its transcript excerpt:
+
+{json.dumps(frames_data, indent=2)}
+
+IMPORTANT: You MUST include a "frame_summaries" array in your response with exactly {len(frames_data)} entries.
+Each entry should have:
+- "frame_index": The index number from above (0, 1, 2, etc.)
+- "summary": A natural, concise summary of NO MORE THAN 10 words describing what happens at this timestamp
+
+Example frame_summaries format:
+[
+    {{"frame_index": 0, "summary": "Platform demo showing AI procurement features and integrations"}},
+    {{"frame_index": 1, "summary": "Discussion of customer results and time savings achieved"}}
+]
+"""
+
         # Build context based on whether we have transcript data
         if has_transcript_data:
             return f"""
@@ -177,7 +219,7 @@ Please focus on extracting {media_type} timestamps with the following format:
 - Provide detailed descriptions of what {action_word} at each timestamp
 - Aim for 5-8 key timestamps that represent the most valuable content
 - Include timestamps for: key insights, important discussions, actionable advice, {extra_detail}
-{platform_line}{transcript_content}
+{platform_line}{transcript_content}{frames_section}
 
 ARTICLE TEXT CONTENT:
 {article_text}
@@ -202,28 +244,80 @@ Please analyze the article text to provide comprehensive insights about the {med
 """
 
     @staticmethod
-    def _format_transcript(transcript_data: Dict) -> str:
-        """Format transcript for AI analysis (line-by-line)"""
+    def _format_transcript(transcript_data: Dict, interval_seconds: int = 3) -> str:
+        """
+        Format transcript for AI analysis with granular timestamps
+
+        Uses word-level timing data to create transcript segments every N seconds
+        for precise timestamp lookup by AI. Falls back to segment-level if word
+        data is not available.
+
+        Args:
+            transcript_data: Transcript data from DeepGram or YouTube
+            interval_seconds: Interval between timestamps (default: 3 seconds)
+
+        Returns:
+            Formatted transcript with timestamps every N seconds
+        """
         if not transcript_data or not transcript_data.get('success'):
             return ""
 
-        # Handle both YouTube API format ('transcript') and DeepGram format ('segments')
-        transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
-        formatted_text = []
+        # Try to use word-level data first (DeepGram)
+        words = transcript_data.get('words', [])
 
-        for entry in transcript:
-            start_time = entry.get('start', 0)
-            text = entry.get('text', '').strip()
+        if words:
+            # Use word-level data for granular timestamps
+            formatted_text = []
+            current_time = 0
+            current_words = []
 
-            # Convert seconds to MM:SS format
-            minutes = int(start_time // 60)
-            seconds = int(start_time % 60)
-            timestamp = f"{minutes}:{seconds:02d}"
+            for word_data in words:
+                word = word_data.get('word', '')
+                word_start = word_data.get('start', 0)
 
-            if text:
+                # Check if we've passed the next interval
+                if word_start >= current_time + interval_seconds and current_words:
+                    # Format and save this interval
+                    minutes = int(current_time // 60)
+                    seconds = int(current_time % 60)
+                    timestamp = f"{minutes}:{seconds:02d}"
+                    text = ' '.join(current_words)
+                    formatted_text.append(f"[{timestamp}] {text}")
+
+                    # Move to next interval
+                    current_time = int(word_start // interval_seconds) * interval_seconds
+                    current_words = []
+
+                current_words.append(word)
+
+            # Add final interval
+            if current_words:
+                minutes = int(current_time // 60)
+                seconds = int(current_time % 60)
+                timestamp = f"{minutes}:{seconds:02d}"
+                text = ' '.join(current_words)
                 formatted_text.append(f"[{timestamp}] {text}")
 
-        return "\n".join(formatted_text)
+            return "\n".join(formatted_text)
+
+        else:
+            # Fallback to segment-level (YouTube or old format)
+            transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
+            formatted_text = []
+
+            for entry in transcript:
+                start_time = entry.get('start', 0)
+                text = entry.get('text', '').strip()
+
+                # Convert seconds to MM:SS format
+                minutes = int(start_time // 60)
+                seconds = int(start_time % 60)
+                timestamp = f"{minutes}:{seconds:02d}"
+
+                if text:
+                    formatted_text.append(f"[{timestamp}] {text}")
+
+            return "\n".join(formatted_text)
 
 
 # Keep backward compatibility aliases
@@ -321,5 +415,6 @@ def create_metadata_for_prompt(metadata: Dict) -> Dict:
         'has_video': hasattr(content_type, 'has_embedded_video') and content_type.has_embedded_video if content_type else False,
         'has_audio': hasattr(content_type, 'has_embedded_audio') and content_type.has_embedded_audio if content_type else False,
         'is_text_only': hasattr(content_type, 'is_text_only') and content_type.is_text_only if content_type else False,
-        'extracted_at': metadata.get('extracted_at')
+        'extracted_at': metadata.get('extracted_at'),
+        'video_frames': metadata.get('video_frames', [])  # Include video frames for prompt generation
     }

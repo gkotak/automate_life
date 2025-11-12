@@ -102,11 +102,18 @@ def reconstruct_metadata(article: dict) -> dict:
                     'text': text.strip()
                 })
 
+        # Include words array if available (from original DeepGram response)
+        words = []
+        raw_transcript_data = article.get('raw_transcript_data')  # This might not exist
+        if raw_transcript_data and isinstance(raw_transcript_data, dict):
+            words = raw_transcript_data.get('words', [])
+
         transcripts[article['video_id']] = {
             'success': True,
             'type': 'existing',
             'transcript': segments,
-            'segments': segments
+            'segments': segments,
+            'words': words  # Will be empty list if not available
         }
 
     # Reconstruct content type
@@ -126,19 +133,26 @@ def reconstruct_metadata(article: dict) -> dict:
         }] if article.get('audio_url') else []
     )
 
-    # Build metadata
+    # Build metadata - use existing media_info from article if available
+    # This ensures we have the correct structure that was saved during processing
+    media_info = article.get('media_info', {})
+    if not media_info:
+        # Fallback: construct from video/audio URLs
+        media_info = {
+            'video_urls': content_type.video_urls,
+            'audio_urls': content_type.audio_urls
+        }
+
     metadata = {
         'title': article.get('title'),
         'url': article.get('url'),
         'platform': article.get('platform'),
         'content_type': content_type,
-        'article_text': article.get('original_article_text', ''),
-        'transcripts': transcripts,
-        'media_info': {
-            'video_urls': content_type.video_urls,
-            'audio_urls': content_type.audio_urls
-        },
-        'extracted_at': article.get('created_at')
+        'article_text': article.get('original_article_text', '') or article.get('article_text', ''),
+        'transcripts': article.get('transcripts', transcripts),  # Use stored transcripts if available
+        'media_info': media_info,
+        'extracted_at': article.get('created_at'),
+        'video_frames': article.get('video_frames', [])
     }
 
     logger.info(f"Reconstructed metadata:")
@@ -147,11 +161,12 @@ def reconstruct_metadata(article: dict) -> dict:
     logger.info(f"  - Transcript segments: {len(segments) if segments else 0}")
     logger.info(f"  - Video ID: {article.get('video_id')}")
     logger.info(f"  - Platform: {article.get('platform')}")
+    logger.info(f"  - Video frames: {len(article.get('video_frames', []))}")
 
     return metadata
 
 
-def update_article_in_db(article_id: int, ai_summary: dict):
+def update_article_in_db(article_id: int, ai_summary: dict, video_frames: list = None):
     """Update article with new AI-generated data"""
     supabase = get_supabase_client()
 
@@ -166,12 +181,18 @@ def update_article_in_db(article_id: int, ai_summary: dict):
         'topics': ai_summary.get('topics', [])
     }
 
+    # Include video_frames if provided (will contain enriched transcript data)
+    if video_frames:
+        update_data['video_frames'] = video_frames
+
     response = supabase.table('articles').update(update_data).eq('id', article_id).execute()
 
     logger.info(f"✅ Successfully updated article {article_id}")
     logger.info(f"  - Key insights: {len(update_data.get('key_insights', []))}")
     logger.info(f"  - Quotes: {len(update_data.get('quotes', []))}")
     logger.info(f"  - Topics: {len(update_data.get('topics', []))}")
+    if video_frames:
+        logger.info(f"  - Video frames updated: {len(video_frames)}")
 
 
 def main():
@@ -190,13 +211,18 @@ def main():
         # Step 2: Reconstruct metadata
         metadata = reconstruct_metadata(article)
 
-        # Step 3: Generate new AI summary using existing transcript
+        # Step 3: Enrich video frames with transcript excerpts (if frames exist)
         processor = ArticleProcessor()
+        if metadata.get('video_frames'):
+            logger.info("📝 Enriching video frames with transcript excerpts...")
+            processor._enrich_frames_with_transcript(metadata)
+
+        # Step 4: Generate new AI summary using existing transcript
         logger.info("🤖 Generating new AI summary...")
         ai_summary = processor._generate_summary_with_ai(article['url'], metadata)
 
-        # Step 4: Update database
-        update_article_in_db(article_id, ai_summary)
+        # Step 4: Update database (including enriched video_frames with transcript data)
+        update_article_in_db(article_id, ai_summary, metadata.get('video_frames'))
 
         logger.info("✅ Done! Article summary regenerated successfully.")
         logger.info(f"View at: http://localhost:3000/article/{article_id}")

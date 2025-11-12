@@ -340,9 +340,85 @@ class ArticleProcessor(BaseProcessor):
         if content_type.has_embedded_video:
             if progress_callback:
                 await progress_callback("detecting_video", {"video_count": len(content_type.video_urls)})
-            metadata.update(await self._process_video_content_async(
-                content_type.video_urls, soup, url, progress_callback
-            ))
+
+            # Use unified optimized method for demo videos, fallback to standard for others
+            if extract_demo_frames and content_type.video_urls:
+                # Get first video for demo processing
+                first_video = content_type.video_urls[0]
+                video_platform = first_video.get('platform')
+                video_id = first_video.get('video_id')
+                video_url = first_video.get('url')
+
+                self.logger.info(f"🎬 [DEMO MODE] Using unified optimized method for {video_platform} video")
+
+                result = await self._process_demo_video_optimized(
+                    video_url=video_url,
+                    video_id=video_id,
+                    platform=video_platform,
+                    base_url=url,
+                    progress_callback=progress_callback,
+                    referer=url
+                )
+
+                video_frames = result.get('video_frames', [])
+                transcript_data = result.get('transcript_data')
+
+                # If unified method failed to get transcript (e.g., due to authentication), fall back to standard method
+                if not transcript_data:
+                    self.logger.warning(f"⚠️ [DEMO MODE] Unified method failed to get transcript for {video_platform}, falling back to standard method")
+                    fallback_result = await self._process_video_content_async(
+                        content_type.video_urls, soup, url, progress_callback, extract_demo_frames=False
+                    )
+                    # Preserve any frames we managed to extract
+                    if video_frames:
+                        fallback_result['video_frames'] = video_frames
+                    metadata.update(fallback_result)
+                else:
+                    # Format transcript data to match expected structure
+                    transcripts = {}
+                    article_text = ''
+                    formatted_transcript = {
+                        'success': True,
+                        'type': 'deepgram',
+                        'text': transcript_data.get('text', ''),
+                        'segments': transcript_data.get('segments', []),
+                        'transcript': transcript_data.get('segments', []),
+                        'language': transcript_data.get('language', 'en'),
+                        'words': transcript_data.get('words', [])
+                    }
+                    transcripts[video_id] = formatted_transcript
+                    article_text = transcript_data.get('text', '')
+
+                    # Extract article text and images from page
+                    page_text = self._extract_article_text_content(soup)
+                    if page_text:
+                        article_text = f"{article_text}\n\n{page_text}" if article_text else page_text
+
+                    images = self._extract_article_images(soup, url)
+
+                    # TODO: TEMPORARY - Keep temp files for debugging
+                    if result.get('temp_video_path'):
+                        self.logger.info(f"💾 [TEMPORARY] Video file preserved at: {result['temp_video_path']}")
+                    if result.get('temp_dir'):
+                        self.logger.info(f"📂 [TEMPORARY] Temp directory preserved at: {result['temp_dir']}")
+
+                    # Use platform-specific key (e.g., 'vimeo_urls', 'loom_urls') for correct platform detection
+                    # This ensures the database platform field is set correctly (e.g., 'vimeo' not 'video')
+                    video_platform = content_type.video_urls[0].get('platform', 'youtube')
+                    media_key = f'{video_platform}_urls'
+
+                    metadata.update({
+                        'media_info': {media_key: content_type.video_urls},
+                        'transcripts': transcripts,
+                        'article_text': article_text,
+                        'images': images,
+                        'video_frames': video_frames
+                    })
+            else:
+                # Standard mode: use existing async method
+                metadata.update(await self._process_video_content_async(
+                    content_type.video_urls, soup, url, progress_callback, extract_demo_frames
+                ))
         elif content_type.has_embedded_audio:
             if progress_callback:
                 await progress_callback("detecting_audio", {"audio_count": len(content_type.audio_urls)})
@@ -355,6 +431,155 @@ class ArticleProcessor(BaseProcessor):
             metadata.update(self._process_text_content(soup, url))
 
         return metadata
+
+    async def _process_demo_video_optimized(
+        self,
+        video_url: str,
+        video_id: str,
+        platform: str,
+        base_url: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None,
+        referer: Optional[str] = None
+    ) -> Dict:
+        """
+        Unified optimized method for demo video processing across all platforms.
+        Downloads video once, then extracts both frames and audio from it.
+
+        This method is used by all platforms (YouTube, Loom, Vimeo, Wistia, Direct Media)
+        when extract_demo_frames=True to avoid duplicate downloads.
+
+        Args:
+            video_url: The video URL to download
+            video_id: Platform-specific video ID
+            platform: Platform name (youtube, loom, vimeo, wistia, direct)
+            base_url: Base URL for frame context
+            progress_callback: Optional async callback for progress updates
+            referer: Optional referer header for download
+
+        Returns:
+            Dictionary containing:
+                - video_frames: List of extracted frames with Supabase URLs
+                - transcript_data: Transcribed text with segments
+                - transcript_text: Plain text transcript
+                - temp_video_path: Path to downloaded video (for cleanup)
+                - temp_dir: Temp directory path (for cleanup)
+        """
+        self.logger.info(f"🎬 [DEMO VIDEO OPTIMIZED] Processing {platform} video: {video_id}")
+
+        video_frames = []
+        transcript_data = None
+        transcript_text = ''
+        temp_video_path = None
+        temp_dir = None
+
+        try:
+            # Step 1: Download full video (not just audio)
+            if progress_callback:
+                await progress_callback("downloading_video", {
+                    "message": f"Downloading {platform} video for frame extraction..."
+                })
+
+            import tempfile
+            temp_dir = tempfile.mkdtemp(prefix="demo_video_")
+            temp_template = os.path.join(temp_dir, f'video_{video_id}')
+
+            # For Vimeo and Loom, use embed URL (more likely to work without auth)
+            download_url = video_url
+            if platform == 'vimeo':
+                download_url = f'https://player.vimeo.com/video/{video_id}'
+                self.logger.info(f"🎬 [VIMEO] Using embed URL for download: {download_url}")
+            elif platform == 'loom':
+                download_url = f'https://www.loom.com/embed/{video_id}'
+                self.logger.info(f"🎬 [LOOM] Using embed URL for download: {download_url}")
+
+            self.logger.info(f"📥 [DEMO VIDEO OPTIMIZED] Downloading video from {platform}...")
+            temp_video_path = self._download_video_with_ytdlp(
+                download_url,
+                temp_template,
+                referer=referer,
+                download_video=True  # Download full video, not just audio
+            )
+
+            if not temp_video_path:
+                self.logger.error(f"❌ [DEMO VIDEO OPTIMIZED] Failed to download video")
+                return {
+                    'video_frames': [],
+                    'transcript_data': None,
+                    'transcript_text': '',
+                    'temp_video_path': None,
+                    'temp_dir': temp_dir
+                }
+
+            self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Video downloaded: {temp_video_path}")
+
+            # Step 2: Extract audio from downloaded video
+            if progress_callback:
+                await progress_callback("extracting_audio", {
+                    "message": "Extracting audio from video..."
+                })
+
+            self.logger.info(f"🎵 [DEMO VIDEO OPTIMIZED] Extracting audio from video...")
+            audio_temp_path = await self._extract_audio_from_video(temp_video_path, progress_callback=progress_callback)
+
+            if not audio_temp_path:
+                self.logger.error(f"❌ [DEMO VIDEO OPTIMIZED] Failed to extract audio")
+                return {
+                    'video_frames': [],
+                    'transcript_data': None,
+                    'transcript_text': '',
+                    'temp_video_path': temp_video_path,
+                    'temp_dir': temp_dir
+                }
+
+            self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Audio extracted: {audio_temp_path}")
+
+            # Step 3: Transcribe the extracted audio
+            if progress_callback:
+                await progress_callback("transcribing_audio", {
+                    "message": "Transcribing audio with DeepGram..."
+                })
+
+            self.logger.info(f"📝 [DEMO VIDEO OPTIMIZED] Transcribing audio...")
+            result = await self._transcribe_audio_with_size_check(
+                audio_temp_path,
+                media_type='video',
+                progress_callback=progress_callback
+            )
+
+            if result and result.get('transcript_data'):
+                transcript_data = result['transcript_data']
+                transcript_text = transcript_data.get('text', '')
+                self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Transcription successful ({len(transcript_text)} chars)")
+            else:
+                self.logger.warning(f"⚠️ [DEMO VIDEO OPTIMIZED] Transcription failed or empty")
+
+            # Step 4: Extract frames from video
+            if progress_callback:
+                await progress_callback("extracting_frames", {
+                    "message": "Extracting video frames..."
+                })
+
+            self.logger.info(f"🖼️ [DEMO VIDEO OPTIMIZED] Extracting frames...")
+            video_frames = await self._extract_and_upload_frames(temp_video_path, base_url)
+            self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Extracted {len(video_frames)} frames")
+
+            return {
+                'video_frames': video_frames,
+                'transcript_data': transcript_data,
+                'transcript_text': transcript_text,
+                'temp_video_path': temp_video_path,
+                'temp_dir': temp_dir
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ [DEMO VIDEO OPTIMIZED] Failed: {e}", exc_info=True)
+            return {
+                'video_frames': [],
+                'transcript_data': None,
+                'transcript_text': '',
+                'temp_video_path': temp_video_path,
+                'temp_dir': temp_dir
+            }
 
     async def _process_direct_loom_url(
         self,
@@ -394,102 +619,49 @@ class ArticleProcessor(BaseProcessor):
             'relevance_score': 1.0
         }]
 
-        # Extract transcript using the generic async video processing
-        self.logger.info(f"   🎥 [EXTRACTING] Transcript for Loom video...")
-
-        # OPTIMIZATION: If we need frames, download video once and extract audio from it
-        # Otherwise, use standard audio-only download path
+        # Process video using unified optimized method or standard fallback
         video_frames = []
-        video_temp_path = None
         transcripts = {}
         article_text = ''
 
         if extract_demo_frames:
-            self.logger.info("🎬 [DEMO VIDEO MODE] Downloading video once for both frames and audio...")
-            try:
-                # Step 1: Download full video using unified method
-                import tempfile
-                temp_dir = tempfile.mkdtemp(prefix="demo_video_")
-                temp_template = os.path.join(temp_dir, f'video_{video_id}')
+            # Use unified optimized method for demo mode
+            result = await self._process_demo_video_optimized(
+                video_url=url,
+                video_id=video_id,
+                platform='loom',
+                base_url=url,
+                progress_callback=progress_callback,
+                referer=url
+            )
 
-                video_temp_path = self._download_video_with_ytdlp(
-                    url,
-                    temp_template,
-                    referer=url,
-                    download_video=True  # Download full video, not just audio
-                )
+            video_frames = result.get('video_frames', [])
+            transcript_data = result.get('transcript_data')
 
-                if video_temp_path:
-                    # Step 2: Extract audio from video using ffmpeg (reuse existing method)
-                    audio_temp_path = await self._extract_audio_from_video(video_temp_path)
+            if transcript_data:
+                formatted_transcript = {
+                    'success': True,
+                    'type': 'deepgram',
+                    'text': transcript_data.get('text', ''),
+                    'segments': transcript_data.get('segments', []),
+                    'transcript': transcript_data.get('segments', []),
+                    'language': transcript_data.get('language', 'en'),
+                    'words': transcript_data.get('words', [])
+                }
+                transcripts[video_id] = formatted_transcript
+                article_text = transcript_data.get('text', '')
 
-                    if audio_temp_path:
-                        # Step 3: Transcribe the extracted audio
-                        self.logger.info(f"🎵 [DEMO VIDEO MODE] Transcribing extracted audio...")
-                        result = await self._transcribe_audio_with_size_check(
-                            audio_temp_path,
-                            media_type='video',
-                            progress_callback=progress_callback
-                        )
-
-                        if result and result.get('transcript_data'):
-                            transcript_data = result['transcript_data']
-                            formatted_transcript = {
-                                'success': True,
-                                'type': 'deepgram',
-                                'text': transcript_data.get('text', ''),
-                                'segments': transcript_data.get('segments', []),
-                                'language': transcript_data.get('language', 'en')
-                            }
-                            transcripts[video_id] = formatted_transcript
-                            article_text = transcript_data.get('text', '')
-                            self.logger.info(f"✅ [DEMO VIDEO MODE] Transcription successful")
-                        else:
-                            self.logger.warning(f"⚠️ [DEMO VIDEO MODE] Transcription failed")
-                    else:
-                        self.logger.warning(f"⚠️ [DEMO VIDEO MODE] Could not extract audio from video")
-
-                    # Step 4: Extract frames from same video file
-                    video_frames = await self._extract_and_upload_frames(video_temp_path, url)
-                    self.logger.info(f"✅ [FRAME EXTRACTION] Extracted {len(video_frames)} frames")
-
-                    # TODO: TEMPORARY - Remove cleanup to preserve video for testing
-                    # Clean up temp directory
-                    # try:
-                    #     import shutil
-                    #     shutil.rmtree(temp_dir)
-                    #     self.logger.info(f"🧹 Cleaned up temp directory: {temp_dir}")
-                    # except Exception as e:
-                    #     self.logger.warning(f"⚠️ Failed to remove temp directory: {e}")
-                    self.logger.info(f"💾 [TEMPORARY] Video file preserved at: {video_temp_path}")
-                    self.logger.info(f"📂 [TEMPORARY] Temp directory preserved at: {temp_dir}")
-                else:
-                    self.logger.warning("⚠️ [DEMO VIDEO MODE] Could not download video, falling back to audio-only")
-                    # Fall back to standard processing
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup('', 'html.parser')
-                    video_data = await self._process_video_content_async(
-                        video_urls, soup, url, progress_callback
-                    )
-                    transcripts = video_data.get('transcripts', {})
-                    article_text = video_data.get('article_text', '')
-
-            except Exception as e:
-                self.logger.error(f"❌ [DEMO VIDEO MODE] Failed: {e}", exc_info=True)
-                # Fall back to standard processing
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup('', 'html.parser')
-                video_data = await self._process_video_content_async(
-                    video_urls, soup, url, progress_callback
-                )
-                transcripts = video_data.get('transcripts', {})
-                article_text = video_data.get('article_text', '')
+            # TODO: TEMPORARY - Keep temp files for debugging
+            if result.get('temp_video_path'):
+                self.logger.info(f"💾 [TEMPORARY] Video file preserved at: {result['temp_video_path']}")
+            if result.get('temp_dir'):
+                self.logger.info(f"📂 [TEMPORARY] Temp directory preserved at: {result['temp_dir']}")
         else:
-            # Standard path: audio-only download
+            # Standard path: audio-only download (no frame extraction)
             from bs4 import BeautifulSoup
             soup = BeautifulSoup('', 'html.parser')
             video_data = await self._process_video_content_async(
-                video_urls, soup, url, progress_callback
+                video_urls, soup, url, progress_callback, extract_demo_frames=False
             )
             transcripts = video_data.get('transcripts', {})
             article_text = video_data.get('article_text', '')
@@ -549,103 +721,112 @@ class ArticleProcessor(BaseProcessor):
         if progress_callback:
             await progress_callback("fetch_complete", {"title": title})
 
-        # Download the media file using yt-dlp (extracts audio for video files)
-        self.logger.info(f"⬇️ [DOWNLOAD] Downloading {media_type} with yt-dlp (audio extraction)...")
-        if progress_callback:
-            await progress_callback("download_start", {"filename": filename})
+        # Use unified optimized method for demo videos, standard path for audio-only
+        transcripts = {}
+        article_text = ''
+        video_frames = []
 
         try:
-            # Use yt-dlp to download - it will extract only audio for video files
-            temp_template = os.path.join(tempfile.gettempdir(), f"direct_media_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-
-            audio_path = self._download_video_with_ytdlp(url, temp_template)
-
-            if not audio_path:
-                raise Exception("Failed to download media file with yt-dlp")
-
-            temp_path = audio_path
-            self.logger.info(f"✅ [DOWNLOAD] Audio downloaded to: {temp_path}")
-
-            if progress_callback:
-                await progress_callback("download_complete", {"path": temp_path})
-
-            # Use FileTranscriber to extract audio and transcribe
-            if not self.file_transcriber:
-                raise Exception("FileTranscriber not available - cannot process media files")
-
-            self.logger.info(f"🎙️ [TRANSCRIBE] Extracting audio and transcribing...")
-            if progress_callback:
-                await progress_callback("transcribe_start", {})
-
-            # Use centralized transcription method with automatic size checking and chunking
-            transcript_result = await self._transcribe_audio_with_size_check(
-                temp_path,
-                media_type='direct_file',
-                progress_callback=progress_callback
-            )
-
-            if not transcript_result:
-                raise Exception("Transcription failed")
-
-            # Extract video frames if requested (for demo videos)
-            video_frames = []
             if extract_demo_frames and media_type == 'video':
-                self.logger.info("🎬 [FRAME EXTRACTION] Extracting frames from demo video...")
+                # DEMO MODE: Use unified method (download video once for frames + transcription)
+                self.logger.info(f"🎬 [DEMO MODE] Using unified optimized method for direct media file...")
                 if progress_callback:
-                    await progress_callback("extracting_frames", {"message": "Extracting video frames..."})
+                    await progress_callback("download_start", {"filename": filename, "mode": "demo"})
 
-                try:
-                    # Download full video file (not just audio) for frame extraction
-                    video_temp_path = await self._download_video_for_frames(url)
+                result = await self._process_demo_video_optimized(
+                    video_url=url,
+                    video_id='direct_file',
+                    platform='direct_file',
+                    base_url=url,
+                    progress_callback=progress_callback,
+                    referer=None
+                )
 
-                    if video_temp_path:
-                        video_frames = await self._extract_and_upload_frames(video_temp_path, url)
-                        self.logger.info(f"✅ [FRAME EXTRACTION] Extracted {len(video_frames)} frames")
+                video_frames = result.get('video_frames', [])
+                transcript_data = result.get('transcript_data')
 
-                        # Clean up video file
-                        try:
-                            os.unlink(video_temp_path)
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to remove video temp file: {e}")
-
-                        if progress_callback:
-                            await progress_callback("frames_extracted", {"frame_count": len(video_frames)})
-                    else:
-                        self.logger.warning("⚠️ [FRAME EXTRACTION] Could not download video for frame extraction")
-
-                except Exception as e:
-                    self.logger.error(f"❌ [FRAME EXTRACTION] Failed: {e}", exc_info=True)
-                    if progress_callback:
-                        await progress_callback("frame_extraction_failed", {"error": str(e)})
-
-            # Clean up the audio temporary file
-            try:
-                os.unlink(temp_path)
-                self.logger.info(f"🗑️ [CLEANUP] Removed temporary audio file: {temp_path}")
-            except Exception as e:
-                self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp file: {e}")
-
-            # Handle case where video has no audio track
-            transcripts = {}
-            article_text = ''
-            if transcript_result is None:
-                self.logger.warning(f"⚠️ [{media_type.upper()}] No audio track found - will process without transcription")
-                if progress_callback:
-                    await progress_callback("no_audio_track", {"reason": "Video file has no audio track"})
-            else:
-                # Extract transcript data
-                transcript_data = transcript_result.get('transcript_data', {})
-                transcript_text = transcript_data.get('text', '')
-                transcripts = {
-                    'direct_file': {  # Use 'direct_file' as key to match video_id
-                        'success': True,  # Mark as successful for transcript formatting
-                        'text': transcript_text,
-                        'segments': transcript_data.get('segments', []),
-                        'duration': transcript_data.get('duration'),
-                        'source': 'deepgram',
-                        'type': 'deepgram'
+                if transcript_data:
+                    transcripts = {
+                        'direct_file': {
+                            'success': True,
+                            'text': transcript_data.get('text', ''),
+                            'segments': transcript_data.get('segments', []),
+                            'duration': transcript_data.get('duration'),
+                            'source': 'deepgram',
+                            'type': 'deepgram',
+                            'words': transcript_data.get('words', [])
+                        }
                     }
-                }
+                    article_text = transcript_data.get('text', '')
+
+                # TODO: TEMPORARY - Keep temp files
+                if result.get('temp_video_path'):
+                    self.logger.info(f"💾 [TEMPORARY] Video file preserved at: {result['temp_video_path']}")
+                if result.get('temp_dir'):
+                    self.logger.info(f"📂 [TEMPORARY] Temp directory preserved at: {result['temp_dir']}")
+
+            else:
+                # STANDARD MODE: Download audio only (more efficient, no frames needed)
+                self.logger.info(f"⬇️ [STANDARD MODE] Downloading {media_type} with yt-dlp (audio extraction)...")
+                if progress_callback:
+                    await progress_callback("download_start", {"filename": filename})
+
+                # Use yt-dlp to download - it will extract only audio for video files
+                temp_template = os.path.join(tempfile.gettempdir(), f"direct_media_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                audio_path = self._download_video_with_ytdlp(url, temp_template)
+
+                if not audio_path:
+                    raise Exception("Failed to download media file with yt-dlp")
+
+                temp_path = audio_path
+                self.logger.info(f"✅ [DOWNLOAD] Audio downloaded to: {temp_path}")
+
+                if progress_callback:
+                    await progress_callback("download_complete", {"path": temp_path})
+
+                # Use FileTranscriber to extract audio and transcribe
+                if not self.file_transcriber:
+                    raise Exception("FileTranscriber not available - cannot process media files")
+
+                self.logger.info(f"🎙️ [TRANSCRIBE] Extracting audio and transcribing...")
+                if progress_callback:
+                    await progress_callback("transcribe_start", {})
+
+                # Use centralized transcription method with automatic size checking and chunking
+                transcript_result = await self._transcribe_audio_with_size_check(
+                    temp_path,
+                    media_type='direct_file',
+                    progress_callback=progress_callback
+                )
+
+                # Clean up the audio temporary file
+                try:
+                    os.unlink(temp_path)
+                    self.logger.info(f"🗑️ [CLEANUP] Removed temporary audio file: {temp_path}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp file: {e}")
+
+                # Handle case where video has no audio track
+                if transcript_result is None:
+                    self.logger.warning(f"⚠️ [{media_type.upper()}] No audio track found - will process without transcription")
+                    if progress_callback:
+                        await progress_callback("no_audio_track", {"reason": "Video file has no audio track"})
+                elif not transcript_result:
+                    raise Exception("Transcription failed")
+                else:
+                    # Extract transcript data
+                    transcript_data = transcript_result.get('transcript_data', {})
+                    transcript_text = transcript_data.get('text', '')
+                    transcripts = {
+                        'direct_file': {
+                            'success': True,
+                            'text': transcript_text,
+                            'segments': transcript_data.get('segments', []),
+                            'duration': transcript_data.get('duration'),
+                            'source': 'deepgram',
+                            'type': 'deepgram'
+                        }
+                    }
                 # Use transcript text as article_text for AI analysis
                 article_text = transcript_text
                 if progress_callback:
@@ -739,46 +920,113 @@ class ArticleProcessor(BaseProcessor):
         except:
             title = f"YouTube Video: {video_id}"
 
-        # Extract transcript
-        self.logger.info(f"   🎥 [EXTRACTING] YouTube transcript for video: {video_id}")
-        transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
-
+        # For demo mode, use unified optimized method (download once for frames + audio)
+        # For standard mode, try native transcript first, then fallback to DeepGram
         transcripts = {}
         article_text = ""
+        video_frames = []
 
-        if transcript_data and transcript_data.get('success'):
-            transcripts[video_id] = transcript_data
-            self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
+        if extract_demo_frames:
+            # DEMO MODE: Try native transcript first (fast, free, high quality)
+            self.logger.info(f"   🎥 [DEMO MODE] Trying native YouTube transcript first...")
+            transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
 
-            # Extract text from transcript for article content
-            if 'transcript' in transcript_data:
-                article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
-                self.logger.info(f"      ✓ Extracted {len(article_text)} characters from transcript")
-        else:
-            error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
-            self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
+            if transcript_data and transcript_data.get('success'):
+                # Native transcript available - use it + download video for frames only
+                transcripts[video_id] = transcript_data
+                self.logger.info(f"      ✓ Using native transcript ({transcript_data.get('type', 'unknown')})")
 
-            # Fallback: Try to download and transcribe video audio using DeepGram
-            self.logger.info(f"      🎵 [FALLBACK] Attempting DeepGram transcription for video...")
+                if 'transcript' in transcript_data:
+                    article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
 
-            # Extract audio URL using yt-dlp
-            audio_url = self._extract_youtube_audio_url(video_id)
-            if audio_url:
-                self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with DeepGram...")
-                transcript_data = await self._download_and_transcribe_media_async(audio_url, "video")
-                if transcript_data:
-                    transcripts[video_id] = transcript_data
-                    self.logger.info(f"      ✓ Video transcription successful via DeepGram")
+                # Download video for frame extraction only (audio already transcribed via API)
+                self.logger.info("🎬 [DEMO MODE] Native transcript found, downloading video for frames only...")
+                try:
+                    video_temp_path = await self._download_video_for_frames(url)
+                    if video_temp_path:
+                        video_frames = await self._extract_and_upload_frames(video_temp_path, url)
+                        self.logger.info(f"✅ [DEMO MODE] Extracted {len(video_frames)} frames")
 
-                    # Extract text from transcript
-                    if 'transcript' in transcript_data:
-                        article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
-                        self.logger.info(f"      ✓ Extracted {len(article_text)} characters from DeepGram transcript")
-                else:
-                    self.logger.info(f"      ✗ DeepGram transcription failed")
+                        # Clean up
+                        try:
+                            import shutil
+                            temp_dir = os.path.dirname(video_temp_path)
+                            shutil.rmtree(temp_dir)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to cleanup: {e}")
+                    else:
+                        self.logger.warning("⚠️ [DEMO MODE] Could not download video for frames")
+                except Exception as e:
+                    self.logger.error(f"❌ [DEMO MODE] Frame extraction failed: {e}")
             else:
-                self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
-                self.logger.info(f"      ℹ️ [FALLBACK] Proceeding with title and metadata only")
+                # No native transcript - use unified method (download once for frames + transcription)
+                error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
+                self.logger.info(f"      ✗ No native transcript: {error_msg}")
+                self.logger.info(f"      🎬 [DEMO MODE] Using unified optimized method...")
+
+                result = await self._process_demo_video_optimized(
+                    video_url=url,
+                    video_id=video_id,
+                    platform='youtube',
+                    base_url=url,
+                    progress_callback=None,
+                    referer=None
+                )
+
+                video_frames = result.get('video_frames', [])
+                transcript_data_unified = result.get('transcript_data')
+
+                if transcript_data_unified:
+                    formatted_transcript = {
+                        'success': True,
+                        'type': 'deepgram',
+                        'text': transcript_data_unified.get('text', ''),
+                        'segments': transcript_data_unified.get('segments', []),
+                        'transcript': transcript_data_unified.get('segments', []),
+                        'language': transcript_data_unified.get('language', 'en'),
+                        'words': transcript_data_unified.get('words', [])
+                    }
+                    transcripts[video_id] = formatted_transcript
+                    article_text = transcript_data_unified.get('text', '')
+
+                # TODO: TEMPORARY - Keep temp files
+                if result.get('temp_video_path'):
+                    self.logger.info(f"💾 [TEMPORARY] Video file preserved at: {result['temp_video_path']}")
+                if result.get('temp_dir'):
+                    self.logger.info(f"📂 [TEMPORARY] Temp directory preserved at: {result['temp_dir']}")
+        else:
+            # STANDARD MODE: Try native transcript, fallback to DeepGram audio-only
+            self.logger.info(f"   🎥 [STANDARD MODE] Extracting YouTube transcript for video: {video_id}")
+            transcript_data = self.transcript_processor.get_youtube_transcript(video_id)
+
+            if transcript_data and transcript_data.get('success'):
+                transcripts[video_id] = transcript_data
+                self.logger.info(f"      ✓ Transcript extracted ({transcript_data.get('type', 'unknown')})")
+
+                if 'transcript' in transcript_data:
+                    article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
+                    self.logger.info(f"      ✓ Extracted {len(article_text)} characters from transcript")
+            else:
+                error_msg = transcript_data.get('error', 'Unknown error') if transcript_data else 'Unknown error'
+                self.logger.info(f"      ✗ No YouTube transcript available: {error_msg}")
+                self.logger.info(f"      🎵 [FALLBACK] Attempting DeepGram transcription for video...")
+
+                audio_url = self._extract_youtube_audio_url(video_id)
+                if audio_url:
+                    self.logger.info(f"      🎵 [FALLBACK] Transcribing audio with DeepGram...")
+                    transcript_data = await self._download_and_transcribe_media_async(audio_url, "video")
+                    if transcript_data:
+                        transcripts[video_id] = transcript_data
+                        self.logger.info(f"      ✓ Video transcription successful via DeepGram")
+
+                        if 'transcript' in transcript_data:
+                            article_text = ' '.join([entry['text'] for entry in transcript_data['transcript']])
+                            self.logger.info(f"      ✓ Extracted {len(article_text)} characters from DeepGram transcript")
+                    else:
+                        self.logger.info(f"      ✗ DeepGram transcription failed")
+                else:
+                    self.logger.info(f"      ✗ Could not extract audio URL from YouTube")
+                    self.logger.info(f"      ℹ️ [FALLBACK] Proceeding with title and metadata only")
 
         # Create video URL dict in expected format
         video_urls = [{
@@ -788,33 +1036,6 @@ class ArticleProcessor(BaseProcessor):
             'context': 'direct_url',
             'relevance_score': 1.0
         }]
-
-        # Extract video frames if requested (for demo videos)
-        # For YouTube, we have native transcripts so only download video when needed for frames
-        video_frames = []
-        if extract_demo_frames:
-            self.logger.info("🎬 [FRAME EXTRACTION] Extracting frames from YouTube video...")
-            try:
-                # Download full YouTube video for frame extraction
-                video_temp_path = await self._download_video_for_frames(url)
-
-                if video_temp_path:
-                    video_frames = await self._extract_and_upload_frames(video_temp_path, url)
-                    self.logger.info(f"✅ [FRAME EXTRACTION] Extracted {len(video_frames)} frames")
-
-                    # Clean up video file and temp directory
-                    try:
-                        import shutil
-                        temp_dir = os.path.dirname(video_temp_path)
-                        shutil.rmtree(temp_dir)
-                        self.logger.info(f"🧹 Cleaned up temp directory: {temp_dir}")
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Failed to remove temp directory: {e}")
-                else:
-                    self.logger.warning("⚠️ [FRAME EXTRACTION] Could not download YouTube video for frame extraction")
-
-            except Exception as e:
-                self.logger.error(f"❌ [FRAME EXTRACTION] Failed: {e}", exc_info=True)
 
         return {
             'title': title,
@@ -837,7 +1058,8 @@ class ArticleProcessor(BaseProcessor):
         video_urls: List[Dict],
         soup,
         base_url: str,
-        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None,
+        extract_demo_frames: bool = False
     ) -> Dict:
         """
         Async version: Process content with single validated video with progress callbacks
@@ -847,9 +1069,10 @@ class ArticleProcessor(BaseProcessor):
             soup: BeautifulSoup object
             base_url: Base URL for resolving relative links
             progress_callback: Optional async callback for progress updates
+            extract_demo_frames: If True, extract video frames for demo videos
 
         Returns:
-            Dict with transcripts, article_text, and images
+            Dict with transcripts, article_text, images, and video_frames
         """
         # Should only receive 1 validated video from detection logic
         if not video_urls:
@@ -924,6 +1147,12 @@ class ArticleProcessor(BaseProcessor):
                     direct_url = f'https://vimeo.com/{video_id}'
                     urls_to_try = [embed_url, direct_url]
                     self.logger.info(f"      🎵 [VIMEO] Will try embed URL first, then direct URL")
+                elif platform == 'loom':
+                    # Try embed URL first for Loom (more reliable)
+                    embed_url = f'https://www.loom.com/embed/{video_id}'
+                    direct_url = f'https://www.loom.com/share/{video_id}'
+                    urls_to_try = [embed_url, direct_url]
+                    self.logger.info(f"      🎵 [LOOM] Will try embed URL first, then direct URL")
                 elif platform == 'html5_video':
                     # For HTML5 video, use the direct URL from the video object (e.g., Q4 Inc MP4 files)
                     video_url = video.get('url')
@@ -979,7 +1208,9 @@ class ArticleProcessor(BaseProcessor):
                                     'type': 'deepgram',
                                     'text': transcript_data.get('text', ''),
                                     'segments': transcript_data.get('segments', []),
-                                    'language': transcript_data.get('language', 'en')
+                                    'transcript': transcript_data.get('segments', []),  # Also use 'transcript' key for consistency
+                                    'language': transcript_data.get('language', 'en'),
+                                    'words': transcript_data.get('words', [])  # Include word-level data for frame extraction
                                 }
                                 transcripts[video_id] = formatted_transcript
                                 self.logger.info(f"      ✓ Video transcription successful via DeepGram")
@@ -1014,6 +1245,15 @@ class ArticleProcessor(BaseProcessor):
         # Extract images from article
         images = self._extract_article_images(soup, base_url)
 
+        # IMPORTANT: _process_video_content_async should NOT be used for demo videos anymore.
+        # Demo videos should use _process_demo_video_optimized directly for efficiency.
+        # This code path is only for backward compatibility and will be removed.
+        video_frames = []
+        if extract_demo_frames:
+            self.logger.warning("⚠️ [DEPRECATED] _process_video_content_async called with extract_demo_frames=True")
+            self.logger.warning("⚠️ [DEPRECATED] Use _process_demo_video_optimized instead for better efficiency")
+            # Still support it for now but log deprecation warning
+
         # Determine transcript method for frontend
         transcript_method = None
         if transcripts:
@@ -1043,7 +1283,8 @@ class ArticleProcessor(BaseProcessor):
             'media_info': {media_key: video_urls},
             'transcripts': transcripts,
             'article_text': article_text or 'Content not available',
-            'images': images
+            'images': images,
+            'video_frames': video_frames
         }
 
     async def _process_audio_content_async(
@@ -1160,6 +1401,88 @@ class ArticleProcessor(BaseProcessor):
             'images': images
         }
 
+    def _enrich_frames_with_transcript(self, metadata: Dict) -> None:
+        """
+        Enrich video frames with transcript excerpts for AI analysis and UI display
+
+        Modifies metadata['video_frames'] in-place to add:
+        - transcript_excerpt: Full transcript text for this frame's time window
+        - (summary will be added by AI later)
+
+        Args:
+            metadata: Article metadata containing video_frames and transcripts
+        """
+        video_frames = metadata.get('video_frames', [])
+        if not video_frames:
+            return
+
+        # Get the first transcript (should only be one)
+        transcripts = metadata.get('transcripts', {})
+        if not transcripts:
+            self.logger.info("   ℹ️ No transcript data available for frame enrichment")
+            return
+
+        # Get the transcript data (first entry)
+        transcript_data = next(iter(transcripts.values()))
+
+        # Debug: Check what data we have available
+        has_words = bool(transcript_data.get('words'))
+        has_segments = bool(transcript_data.get('segments') or transcript_data.get('transcript'))
+        self.logger.info(f"   🔍 [FRAME ENRICHMENT] Transcript data - has_words: {has_words}, has_segments: {has_segments}")
+        if has_words:
+            self.logger.info(f"   🔍 [FRAME ENRICHMENT] Word-level data available: {len(transcript_data.get('words', []))} words")
+
+        self.logger.info(f"   📝 Enriching {len(video_frames)} frames with transcript excerpts...")
+
+        for i, frame in enumerate(video_frames):
+            start_time = frame['timestamp_seconds']
+
+            # Determine end time: use next frame's timestamp, or add reasonable window
+            if i < len(video_frames) - 1:
+                end_time = video_frames[i + 1]['timestamp_seconds']
+            else:
+                # For last frame, use 120 second window (2 minutes)
+                end_time = start_time + 120
+
+            # Extract transcript excerpt for this time window
+            excerpt = self._extract_transcript_excerpt(transcript_data, start_time, end_time, max_words=100)
+
+            if excerpt:
+                frame['transcript_excerpt'] = excerpt
+            else:
+                frame['transcript_excerpt'] = ""
+
+        self.logger.info(f"   ✅ Enriched {len(video_frames)} frames with transcript data")
+
+    def _apply_frame_summaries(self, metadata: Dict, frame_summaries: List[Dict]) -> None:
+        """
+        Apply AI-generated summaries to video frames
+
+        Modifies metadata['video_frames'] in-place to add:
+        - transcript_summary: AI-generated 10-word summary of what happens at this timestamp
+
+        Args:
+            metadata: Article metadata containing video_frames
+            frame_summaries: List of {"frame_index": 0, "summary": "..."} from AI response
+        """
+        video_frames = metadata.get('video_frames', [])
+        if not video_frames:
+            return
+
+        self.logger.info(f"   📝 Applying AI-generated summaries to {len(video_frames)} frames...")
+
+        # Create a mapping of frame_index to summary
+        summary_map = {item['frame_index']: item['summary'] for item in frame_summaries}
+
+        # Apply summaries to frames
+        applied_count = 0
+        for i, frame in enumerate(video_frames):
+            if i in summary_map:
+                frame['transcript_summary'] = summary_map[i]
+                applied_count += 1
+
+        self.logger.info(f"   ✅ Applied {applied_count} AI summaries to frames")
+
     async def _generate_summary_async(self, url: str, metadata: Dict) -> Dict:
         """
         Async wrapper for AI summary generation.
@@ -1168,6 +1491,10 @@ class ArticleProcessor(BaseProcessor):
         the event loop, enabling real-time SSE streaming.
         """
         import asyncio
+
+        # Enrich video frames with transcript excerpts BEFORE sending to AI
+        if metadata.get('video_frames'):
+            self._enrich_frames_with_transcript(metadata)
 
         # Run the synchronous method in a thread pool
         return await asyncio.to_thread(self._generate_summary_with_ai, url, metadata)
@@ -1213,6 +1540,11 @@ class ArticleProcessor(BaseProcessor):
                 # Format as HTML if not already formatted
                 if not any(tag in summary for tag in ['<p>', '<div>', '<h1>', '<h2>', '<h3>']):
                     parsed_json['summary'] = self._format_summary_as_html(summary)
+
+            # Apply frame summaries to video_frames in metadata if present
+            if 'frame_summaries' in parsed_json and metadata.get('video_frames'):
+                self._apply_frame_summaries(metadata, parsed_json['frame_summaries'])
+
             self.logger.info("   ✅ [JSON] Successfully parsed Claude response")
             return parsed_json
         else:
@@ -1300,6 +1632,69 @@ class ArticleProcessor(BaseProcessor):
         except Exception as e:
             self.logger.error(f"   ❌ [EMBEDDING] Failed to generate embedding: {e}")
             return None
+
+    def _extract_transcript_excerpt(self, transcript_data: Dict, start_seconds: float, end_seconds: float, max_words: int = 100) -> str:
+        """
+        Extract transcript text between two timestamps using word-level data
+
+        Args:
+            transcript_data: Transcript data from DeepGram (with 'words' array)
+            start_seconds: Start timestamp in seconds
+            end_seconds: End timestamp in seconds
+            max_words: Maximum words to include in excerpt (default: 100)
+
+        Returns:
+            Transcript text excerpt (truncated to max_words)
+        """
+        if not transcript_data or not transcript_data.get('success'):
+            return ""
+
+        # Try to use word-level data for precision
+        words = transcript_data.get('words', [])
+
+        if words:
+            # Extract words within the time window
+            excerpt_words = []
+            for word_data in words:
+                word_start = word_data.get('start', 0)
+                word = word_data.get('word', '')
+
+                if start_seconds <= word_start < end_seconds:
+                    excerpt_words.append(word)
+
+                # Stop early if we've hit max_words
+                if len(excerpt_words) >= max_words:
+                    break
+
+            return ' '.join(excerpt_words)
+
+        else:
+            # Fallback to segment-level data if word-level not available
+            # When using segments, we need to check if ANY part of the segment overlaps with our time window
+            segments = transcript_data.get('segments', transcript_data.get('transcript', []))
+            excerpt_text = []
+
+            for i, segment in enumerate(segments):
+                seg_start = segment.get('start', 0)
+                seg_text = segment.get('text', '')
+
+                # Determine segment end time (start of next segment, or use a default duration)
+                if i < len(segments) - 1:
+                    seg_end = segments[i + 1].get('start', seg_start + 30)
+                else:
+                    seg_end = seg_start + 30  # Assume 30 second duration for last segment
+
+                # Include segment if it overlaps with our time window at all
+                # Segment overlaps if: segment starts before window ends AND segment ends after window starts
+                if seg_start < end_seconds and seg_end > start_seconds:
+                    excerpt_text.append(seg_text)
+
+            full_text = ' '.join(excerpt_text)
+            # Truncate to max_words
+            words_list = full_text.split()
+            if len(words_list) > max_words:
+                return ' '.join(words_list[:max_words])
+            return full_text
 
     def _build_embedding_text(self, metadata: Dict, ai_summary: Dict) -> str:
         """
@@ -1785,11 +2180,13 @@ class ArticleProcessor(BaseProcessor):
             formatted_transcript = {
                 'success': True,
                 'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
+                'segments': transcript_list,  # Also use 'segments' key for consistency
                 'text': transcript_data.get('text', ''),
                 'language': transcript_data.get('language', 'unknown'),
                 'type': 'deepgram_transcription',
                 'source': media_type,
-                'total_entries': len(transcript_list)
+                'total_entries': len(transcript_list),
+                'words': transcript_data.get('words', [])  # Include word-level timestamps for frame extraction
             }
 
             self.logger.info(f"   ✅ [DEEPGRAM] Transcription successful ({len(formatted_transcript['text'])} chars)")
@@ -1884,11 +2281,13 @@ class ArticleProcessor(BaseProcessor):
             formatted_transcript = {
                 'success': True,
                 'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
+                'segments': transcript_list,  # Also use 'segments' key for consistency
                 'text': transcript_data.get('text', ''),
                 'language': transcript_data.get('language', 'unknown'),
                 'type': transcript_data.get('type', 'deepgram_transcription'),
                 'source': media_type,
-                'total_entries': len(transcript_list)
+                'total_entries': len(transcript_list),
+                'words': transcript_data.get('words', [])  # Include word-level timestamps for frame extraction
             }
 
             self.logger.info(f"   ✅ [DEEPGRAM] Transcription successful ({len(formatted_transcript['text'])} chars)")
@@ -1963,7 +2362,8 @@ class ArticleProcessor(BaseProcessor):
                     'duration': max([seg.get('start', 0) + seg.get('duration', 0)
                                    for seg in formatted_transcript.get('transcript', [])] or [0]),
                     'provider': 'deepgram',
-                    'type': formatted_transcript.get('type', 'deepgram')
+                    'type': formatted_transcript.get('type', 'deepgram'),
+                    'words': formatted_transcript.get('words', [])  # Include word-level data for frame extraction
                 },
                 'output_file': None  # Chunking method handles cleanup
             }
@@ -2022,6 +2422,7 @@ class ArticleProcessor(BaseProcessor):
 
             # Transcribe each chunk
             all_segments = []
+            all_words = []
             all_text = []
             chunks_completed = 0
 
@@ -2059,10 +2460,20 @@ class ArticleProcessor(BaseProcessor):
                             'duration': segment.get('end', 0) - segment.get('start', 0)
                         })
 
+                    # Also collect word-level data with adjusted timestamps
+                    words = transcript_data.get('words', [])
+                    for word in words:
+                        all_words.append({
+                            'word': word.get('word', ''),
+                            'start': word.get('start', 0) + start_offset,
+                            'end': word.get('end', 0) + start_offset,
+                            'confidence': word.get('confidence', 0)
+                        })
+
                     all_text.append(transcript_data.get('text', ''))
                     chunks_completed += 1
 
-                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments)")
+                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments, {len(words)} words)")
 
                     # Clean up chunk files
                     os.unlink(chunk_path)
@@ -2088,6 +2499,7 @@ class ArticleProcessor(BaseProcessor):
             formatted_transcript = {
                 'success': True,
                 'transcript': all_segments,
+                'segments': all_segments,  # Also use 'segments' key for consistency
                 'text': ' '.join(all_text),
                 'language': 'unknown',
                 'type': 'deepgram_transcription_chunked' + ('_partial' if is_partial else ''),
@@ -2095,7 +2507,8 @@ class ArticleProcessor(BaseProcessor):
                 'total_entries': len(all_segments),
                 'chunks_processed': chunks_completed,
                 'total_chunks': len(chunks),
-                'is_partial': is_partial
+                'is_partial': is_partial,
+                'words': all_words  # Include combined word-level data for frame extraction
             }
 
             if is_partial:
@@ -2169,6 +2582,7 @@ class ArticleProcessor(BaseProcessor):
 
             # Transcribe each chunk
             all_segments = []
+            all_words = []
             all_text = []
             chunks_completed = 0
 
@@ -2212,10 +2626,20 @@ class ArticleProcessor(BaseProcessor):
                             'duration': segment.get('end', 0) - segment.get('start', 0)
                         })
 
+                    # Also collect word-level data with adjusted timestamps
+                    words = transcript_data.get('words', [])
+                    for word in words:
+                        all_words.append({
+                            'word': word.get('word', ''),
+                            'start': word.get('start', 0) + start_offset,
+                            'end': word.get('end', 0) + start_offset,
+                            'confidence': word.get('confidence', 0)
+                        })
+
                     all_text.append(transcript_data.get('text', ''))
                     chunks_completed += 1
 
-                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments)")
+                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments, {len(words)} words)")
 
                     # Clean up chunk files
                     await asyncio.to_thread(os.unlink, chunk_path)
@@ -2241,6 +2665,7 @@ class ArticleProcessor(BaseProcessor):
             formatted_transcript = {
                 'success': True,
                 'transcript': all_segments,
+                'segments': all_segments,  # Also use 'segments' key for consistency
                 'text': ' '.join(all_text),
                 'language': 'unknown',
                 'type': 'deepgram_transcription_chunked' + ('_partial' if is_partial else ''),
@@ -2248,7 +2673,8 @@ class ArticleProcessor(BaseProcessor):
                 'total_entries': len(all_segments),
                 'chunks_processed': chunks_completed,
                 'total_chunks': len(chunks),
-                'is_partial': is_partial
+                'is_partial': is_partial,
+                'words': all_words  # Include combined word-level data for frame extraction
             }
 
             if is_partial:
@@ -2460,61 +2886,79 @@ class ArticleProcessor(BaseProcessor):
     # _format_transcript_for_analysis moved to core/prompts.py (VideoContextBuilder._format_transcript and AudioContextBuilder._format_transcript)
 
     def _format_transcript_for_display(self, transcript_data: Dict) -> str:
-        """Format transcript for display (grouped into 30+ second sections)"""
+        """
+        Format transcript for display.
+        - DeepGram transcripts: Use natural paragraph segments as-is
+        - YouTube transcripts: Group into minimum 30-second chunks for better readability
+        """
         if not transcript_data or not transcript_data.get('success'):
             return ""
 
         # Handle both YouTube API format ('transcript') and DeepGram format ('segments')
         transcript = transcript_data.get('transcript', transcript_data.get('segments', []))
+
+        # Check if this is a YouTube transcript (has 'type' field set to 'manual' or 'auto_generated')
+        # or if it's a DeepGram transcript (will have paragraph-level segments already)
+        is_youtube = transcript_data.get('type') in ['manual', 'auto_generated']
+
         formatted_sections = []
 
-        # Group transcript entries into 30+ second sections
-        current_section_start = None
-        current_section_text = []
-        min_section_duration = 30  # minimum 30 seconds per section
+        if is_youtube:
+            # YouTube transcripts: Group into minimum 30-second chunks
+            current_group_start = None
+            current_group_text = []
 
-        for entry in transcript:
-            start_time = entry.get('start', 0)
-            text = entry.get('text', '').strip()
+            for entry in transcript:
+                start_time = entry.get('start', 0)
+                text = entry.get('text', '').strip()
 
-            if not text:
-                continue
+                if not text:
+                    continue
 
-            # Start a new section if this is the first entry
-            if current_section_start is None:
-                current_section_start = start_time
-                current_section_text = [text]
-            else:
-                # Check if we should start a new section
-                section_duration = start_time - current_section_start
-
-                # Start new section if: we've exceeded min duration AND at sentence boundary
-                is_sentence_boundary = current_section_text[-1].rstrip().endswith(('.', '!', '?'))
-
-                if section_duration >= min_section_duration and is_sentence_boundary:
-                    # Save current section
-                    minutes = int(current_section_start // 60)
-                    seconds = int(current_section_start % 60)
-                    timestamp = f"[{minutes}:{seconds:02d}]"
-                    section_text = " ".join(current_section_text)
-                    formatted_sections.append(f"{timestamp} {section_text}")
-
-                    # Start new section
-                    current_section_start = start_time
-                    current_section_text = [text]
+                # Start new group if this is the first entry
+                if current_group_start is None:
+                    current_group_start = start_time
+                    current_group_text = [text]
+                # Check if we should start a new group (30 seconds elapsed)
+                elif start_time - current_group_start >= 30:
+                    # Save the current group
+                    self._add_formatted_section(formatted_sections, current_group_start, ' '.join(current_group_text))
+                    # Start new group
+                    current_group_start = start_time
+                    current_group_text = [text]
                 else:
-                    # Continue current section
-                    current_section_text.append(text)
+                    # Add to current group
+                    current_group_text.append(text)
 
-        # Add the final section
-        if current_section_start is not None and current_section_text:
-            minutes = int(current_section_start // 60)
-            seconds = int(current_section_start % 60)
-            timestamp = f"[{minutes}:{seconds:02d}]"
-            section_text = " ".join(current_section_text)
-            formatted_sections.append(f"{timestamp} {section_text}")
+            # Add the final group
+            if current_group_start is not None and current_group_text:
+                self._add_formatted_section(formatted_sections, current_group_start, ' '.join(current_group_text))
+        else:
+            # DeepGram transcripts: Use natural paragraph boundaries (no regrouping)
+            for entry in transcript:
+                start_time = entry.get('start', 0)
+                text = entry.get('text', '').strip()
+
+                if not text:
+                    continue
+
+                self._add_formatted_section(formatted_sections, start_time, text)
 
         return "\n\n".join(formatted_sections)
+
+    def _add_formatted_section(self, sections: List[str], start_time: float, text: str) -> None:
+        """Helper to format and add a timestamped section"""
+        # Format timestamp as [MM:SS] or [H:MM:SS]
+        hours = int(start_time // 3600)
+        minutes = int((start_time % 3600) // 60)
+        seconds = int(start_time % 60)
+
+        if hours > 0:
+            timestamp = f"[{hours}:{minutes:02d}:{seconds:02d}]"
+        else:
+            timestamp = f"[{minutes}:{seconds:02d}]"
+
+        sections.append(f"{timestamp} {text}")
 
     def _convert_timestamp_to_seconds(self, timestamp: str) -> int:
         """Convert MM:SS or H:MM:SS timestamp to seconds"""
@@ -2541,12 +2985,17 @@ class ArticleProcessor(BaseProcessor):
 
         return html
 
-    async def _extract_audio_from_video(self, video_path: str) -> Optional[str]:
+    async def _extract_audio_from_video(
+        self,
+        video_path: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Optional[str]:
         """
         Extract audio from video file using ffmpeg
 
         Args:
             video_path: Path to video file
+            progress_callback: Optional callback to send keepalive events during processing
 
         Returns:
             Path to extracted audio file (MP3), or None if failed
@@ -2578,7 +3027,31 @@ class ArticleProcessor(BaseProcessor):
                 stderr=asyncio.subprocess.PIPE
             )
 
-            stdout, stderr = await process.communicate()
+            # Send keepalive events while ffmpeg is running to prevent SSE timeout
+            keepalive_task = None
+            if progress_callback:
+                async def send_keepalive():
+                    """Send periodic keepalive events during long-running ffmpeg operation"""
+                    count = 0
+                    while True:
+                        await asyncio.sleep(5)  # Send keepalive every 5 seconds
+                        count += 1
+                        await progress_callback("extracting_audio_progress", {
+                            "message": f"Extracting audio from video... ({count * 5}s elapsed)"
+                        })
+
+                keepalive_task = asyncio.create_task(send_keepalive())
+
+            try:
+                stdout, stderr = await process.communicate()
+            finally:
+                # Cancel keepalive task when ffmpeg completes
+                if keepalive_task:
+                    keepalive_task.cancel()
+                    try:
+                        await keepalive_task
+                    except asyncio.CancelledError:
+                        pass
 
             if process.returncode == 0 and os.path.exists(audio_path):
                 file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
@@ -2610,16 +3083,17 @@ class ArticleProcessor(BaseProcessor):
         import glob
 
         try:
+            # TODO: TEMPORARY - Disabled cleanup to preserve videos for testing
             # Clean up any old video_frames_* temp directories first
-            temp_base = tempfile.gettempdir()
-            old_temp_dirs = glob.glob(os.path.join(temp_base, "video_frames_*"))
-            for old_dir in old_temp_dirs:
-                try:
-                    import shutil
-                    shutil.rmtree(old_dir)
-                    self.logger.info(f"🧹 Cleaned up old temp directory: {old_dir}")
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Could not clean up old temp directory {old_dir}: {e}")
+            # temp_base = tempfile.gettempdir()
+            # old_temp_dirs = glob.glob(os.path.join(temp_base, "video_frames_*"))
+            # for old_dir in old_temp_dirs:
+            #     try:
+            #         import shutil
+            #         shutil.rmtree(old_dir)
+            #         self.logger.info(f"🧹 Cleaned up old temp directory: {old_dir}")
+            #     except Exception as e:
+            #         self.logger.warning(f"⚠️ Could not clean up old temp directory {old_dir}: {e}")
 
             # Create temp directory
             temp_dir = tempfile.mkdtemp(prefix="video_frames_")

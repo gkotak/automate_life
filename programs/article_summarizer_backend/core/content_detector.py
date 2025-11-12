@@ -386,7 +386,7 @@ class ContentTypeDetector:
 
     def _detect_direct_video_url(self, url: str) -> Optional[Dict]:
         """
-        Detect if the URL itself is a direct video link (Loom, YouTube, etc.)
+        Detect if the URL itself is a direct video link (Loom, YouTube, Vimeo, etc.)
 
         Args:
             url: The URL to check
@@ -428,6 +428,25 @@ class ContentTypeDetector:
                     'url': f'https://www.youtube.com/watch?v={video_id}',
                     'embed_url': f'https://www.youtube.com/embed/{video_id}',
                     'platform': 'youtube',
+                    'context': 'direct_url'
+                }
+
+        # Vimeo direct URL patterns
+        vimeo_patterns = [
+            r'(?:https?://)?(?:www\.)?vimeo\.com/([0-9]+)',
+            r'(?:https?://)?(?:www\.)?vimeo\.com/channels/[\w-]+/([0-9]+)',
+            r'(?:https?://)?(?:www\.)?vimeo\.com/groups/[\w-]+/videos/([0-9]+)'
+        ]
+
+        for pattern in vimeo_patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                return {
+                    'video_id': video_id,
+                    'url': f'https://vimeo.com/{video_id}',
+                    'embed_url': f'https://player.vimeo.com/video/{video_id}',
+                    'platform': 'vimeo',
                     'context': 'direct_url'
                 }
 
