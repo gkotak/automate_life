@@ -2008,12 +2008,20 @@ class ArticleProcessor(BaseProcessor):
 
             if download_video:
                 # For frame extraction, we don't need high quality - use lower quality formats
-                # This significantly reduces download size (17MB vs 200+MB) and processing time
-                # 480p or lower is sufficient for generating thumbnail frames
-                format_options = ['bestvideo[height<=480]+bestaudio/best[height<=480]/worst']
+                # This significantly reduces download size and processing time
+                # Try multiple format strategies with graceful fallbacks:
+                # 1. Prefer 480p if available (good balance of quality/size)
+                # 2. Fall back to 'worst' (lowest quality available)
+                # 3. Finally try 'best' as last resort
+                format_options = [
+                    'bestvideo[height<=480]+bestaudio/best[height<=480]',  # Prefer 480p
+                    'worst',  # Fallback to lowest quality
+                    'best'    # Last resort - use whatever is available
+                ]
+
                 if is_youtube:
-                    # YouTube often blocks even medium quality, so add worst as fallback
-                    format_options.append('worst')
+                    # YouTube often blocks higher quality, so prioritize 'worst' first
+                    format_options = ['worst', 'best']
 
                 last_error = None
                 for format_str in format_options:
@@ -2052,9 +2060,16 @@ class ArticleProcessor(BaseProcessor):
                         last_error = e
                         error_msg = str(e)
 
-                        # Check if it's a 403 error and we have more formats to try
-                        if '403' in error_msg and format_str != format_options[-1]:
-                            self.logger.warning(f"      ⚠️ [YT-DLP] Best quality blocked (403), trying fallback format...")
+                        # Check if we should try next format (on format errors or 403)
+                        # Common errors: "Requested format is not available", "403 Forbidden"
+                        should_retry = (
+                            ('not available' in error_msg.lower() or '403' in error_msg)
+                            and format_str != format_options[-1]
+                        )
+
+                        if should_retry:
+                            self.logger.warning(f"      ⚠️ [YT-DLP] Format '{format_str}' failed: {error_msg[:100]}")
+                            self.logger.info(f"      🔄 [YT-DLP] Trying next fallback format...")
                             # Clean up any partial downloads before retry
                             pattern = output_template + "*"
                             for f in glob.glob(pattern):
@@ -2064,7 +2079,7 @@ class ArticleProcessor(BaseProcessor):
                                     pass
                             continue
                         else:
-                            # Not a 403 or no more formats to try - raise the error
+                            # No more formats to try - raise the error
                             raise
 
                 # If we exhausted all format options, raise the last error
