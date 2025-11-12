@@ -2003,19 +2003,71 @@ class ArticleProcessor(BaseProcessor):
                 except Exception as e:
                     self.logger.warning(f"      ⚠️ Could not clean up existing file {f}: {e}")
 
+            # Determine if this is a YouTube URL (for fallback strategy)
+            is_youtube = 'youtube.com' in video_url or 'youtu.be' in video_url
+
             if download_video:
-                self.logger.info(f"      🔧 [YT-DLP] Downloading full video with yt-dlp...")
-                ydl_opts = {
-                    'format': 'bestvideo+bestaudio/best',  # Download both streams and merge, fallback to best single file
-                    'outtmpl': output_template,
-                    'quiet': True,
-                    'no_warnings': True,
-                    'nocheckcertificate': True,
-                    'no_check_certificate': True,
-                    'ignoreerrors': False,
-                    'merge_output_format': 'mp4',  # Merge to MP4 if separate video/audio streams
-                    # No postprocessor - keep video as-is (ffmpeg will merge streams automatically)
-                }
+                # Try best quality first, fall back to worst on 403 for YouTube
+                format_options = ['bestvideo+bestaudio/best']
+                if is_youtube:
+                    format_options.append('worst')  # Fallback for YouTube when best quality is blocked
+
+                last_error = None
+                for format_str in format_options:
+                    try:
+                        if format_str == 'worst':
+                            self.logger.info(f"      🔄 [YT-DLP FALLBACK] Trying lower quality format (worst) to bypass restrictions...")
+                        else:
+                            self.logger.info(f"      🔧 [YT-DLP] Downloading full video with yt-dlp...")
+
+                        ydl_opts = {
+                            'format': format_str,
+                            'outtmpl': output_template,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'nocheckcertificate': True,
+                            'no_check_certificate': True,
+                            'ignoreerrors': False,
+                            'merge_output_format': 'mp4',  # Merge to MP4 if separate video/audio streams
+                        }
+
+                        # Add referer if provided (helps with embedded videos like Vimeo)
+                        if referer:
+                            ydl_opts['http_headers'] = {'Referer': referer, 'Origin': referer}
+                            if format_str == format_options[0]:  # Only log once
+                                self.logger.info(f"      🔧 [YT-DLP] Using referer/origin: {referer[:80]}...")
+
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            ydl.download([video_url])
+
+                        # If we get here, download succeeded - break out of retry loop
+                        if format_str == 'worst':
+                            self.logger.info(f"      ✅ [YT-DLP FALLBACK] Successfully downloaded with lower quality format")
+                        break
+
+                    except Exception as e:
+                        last_error = e
+                        error_msg = str(e)
+
+                        # Check if it's a 403 error and we have more formats to try
+                        if '403' in error_msg and format_str != format_options[-1]:
+                            self.logger.warning(f"      ⚠️ [YT-DLP] Best quality blocked (403), trying fallback format...")
+                            # Clean up any partial downloads before retry
+                            pattern = output_template + "*"
+                            for f in glob.glob(pattern):
+                                try:
+                                    os.unlink(f)
+                                except:
+                                    pass
+                            continue
+                        else:
+                            # Not a 403 or no more formats to try - raise the error
+                            raise
+
+                # If we exhausted all format options, raise the last error
+                if last_error and not glob.glob(output_template + "*"):
+                    raise last_error
+
             else:
                 self.logger.info(f"      🔧 [YT-DLP] Downloading audio with yt-dlp...")
                 ydl_opts = {
@@ -2034,13 +2086,13 @@ class ArticleProcessor(BaseProcessor):
                     }],
                 }
 
-            # Add referer if provided (helps with embedded videos like Vimeo)
-            if referer:
-                ydl_opts['http_headers'] = {'Referer': referer, 'Origin': referer}
-                self.logger.info(f"      🔧 [YT-DLP] Using referer/origin: {referer[:80]}...")
+                # Add referer if provided (helps with embedded videos like Vimeo)
+                if referer:
+                    ydl_opts['http_headers'] = {'Referer': referer, 'Origin': referer}
+                    self.logger.info(f"      🔧 [YT-DLP] Using referer/origin: {referer[:80]}...")
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([video_url])
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([video_url])
 
             # yt-dlp adds the extension, so we need to find the actual file
             # It could be .m4a, .webm, .opus, etc.
