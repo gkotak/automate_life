@@ -51,71 +51,22 @@ export default function BrandPanel() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
+          justifyContent: 'center',
           padding: '0px',
           gap: '24px',
           width: '278px',
           zIndex: 0
         }}
       >
-        {/* Logo and brand name - Link */}
-        <div
+        {/* Particles Logo */}
+        <img
+          src="/particles_logo_white.svg"
+          alt="Particles"
           style={{
-            display: 'flex',
-            flexDirection: 'row',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: '0px',
-            gap: '8px',
-            height: '40px',
-            mixBlendMode: 'normal',
-            borderRadius: '0px'
+            height: '60px',
+            width: 'auto'
           }}
-        >
-          {/* Icon */}
-          <div
-            style={{
-              width: '40px',
-              height: '40px',
-              mixBlendMode: 'normal'
-            }}
-          >
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-              <circle cx="20" cy="20" r="14" fill="#FFFFFF" />
-              {[...Array(8)].map((_, i) => {
-                const angle = (i * Math.PI) / 4;
-                return (
-                  <line
-                    key={i}
-                    x1="20"
-                    y1="20"
-                    x2={20 + Math.cos(angle) * 15}
-                    y2={20 + Math.sin(angle) * 15}
-                    stroke="#FFFFFF"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-            </svg>
-          </div>
-
-          {/* Brand name */}
-          <div
-            style={{
-              fontFamily: 'Manrope, sans-serif',
-              fontStyle: 'normal',
-              fontWeight: 800,
-              fontSize: '28px',
-              lineHeight: '32px',
-              display: 'flex',
-              alignItems: 'center',
-              letterSpacing: '-0.56px',
-              color: '#FFFFFF'
-            }}
-          >
-            Article Summarizer
-          </div>
-        </div>
+        />
 
         {/* Value proposition - Supporting text */}
         <div
@@ -130,7 +81,7 @@ export default function BrandPanel() {
             color: '#FFFFFF'
           }}
         >
-          AI-powered article analysis with video and audio content extraction for comprehensive summaries.
+          Transform articles into actionable insights with AI-powered analysis
         </div>
       </div>
     </div>

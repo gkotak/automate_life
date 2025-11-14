@@ -51,10 +51,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-8 py-8">
-      <div className="border border-slate-200 rounded-2xl p-12 flex gap-8" style={{ width: '876px', height: '654px' }}>
+    <div className="min-h-screen flex items-center justify-center bg-white px-4 sm:px-8 py-8">
+      <div className="border border-slate-200 rounded-2xl p-6 sm:p-12 flex gap-8 w-full max-w-[876px]" style={{ minHeight: '654px' }}>
         {/* Left column - Form */}
-        <div className="flex-1" style={{ width: '364px' }}>
+        <div className="flex-1 w-full sm:w-[364px]">
           <div className="mb-8">
             <h2 className="text-3xl font-semibold text-gray-950 mb-2 text-center">
               Welcome
@@ -117,8 +117,8 @@ export default function LoginPage() {
         </form>
         </div>
 
-        {/* Right column - Brand Panel */}
-        <div className="flex-1" style={{ width: '364px' }}>
+        {/* Right column - Brand Panel (hidden on mobile) */}
+        <div className="hidden lg:flex flex-1" style={{ width: '364px' }}>
           <BrandPanel />
         </div>
       </div>
