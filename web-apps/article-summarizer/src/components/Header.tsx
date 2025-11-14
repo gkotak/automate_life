@@ -71,26 +71,13 @@ export default function Header() {
     <header className="bg-white border-b border-gray-200">
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center py-4">
-          {/* Left side - Logo, Title, and Tagline */}
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            {/* Logo Icon */}
-            <div className="relative flex-shrink-0">
-              <div className="absolute inset-0 bg-gradient-to-br from-[#077331] to-[#055a24] opacity-20 blur-lg rounded-full"></div>
-              <div className="relative bg-gradient-to-br from-[#077331] to-[#055a24] p-2 rounded-xl shadow-lg">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-            </div>
-            {/* Logo Text and Tagline */}
-            <div className="flex flex-col">
-              <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-[#077331] to-[#055a24] bg-clip-text text-transparent leading-tight">
-                Article Summarizer
-              </h1>
-              <p className="hidden sm:block text-sm text-gray-600 mt-0.5">
-                Transform articles into actionable insights with AI-powered analysis
-              </p>
-            </div>
+          {/* Left side - Logo */}
+          <Link href="/" className="transition-opacity hover:opacity-70">
+            <img
+              src="/particles_logo.svg"
+              alt="Particles"
+              className="h-14 w-auto"
+            />
           </Link>
 
           {/* Right side - Action buttons */}
