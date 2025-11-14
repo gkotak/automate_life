@@ -8,6 +8,7 @@ import ArticleSummary from '@/components/article/ArticleSummary'
 import ImageGallery from '@/components/article/ImageGallery'
 import RelatedArticles from '@/components/RelatedArticles'
 import HighlightedText from '@/components/HighlightedText'
+import ShareButton from '@/components/ShareButton'
 
 // YouTube API type declarations
 declare global {
@@ -45,6 +46,23 @@ export default function ArticlePage() {
       setHighlightTerms(searchQuery)
     }
   }, [searchQuery, termsParam])
+
+  // Handle timestamp URL parameter - jump to specific time on page load
+  useEffect(() => {
+    const timestampParam = searchParams.get('timestamp')
+    if (timestampParam && jumpToTimeFunc && article) {
+      const seconds = parseInt(timestampParam, 10)
+      if (!isNaN(seconds) && seconds >= 0) {
+        // Wait a bit for player to be ready, then jump to timestamp
+        const timer = setTimeout(() => {
+          console.log(`Jumping to timestamp from URL: ${seconds}s`)
+          jumpToTimeFunc(seconds)
+        }, 2000) // Give player 2 seconds to initialize
+
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [searchParams, jumpToTimeFunc, article])
 
   useEffect(() => {
     if (params.id) {
@@ -195,8 +213,8 @@ export default function ArticlePage() {
           const player = (window as any).youtubePlayer
           if (player && player.seekTo) {
             player.seekTo(seconds, true)
-            player.playVideo()
-            // Ensure 2x speed after seeking
+            // Don't auto-play to avoid browser restrictions
+            // Ensure 2x speed is set
             setTimeout(() => {
               player.setPlaybackRate(2)
             }, 100)
@@ -206,7 +224,7 @@ export default function ArticlePage() {
           const video = document.getElementById('direct-video-player') as HTMLVideoElement
           if (video) {
             video.currentTime = seconds
-            video.play()
+            // Don't auto-play to avoid browser restrictions
             // Ensure 2x speed
             video.playbackRate = 2.0
 
@@ -256,11 +274,7 @@ export default function ArticlePage() {
               iframe.contentWindow?.postMessage(JSON.stringify(speedMessage), 'https://player.vimeo.com')
             }, 100)
 
-            // Also trigger play
-            setTimeout(() => {
-              const playMessage = { method: 'play' }
-              iframe.contentWindow?.postMessage(JSON.stringify(playMessage), 'https://player.vimeo.com')
-            }, 200)
+            // Don't auto-play to avoid browser restrictions
 
             // Track which timestamp was clicked
             setClickedTimestamp(seconds)
@@ -320,12 +334,10 @@ export default function ArticlePage() {
         const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement
         if (audioPlayer) {
           audioPlayer.currentTime = seconds
-          audioPlayer.play()
-          // Ensure 2x speed after seeking
-          setTimeout(() => {
-            audioPlayer.playbackRate = 2.0
-          }, 100)
-          console.log(`Jumped to ${seconds}s at 2x speed in audio`)
+          // Don't auto-play to avoid browser restrictions
+          // Ensure 2x speed
+          audioPlayer.playbackRate = 2.0
+          console.log(`Jumped to ${seconds}s (ready at 2x speed)`)
         } else {
           console.warn('Audio player not found')
         }
@@ -402,6 +414,38 @@ export default function ArticlePage() {
       case 'stratechery': return 'bg-blue-100 text-blue-800'
       default: return 'bg-gray-100 text-gray-800'
     }
+  }
+
+  // Get current playback time for video
+  const getCurrentVideoTime = (): number => {
+    if (!article) return 0
+    const platform = article.platform || 'youtube'
+
+    if (platform === 'youtube') {
+      const player = (window as any).youtubePlayer
+      if (player && player.getCurrentTime) {
+        return player.getCurrentTime()
+      }
+    } else if (platform === 'direct_file' || article.video_id === 'direct_file') {
+      const video = document.getElementById('direct-video-player') as HTMLVideoElement
+      if (video) {
+        return video.currentTime
+      }
+    } else {
+      // For Loom, Vimeo, and other platforms, we can't easily get current time
+      // Return 0 for now (could be enhanced with platform-specific APIs)
+      console.warn(`Getting current time not supported for ${platform}`)
+    }
+    return 0
+  }
+
+  // Get current playback time for audio
+  const getCurrentAudioTime = (): number => {
+    const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement
+    if (audioPlayer) {
+      return audioPlayer.currentTime
+    }
+    return 0
   }
 
   if (loading) {
@@ -489,7 +533,13 @@ export default function ArticlePage() {
       {article.content_source === 'video' && article.video_id && (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="space-y-2">
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Video</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Video</h3>
+              <ShareButton
+                articleId={params.id as string}
+                getCurrentTime={getCurrentVideoTime}
+              />
+            </div>
             {article.platform === 'youtube' && (
               <p className="text-xs sm:text-sm text-gray-600">
                 ⚡ Video automatically plays at 2x speed for efficient watching. Use player controls to adjust.
@@ -508,7 +558,13 @@ export default function ArticlePage() {
       {article.content_source === 'audio' && article.audio_url && (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="space-y-2 sm:space-y-3">
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900">🎧 Listen to Audio</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900">🎧 Listen to Audio</h3>
+              <ShareButton
+                articleId={params.id as string}
+                getCurrentTime={getCurrentAudioTime}
+              />
+            </div>
             <p className="text-xs sm:text-sm text-gray-600">
               ⚡ Audio automatically plays at 2x speed for efficient listening. You can adjust speed in player controls.
             </p>

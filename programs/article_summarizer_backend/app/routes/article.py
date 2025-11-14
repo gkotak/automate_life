@@ -35,57 +35,6 @@ class ProcessArticleResponse(BaseModel):
     url: Optional[str] = None
 
 
-@router.post("/process-article", response_model=ProcessArticleResponse)
-async def process_article(
-    request: ProcessArticleRequest,
-    user_id: str = Depends(verify_supabase_jwt)
-):
-    """
-    Process an article URL and save to database
-
-    This endpoint:
-    1. Fetches the article content (with authentication if needed)
-    2. Extracts video/audio transcripts if present
-    3. Generates AI-powered summary using Claude
-    4. Saves structured data to Supabase
-    5. Returns the article ID for frontend display
-
-    Args:
-        request: ProcessArticleRequest with URL
-        user_id: User ID extracted from JWT token
-
-    Returns:
-        ProcessArticleResponse with article_id and status
-    """
-    logger.info(f"📥 Processing article request: {request.url} for user: {user_id}")
-
-    try:
-        # Import ArticleProcessor here to avoid circular imports
-        from app.services.article_processor import ArticleProcessor
-
-        # Initialize processor
-        processor = ArticleProcessor()
-
-        # Process the article (now async) with user_id
-        article_id = await processor.process_article(str(request.url), user_id=user_id)
-
-        logger.info(f"✅ Successfully processed article: ID={article_id}")
-
-        return ProcessArticleResponse(
-            article_id=article_id,
-            status="success",
-            message="Article processed successfully",
-            url=f"/article/{article_id}"
-        )
-
-    except Exception as e:
-        logger.error(f"❌ Failed to process article {request.url}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process article: {str(e)}"
-        )
-
-
 class ProcessArticleStreamResponse(BaseModel):
     """Response model for starting article processing with SSE"""
     job_id: str
@@ -267,21 +216,24 @@ async def process_article_direct(
                     "data": {**data, "elapsed": elapsed()}
                 })
 
-            # Step 1: Extract metadata (includes content fetch and transcription)
+            # Step 0 & 1: YouTube Discovery + Fetch Start
             yield {
                 "event": "fetch_start",
                 "data": json.dumps({"url": url, "elapsed": elapsed()})
             }
             await asyncio.sleep(0)
 
-            logger.info(f"Starting metadata extraction for: {url} (demo_video={demo_video})")
+            # Try to discover YouTube URL from content_queue (part of "Fetching article" step)
+            processing_url = await processor._try_youtube_discovery(url)
+
+            logger.info(f"Starting metadata extraction for: {processing_url} (demo_video={demo_video})")
 
             # Run metadata extraction in background task
             async def extract_metadata_task():
                 nonlocal metadata_result, extraction_error
                 try:
                     metadata_result = await processor._extract_metadata(
-                        url,
+                        processing_url,
                         progress_callback=progress_callback,
                         extract_demo_frames=demo_video
                     )
@@ -326,7 +278,7 @@ async def process_article_direct(
             await asyncio.sleep(0)
 
             logger.info("Starting AI summary generation...")
-            ai_summary = await processor._generate_summary_async(url, metadata)
+            ai_summary = await processor._generate_summary_async(processing_url, metadata)
 
             yield {
                 "event": "ai_complete",

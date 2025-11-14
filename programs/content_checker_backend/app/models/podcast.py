@@ -11,7 +11,7 @@ class PodcastEpisode(BaseModel):
     """Podcast episode data model"""
     id: Optional[str] = None
     episode_title: str
-    podcast_title: str
+    podcast_title: Optional[str] = None  # Can be None when podcast lookup fails
     episode_url: str
     podcast_video_url: Optional[str] = None
     progress_percent: Optional[float] = None

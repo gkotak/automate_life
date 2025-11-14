@@ -11,7 +11,7 @@ const CONTENT_CHECKER_API_KEY = process.env.NEXT_PUBLIC_CONTENT_CHECKER_API_KEY 
 interface PodcastEpisode {
   id: string;
   episode_title: string;
-  podcast_title: string;
+  podcast_title: string | null;
   episode_url: string;
   podcast_video_url: string | null;
   progress_percent: number | null;
@@ -375,9 +375,9 @@ export default function PodcastHistoryPage() {
                       const truncatedTitle = podcast.episode_title.length > 200
                         ? podcast.episode_title.substring(0, 200) + '...'
                         : podcast.episode_title;
-                      const truncatedPodcast = podcast.podcast_title.length > 200
+                      const truncatedPodcast = podcast.podcast_title && podcast.podcast_title.length > 200
                         ? podcast.podcast_title.substring(0, 200) + '...'
-                        : podcast.podcast_title;
+                        : podcast.podcast_title || '';
 
                       return (
                         <tr key={podcast.id} className="hover:bg-gray-50 transition-colors">
@@ -387,15 +387,23 @@ export default function PodcastHistoryPage() {
                                 <div className="text-sm font-medium text-gray-900 break-words" title={podcast.episode_title}>
                                   {truncatedTitle}
                                 </div>
-                                <div className="text-xs text-gray-500 break-words mt-0.5" title={podcast.podcast_title}>
-                                  {truncatedPodcast}
+                                <div className="text-xs text-gray-500 break-words mt-0.5" title={podcast.podcast_title || 'Cannot find podcast'}>
+                                  {podcast.status === 'failed' && !podcast.podcast_title ? (
+                                    <span className="text-gray-400 italic">Cannot find podcast</span>
+                                  ) : (
+                                    truncatedPodcast
+                                  )}
                                 </div>
                               </div>
-                              {isNew && (
+                              {podcast.status === 'failed' && !podcast.podcast_title ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-red-600 text-white flex-shrink-0">
+                                  ERROR
+                                </span>
+                              ) : isNew ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-[#077331] text-white flex-shrink-0">
                                   NEW
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

@@ -75,11 +75,11 @@ class PodcastHistoryCheckerService:
             # Check if we've already tracked this episode
             if episode_url not in existing_urls:
                 self.logger.info(f"New episode found: {episode_details['episode_title']}")
-                new_podcasts_found += 1
 
                 # Save to database and get the ID
                 episode_id = self._save_podcast_episode(episode_details)
                 if episode_id:
+                    new_podcasts_found += 1
                     newly_discovered_ids.append(episode_id)
 
         message = f"Found {new_podcasts_found} new podcast episodes" if new_podcasts_found > 0 else "No new podcasts found"
@@ -242,7 +242,8 @@ class PodcastHistoryCheckerService:
         try:
             episode_uuid = episode.get('uuid', '')
             episode_title = episode.get('title', 'Unknown Episode')
-            podcast_title = episode.get('podcastTitle', 'Unknown Podcast')
+            # Handle empty string or None for podcastTitle
+            podcast_title = episode.get('podcastTitle') or 'Unknown Podcast'
             podcast_uuid = episode.get('podcastUuid', '')
 
             duration = episode.get('duration', 0)
@@ -293,36 +294,16 @@ class PodcastHistoryCheckerService:
             self.logger.error(f"Error fetching existing podcasts: {e}")
             return set()
 
-    def _get_known_podcast_youtube_url(self, podcast_title: str) -> Optional[str]:
-        """
-        Check if podcast is in known_channels table and return YouTube URL
-
-        Args:
-            podcast_title: The podcast title to check
-
-        Returns:
-            YouTube channel or playlist URL if known, None otherwise
-        """
-        try:
-            result = self.supabase.table('known_channels')\
-                .select('youtube_url')\
-                .eq('channel_name', podcast_title)\
-                .eq('is_active', True)\
-                .single()\
-                .execute()
-
-            if result.data:
-                youtube_url = result.data.get('youtube_url')
-                if youtube_url:
-                    self.logger.info(f"      ✅ [KNOWN CHANNEL] Found YouTube URL for '{podcast_title}': {youtube_url}")
-                    return youtube_url
-
-        except Exception as e:
-            # Not found is expected for unknown podcasts
-            if 'PGRST116' not in str(e):  # Ignore "no rows returned" error
-                self.logger.debug(f"      ℹ️ [KNOWN CHANNEL] Podcast not in database: {podcast_title}")
-
-        return None
+    # REMOVED: YouTube discovery methods moved to Article Processor
+    # The following methods have been removed:
+    # - _get_known_podcast_youtube_url()
+    # - _extract_youtube_url_from_pocketcasts()
+    # - _validate_youtube_video()
+    # - _scrape_youtube_playlist_for_episode()
+    # - _find_youtube_video_url()
+    #
+    # YouTube discovery now happens in article_processor.py during article processing
+    # This makes content checking fast (seconds instead of minutes)
 
     def _fuzzy_match_titles(self, episode_title: str, video_title: str, episode_published_date: Optional[str] = None, video_published_date: Optional[str] = None) -> tuple[bool, float, float]:
         """
@@ -393,354 +374,58 @@ class PodcastHistoryCheckerService:
         matches = ratio >= threshold
         return matches, ratio, threshold
 
-    def _extract_youtube_url_from_pocketcasts(self, episode_url: str) -> Optional[str]:
+    def _fetch_podcast_title_from_uuid(self, podcast_uuid: str) -> str:
         """
-        Step 1a: Extract YouTube URL from PocketCasts episode page
-
-        Args:
-            episode_url: PocketCasts episode URL
-
-        Returns:
-            YouTube URL (video, channel, or playlist) or None
+        Fetch podcast title from PocketCasts API using podcast UUID
+        Fallback when podcastTitle is not in history API response
+        Returns 'ERROR: Cannot find podcast' if page is invalid
         """
         try:
-            import re
-            from bs4 import BeautifulSoup
-
-            self.logger.info(f"      [STEP 1a] Checking PocketCasts page for YouTube link...")
-
-            response = requests.get(episode_url, timeout=10)
+            import requests
+            url = f"https://pocketcasts.com/podcast/{podcast_uuid}"
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
 
+            from bs4 import BeautifulSoup
             soup = BeautifulSoup(response.content, 'html.parser')
 
-            # First, search HTML links (most reliable)
-            youtube_link_pattern = re.compile(r'(youtube\.com|youtu\.be)', re.IGNORECASE)
-            links = soup.find_all('a', href=youtube_link_pattern)
+            # First, check if we got a valid podcast page
+            # Invalid pages have titles like "Discover - Pocket Casts"
+            if soup.title:
+                page_title = soup.title.string.strip() if soup.title.string else ''
+                if page_title.startswith('Discover'):
+                    self.logger.warning(f"   ⚠️ Invalid podcast page (got Discover page instead of podcast page)")
+                    return 'ERROR: Cannot find podcast'
 
-            if links:
-                youtube_url = links[0].get('href', '')
-                if youtube_url:
-                    # Ensure it's a full URL
-                    if not youtube_url.startswith('http'):
-                        youtube_url = f"https://{youtube_url}"
-                    self.logger.info(f"      ✅ [STEP 1a] Found YouTube URL in HTML: {youtube_url[:60]}...")
-                    return youtube_url
+            # Try to find podcast title in meta tags
+            og_title = soup.find('meta', property='og:title')
+            if og_title:
+                title = og_title.get('content', '').strip()
+                if title:
+                    # Double-check this isn't a generic page
+                    if title.startswith('Discover'):
+                        self.logger.warning(f"   ⚠️ Invalid podcast page (og:title is '{title}')")
+                        return 'ERROR: Cannot find podcast'
 
-            # Fallback: Look for YouTube links in text content
-            youtube_patterns = [
-                r'youtube\.com/watch\?v=([^/\s"\'&]+)',  # Direct video
-                r'youtu\.be/([A-Za-z0-9_-]+)',  # Short URL
-                r'youtube\.com/channel/([^/\s"\'?&]+)',
-                r'youtube\.com/@([^/\s"\'?&]+)',
-                r'youtube\.com/c/([^/\s"\'?&]+)',
-                r'youtube\.com/user/([^/\s"\'?&]+)',
-                r'youtube\.com/playlist\?list=([^/\s"\'&]+)'
-            ]
+                    self.logger.info(f"   📻 Fetched podcast title: {title}")
+                    return title
 
-            page_text = soup.get_text()
-            for pattern in youtube_patterns:
-                match = re.search(pattern, page_text, re.IGNORECASE)
-                if match:
-                    # Reconstruct full URL
-                    if 'youtu.be' in pattern:
-                        youtube_url = f"https://youtu.be/{match.group(1)}"
-                    elif 'watch?v=' in pattern:
-                        youtube_url = f"https://www.youtube.com/watch?v={match.group(1)}"
-                    elif 'playlist' in pattern:
-                        youtube_url = f"https://www.youtube.com/playlist?list={match.group(1)}"
-                    else:
-                        youtube_url = match.group(0)
-                        if not youtube_url.startswith('http'):
-                            youtube_url = f"https://{youtube_url}"
-
-                    self.logger.info(f"      ✅ [STEP 1a] Found YouTube URL in text: {youtube_url[:60]}...")
-                    return youtube_url
-
-            self.logger.info(f"      ℹ️ [STEP 1a] No YouTube link found on PocketCasts page")
-            return None
+            # Fallback to page title
+            if soup.title:
+                title = soup.title.string.strip()
+                if title and ' - Pocket Casts' in title:
+                    title = title.replace(' - Pocket Casts', '').strip()
+                    if not title.startswith('Discover'):
+                        self.logger.info(f"   📻 Fetched podcast title from page: {title}")
+                        return title
 
         except Exception as e:
-            self.logger.warning(f"      ⚠️ [STEP 1a] Error extracting YouTube URL: {e}")
-            return None
+            self.logger.error(f"   ❌ Error fetching podcast title: {e}")
+            return 'ERROR: Cannot find podcast'
 
-    def _validate_youtube_video(self, video_url: str, episode_title: str, episode_published_date: Optional[str] = None) -> bool:
-        """
-        Validate that a YouTube video URL matches the episode using fuzzy matching
-
-        Args:
-            video_url: YouTube video URL
-            episode_title: Episode title to match
-            episode_published_date: Episode publish date (ISO format)
-
-        Returns:
-            True if video matches episode
-        """
-        try:
-            from bs4 import BeautifulSoup
-            from difflib import SequenceMatcher
-            import json
-
-            self.logger.info(f"      [STEP 1a] Validating direct video URL...")
-
-            response = requests.get(video_url, timeout=10)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.text, 'html.parser')
-
-            # Extract video title and publish date from ytInitialData
-            video_title = None
-            video_published_date = None
-
-            for script in soup.find_all('script'):
-                script_text = script.string or ''
-                if 'var ytInitialData = ' in script_text:
-                    start = script_text.find('var ytInitialData = ') + len('var ytInitialData = ')
-                    end = script_text.find('};', start) + 1
-                    json_str = script_text[start:end]
-                    try:
-                        yt_data = json.loads(json_str)
-                        contents = yt_data.get('contents', {}).get('twoColumnWatchNextResults', {}).get('results', {}).get('results', {}).get('contents', [])
-
-                        if contents and len(contents) > 0:
-                            video_primary_info = contents[0].get('videoPrimaryInfoRenderer', {})
-
-                            # Extract title
-                            video_title = video_primary_info.get('title', {}).get('runs', [{}])[0].get('text')
-
-                            # Extract publish date
-                            date_text = video_primary_info.get('dateText', {}).get('simpleText', '')
-                            if date_text:
-                                # dateText is like "Oct 30, 2024" - parse it
-                                video_published_date = date_text
-
-                        if video_title:
-                            break
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
-
-            if not video_title:
-                # Fallback to meta tags for title
-                title_tag = soup.find('meta', property='og:title')
-                if title_tag:
-                    video_title = title_tag.get('content', '')
-
-            if not video_title:
-                self.logger.warning(f"      ⚠️ [STEP 1a] Could not extract video title")
-                return False
-
-            # Use shared fuzzy matching logic with video publish date
-            matches, ratio, threshold = self._fuzzy_match_titles(episode_title, video_title, episode_published_date, video_published_date)
-
-            self.logger.info(f"      {'✅' if matches else '❌'} [STEP 1a] Match: {ratio:.1%} (need {threshold:.0%})")
-            self.logger.info(f"      📝 Episode: {episode_title[:60]}...")
-            self.logger.info(f"      🎬 Video:   {video_title[:60]}...")
-            if video_published_date:
-                self.logger.info(f"      📅 Video published: {video_published_date}")
-            if episode_published_date and video_published_date:
-                self.logger.info(f"      💡 Using date-aware threshold: {threshold:.0%}")
-
-            return matches
-
-        except Exception as e:
-            self.logger.warning(f"      ⚠️ [STEP 1a] Error validating video: {e}")
-            return False
-
-    def _scrape_youtube_playlist_for_episode(self, playlist_url: str, episode_title: str, episode_published_date: Optional[str] = None) -> Optional[str]:
-        """
-        Step 1b: Scrape YouTube playlist/channel to find matching episode
-
-        Args:
-            playlist_url: YouTube playlist or channel URL
-            episode_title: Episode title to match
-            episode_published_date: Episode publish date (ISO format)
-
-        Returns:
-            YouTube video URL or None
-        """
-        try:
-            from bs4 import BeautifulSoup
-            from difflib import SequenceMatcher
-            import re
-            import json
-
-            self.logger.info(f"      [STEP 1b] Scraping YouTube playlist/channel...")
-
-            response = requests.get(playlist_url, timeout=15)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.content, 'html.parser')
-
-            # Extract videos from ytInitialData using recursive search
-            videos = []
-
-            def find_videos_recursive(obj, videos_list):
-                """Recursively search for richItemRenderer or playlistVideoRenderer"""
-                if isinstance(obj, dict):
-                    # Found a playlist video
-                    if 'playlistVideoRenderer' in obj:
-                        video_data = obj['playlistVideoRenderer']
-                        video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
-                        video_id = video_data.get('videoId', '')
-                        video_info_runs = video_data.get('videoInfo', {}).get('runs', [])
-                        video_published = video_info_runs[-1].get('text', '') if video_info_runs else ''
-                        if video_title and video_id:
-                            videos_list.append({
-                                'title': video_title,
-                                'url': f'https://www.youtube.com/watch?v={video_id}',
-                                'published': video_published
-                            })
-
-                    # Found a channel video
-                    elif 'richItemRenderer' in obj:
-                        try:
-                            video_data = obj['richItemRenderer']['content']['videoRenderer']
-                            video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
-                            video_id = video_data.get('videoId', '')
-                            video_published = video_data.get('publishedTimeText', {}).get('simpleText', '')
-                            if video_title and video_id:
-                                videos_list.append({
-                                    'title': video_title,
-                                    'url': f'https://www.youtube.com/watch?v={video_id}',
-                                    'published': video_published
-                                })
-                        except (KeyError, TypeError):
-                            pass
-
-                    # Recurse into dictionary values
-                    for value in obj.values():
-                        find_videos_recursive(value, videos_list)
-
-                elif isinstance(obj, list):
-                    # Recurse into list items
-                    for item in obj:
-                        find_videos_recursive(item, videos_list)
-
-            for script in soup.find_all('script'):
-                if not script.string or 'ytInitialData' not in script.string:
-                    continue
-
-                match = re.search(r'var ytInitialData = ({.*?});', script.string)
-                if not match:
-                    continue
-
-                try:
-                    data = json.loads(match.group(1))
-                    find_videos_recursive(data, videos)
-                    if videos:
-                        break
-                except json.JSONDecodeError:
-                    continue
-
-            if not videos:
-                self.logger.warning(f"      ⚠️ [STEP 1b] No videos found in playlist/channel")
-                return None
-
-            self.logger.info(f"      📊 [STEP 1b] Found {len(videos)} videos, matching against episode...")
-
-            # Find best match using fuzzy matching
-            best_match = None
-            best_ratio = 0.0
-
-            for video in videos:
-                # Use shared fuzzy matching logic with video publish date
-                video_pub_date = video.get('published', '')
-                matches, ratio, threshold = self._fuzzy_match_titles(
-                    episode_title,
-                    video['title'],
-                    episode_published_date,
-                    video_pub_date
-                )
-
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_match = video
-
-                # Log good matches
-                if ratio > 0.4:
-                    pub_info = f" [{video_pub_date}]" if video_pub_date else ""
-                    self.logger.info(f"      🔍 [STEP 1b] Match: {ratio:.1%} - {video['title'][:60]}{pub_info}...")
-
-                # Return if we found a strong match
-                if matches:
-                    self.logger.info(f"      ✅ [STEP 1b] Found match ({ratio:.1%}, threshold {threshold:.0%}): {video['url']}")
-                    return video['url']
-
-            # Log best match if no strong match found
-            if best_match:
-                self.logger.info(f"      ℹ️ [STEP 1b] Best match only {best_ratio:.1%} (need 70% or 40% if recent)")
-                self.logger.info(f"      📝 [STEP 1b] Best was: {best_match['title'][:60]}...")
-
-            return None
-
-        except Exception as e:
-            self.logger.warning(f"      ⚠️ [STEP 1b] Error scraping playlist: {e}")
-            return None
-
-    def _find_youtube_video_url(self, episode_details: Dict) -> Optional[str]:
-        """
-        Find YouTube video URL for podcast episode using free scraping methods
-
-        Flow:
-        1. Check database whitelist for podcast's YouTube channel/playlist
-        2. If not whitelisted, extract YouTube URL from PocketCasts episode page
-        3. Validate direct video URLs or scrape playlists/channels
-
-        Args:
-            episode_details: Episode details dictionary
-
-        Returns:
-            YouTube video URL or None
-        """
-        episode_url = episode_details['episode_url']
-        episode_title = episode_details['episode_title']
-        podcast_title = episode_details['podcast_title']
-        published_date = episode_details.get('published_date')
-
-        self.logger.info(f"")
-        self.logger.info(f"      🎯 [YOUTUBE SEARCH] Starting YouTube video discovery...")
-        self.logger.info(f"      📝 Episode: {episode_title[:80]}")
-        self.logger.info(f"      🎙️ Podcast: {podcast_title}")
-
-        # Step 0: Check known_podcasts database table first
-        youtube_url = self._get_known_podcast_youtube_url(podcast_title)
-
-        if not youtube_url:
-            # Step 1a: Fallback to extracting YouTube URL from PocketCasts page
-            self.logger.info(f"      [STEP 1a] Checking PocketCasts page for YouTube link...")
-            youtube_url = self._extract_youtube_url_from_pocketcasts(episode_url)
-
-        if not youtube_url:
-            self.logger.info(f"      ℹ️ [YOUTUBE SEARCH] No YouTube link found")
-            return None
-
-        # If it's a direct video URL, validate it
-        if '/watch' in youtube_url or 'youtu.be/' in youtube_url:
-            if self._validate_youtube_video(youtube_url, episode_title, published_date):
-                self.logger.info(f"      ✅ [YOUTUBE SEARCH] Direct video validated!")
-                return youtube_url
-            else:
-                self.logger.info(f"      ℹ️ [YOUTUBE SEARCH] Direct video did not match")
-                return None
-
-        # Step 1b: If it's a playlist/channel, scrape it for the episode
-        if any(x in youtube_url for x in ['/playlist', '/channel/', '/@', '/c/', '/user/']):
-            # For channels, append /videos to get the videos tab
-            if any(x in youtube_url for x in ['/channel/', '/@', '/c/', '/user/']):
-                if not youtube_url.endswith('/videos'):
-                    youtube_url = youtube_url.rstrip('/') + '/videos'
-                    self.logger.info(f"      💡 [STEP 1b] Appending /videos to channel URL for better scraping")
-
-            video_url = self._scrape_youtube_playlist_for_episode(youtube_url, episode_title, published_date)
-            if video_url:
-                self.logger.info(f"      ✅ [YOUTUBE SEARCH] Found via playlist scraping!")
-                return video_url
-            else:
-                self.logger.info(f"      ℹ️ [YOUTUBE SEARCH] No match found in playlist/channel")
-                return None
-
-        self.logger.info(f"      ⚠️ [YOUTUBE SEARCH] Unknown YouTube URL type: {youtube_url}")
-        return None
+        # If we got here, we couldn't find a valid title
+        self.logger.warning(f"   ⚠️ Could not extract podcast title from page")
+        return 'ERROR: Cannot find podcast'
 
     def _save_podcast_episode(self, episode_details: Dict) -> Optional[str]:
         """
@@ -755,22 +440,39 @@ class PodcastHistoryCheckerService:
             if published_date == '' or not published_date:
                 published_date = None
 
-            # Try to find YouTube video URL using free scraping
-            video_url = self._find_youtube_video_url(episode_details)
+            # REMOVED: YouTube discovery now happens in Article Processor
+            # video_url = self._find_youtube_video_url(episode_details)
+
+            # Fetch podcast title if missing (PocketCasts API changed)
+            podcast_title = episode_details['podcast_title']
+            has_error = False
+
+            if podcast_title == 'Unknown Podcast' and episode_details.get('podcast_uuid'):
+                self.logger.info(f"   ℹ️ Podcast title missing for '{episode_details['episode_title']}', fetching from PocketCasts...")
+                fetched_title = self._fetch_podcast_title_from_uuid(episode_details['podcast_uuid'])
+
+                # Check if fetch failed
+                if fetched_title.startswith('ERROR:'):
+                    self.logger.error(f"   ❌ Failed to fetch podcast title: {fetched_title}")
+                    podcast_title = None  # Set to None instead of error message
+                    has_error = True
+                else:
+                    self.logger.info(f"   ✅ Successfully fetched podcast title: {fetched_title}")
+                    podcast_title = fetched_title
 
             record = {
                 'url': episode_details['episode_url'],
                 'title': episode_details['episode_title'],
                 'content_type': 'podcast_episode',
                 'source': 'podcast_history',
-                'channel_title': episode_details['podcast_title'],
+                'channel_title': podcast_title,
                 'channel_url': f"https://pocketcasts.com/podcast/{episode_details['podcast_uuid']}",
-                'video_url': video_url,
+                # 'video_url': video_url,  # REMOVED - discovery happens in Article Processor
                 'platform': 'pocketcasts',
                 'source_feed': None,
                 'found_at': datetime.now().isoformat(),
                 'published_date': published_date,
-                'status': 'discovered',
+                'status': 'failed' if has_error else 'discovered',
                 'podcast_uuid': episode_details['podcast_uuid'],
                 'episode_uuid': episode_details['episode_uuid'],
                 'duration_seconds': episode_details.get('duration'),

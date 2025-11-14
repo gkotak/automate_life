@@ -15,7 +15,8 @@ import email.utils
 from supabase import create_client, Client
 
 from core.config import Config
-from core.youtube_discovery import YouTubeDiscoveryService
+# REMOVED: YouTube discovery moved to Article Processor
+# from core.youtube_discovery import YouTubeDiscoveryService
 
 
 class PostCheckerService:
@@ -38,8 +39,8 @@ class PostCheckerService:
         self.session = requests.Session()
         self.session.headers.update(Config.get_default_headers())
 
-        # Initialize YouTube discovery service
-        self.youtube_discovery = YouTubeDiscoveryService(self.logger)
+        # REMOVED: YouTube discovery service (moved to Article Processor)
+        # self.youtube_discovery = YouTubeDiscoveryService(self.logger)
 
     async def check_for_new_posts(self, user_id: str) -> Dict:
         """
@@ -114,8 +115,8 @@ class PostCheckerService:
                 self.logger.info(f"New post found: {post['title']}")
                 new_posts_found += 1
 
-                # Try to find YouTube URL for this post (pass source_url)
-                self._discover_youtube_url_for_post(post, source_url)
+                # REMOVED: YouTube discovery now happens in Article Processor
+                # self._discover_youtube_url_for_post(post, source_url)
 
                 # Save to database and get the ID
                 post_id = self._save_post_to_queue(post, source_url, user_id)
@@ -659,7 +660,7 @@ class PostCheckerService:
                 'source': 'rss_feed',
                 'channel_title': channel_title,
                 'channel_url': channel_url,
-                'video_url': None,  # Will be populated by YouTube discovery later
+                # 'video_url': None,  # REMOVED - YouTube discovery happens in Article Processor
                 'audio_url': post.get('audio_url'),  # Direct audio file URL from RSS
                 'platform': post.get('platform', 'generic'),
                 'source_feed': source_feed,
@@ -683,53 +684,8 @@ class PostCheckerService:
             self.logger.error(f"Error saving post to queue: {e}")
             return None
 
-    def _discover_youtube_url_for_post(self, post: Dict, source_feed: str) -> None:
-        """
-        Discover YouTube URL for a post and add it to the post dict
-
-        Args:
-            post: Post dictionary (modified in-place to add 'video_url')
-            source_feed: The source feed URL (from content_sources)
-        """
-        try:
-            post_url = post['url']
-            post_title = post.get('title', '')
-
-            # Skip if we already have a YouTube URL (from podcast RSS)
-            if post.get('video_url'):
-                return
-
-            self.logger.info(f"🔍 [YOUTUBE DISCOVERY] Searching for video: {post_title[:60]}...")
-
-            # Step 1: Check known_channels table by source URL
-            if source_feed:
-                try:
-                    youtube_url = self.youtube_discovery.get_youtube_url_for_known_source(
-                        source_feed,
-                        self.supabase
-                    )
-                    if youtube_url:
-                        post['video_url'] = youtube_url
-                        self.logger.info(f"✅ [YOUTUBE] Found via known_channels table (source URL match)")
-                        return
-                except Exception as e:
-                    # Table might not exist yet, that's okay
-                    self.logger.debug(f"known_channels table lookup failed: {e}")
-
-            # Step 2: Scrape the post URL for YouTube links
-            youtube_url = self.youtube_discovery.extract_youtube_url_from_page(
-                post_url,
-                content_type='article' if post.get('platform') != 'podcast_rss' else 'podcast'
-            )
-
-            if youtube_url:
-                post['video_url'] = youtube_url
-                self.logger.info(f"✅ [YOUTUBE] Found on page: {youtube_url[:60]}...")
-            else:
-                self.logger.info(f"ℹ️ [YOUTUBE] No YouTube URL found")
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ [YOUTUBE] Error discovering YouTube URL: {e}")
+    # REMOVED: YouTube discovery moved to Article Processor
+    # def _discover_youtube_url_for_post() - deleted
 
     def _extract_channel_info(self, url: str, source_feed: str = None) -> tuple:
         """Extract channel title and URL from article URL"""
