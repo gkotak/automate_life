@@ -58,6 +58,7 @@ from core.prompts import (
 )
 from processors.transcript_processor import TranscriptProcessor
 from processors.file_transcriber import FileTranscriber
+from core.youtube_discovery import YouTubeDiscoveryService
 
 
 class ArticleProcessor(BaseProcessor):
@@ -136,6 +137,9 @@ class ArticleProcessor(BaseProcessor):
         self.current_user_id = user_id
 
         try:
+            # Step 0: Try to discover YouTube URL from content_queue
+            url = await self._try_youtube_discovery(url)
+
             # Step 1: Extract metadata and detect content type
             if self.event_emitter:
                 await self.event_emitter.emit('fetch_start', {'url': url})
@@ -247,7 +251,7 @@ class ArticleProcessor(BaseProcessor):
         youtube_match = re.match(r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', url)
         if youtube_match:
             self.logger.info("🎥 [DIRECT YOUTUBE] Detected direct YouTube video URL")
-            return await self._process_direct_youtube_url(url, youtube_match.group(1), extract_demo_frames)
+            return await self._process_direct_youtube_url(url, youtube_match.group(1), extract_demo_frames, progress_callback)
 
         # Check if URL is a direct Loom video link
         loom_match = re.match(r'(?:https?://)?(?:www\.)?loom\.com/(?:share|embed)/([a-zA-Z0-9]+)', url)
@@ -429,6 +433,9 @@ class ArticleProcessor(BaseProcessor):
             if progress_callback:
                 await progress_callback("detecting_text_only", {})
             metadata.update(self._process_text_content(soup, url))
+            # Emit content_extracted for text-only articles
+            if progress_callback:
+                await progress_callback("content_extracted", {"transcript_method": "text"})
 
         return metadata
 
@@ -898,7 +905,13 @@ class ArticleProcessor(BaseProcessor):
                     pass
             raise
 
-    async def _process_direct_youtube_url(self, url: str, video_id: str, extract_demo_frames: bool = False) -> Dict:
+    async def _process_direct_youtube_url(
+        self,
+        url: str,
+        video_id: str,
+        extract_demo_frames: bool = False,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
         """
         Process a direct YouTube video URL (e.g., https://www.youtube.com/watch?v=xyz)
 
@@ -906,6 +919,7 @@ class ArticleProcessor(BaseProcessor):
             url: The YouTube video URL
             video_id: Extracted YouTube video ID
             extract_demo_frames: If True, download video and extract frames
+            progress_callback: Optional async callback for progress updates
 
         Returns:
             Dictionary containing metadata for direct YouTube video
@@ -919,6 +933,10 @@ class ArticleProcessor(BaseProcessor):
             title = self._extract_title(soup, url)
         except:
             title = f"YouTube Video: {video_id}"
+
+        # Emit fetch_complete after title extraction
+        if progress_callback:
+            await progress_callback("fetch_complete", {"title": title})
 
         # For demo mode, use unified optimized method (download once for frames + audio)
         # For standard mode, try native transcript first, then fallback to DeepGram
@@ -969,7 +987,7 @@ class ArticleProcessor(BaseProcessor):
                     video_id=video_id,
                     platform='youtube',
                     base_url=url,
-                    progress_callback=None,
+                    progress_callback=progress_callback,
                     referer=None
                 )
 
@@ -1036,6 +1054,11 @@ class ArticleProcessor(BaseProcessor):
             'context': 'direct_url',
             'relevance_score': 1.0
         }]
+
+        # Emit content_extracted event with transcript method
+        if progress_callback:
+            transcript_method = 'youtube' if transcripts else None
+            await progress_callback("content_extracted", {"transcript_method": transcript_method})
 
         return {
             'title': title,
@@ -1755,6 +1778,451 @@ class ArticleProcessor(BaseProcessor):
             self.logger.warning(f"   ⚠️ Error checking for existing article: {e}")
             return None
 
+    async def _try_youtube_discovery(self, url: str) -> str:
+        """
+        Attempt to discover YouTube URL from content_queue.
+        Returns the discovered YouTube URL if found, otherwise returns the original URL.
+
+        This is the SINGLE source of truth for YouTube discovery in article processing.
+        Both process_article() and SSE endpoint should call this method.
+
+        Args:
+            url: Original content URL (e.g., PocketCasts episode page)
+
+        Returns:
+            YouTube URL if discovered, otherwise the original URL
+        """
+        self.logger.info("🔍 [YOUTUBE DISCOVERY] Attempting to discover YouTube URL...")
+
+        # Look up content in queue
+        queue_item = self._get_queue_item(url)
+        if not queue_item:
+            self.logger.info("   ℹ️ [YOUTUBE DISCOVERY] No queue item found, skipping discovery")
+            return url
+
+        channel_url = queue_item.get('channel_url')
+        title = queue_item.get('title')
+        published_date = queue_item.get('published_date')
+        self.logger.info(f"   📋 [YOUTUBE DISCOVERY] Found queue item - channel: {channel_url}, title: {title}")
+
+        # Attempt discovery
+        discovered_youtube_url = await self._discover_youtube_url(
+            content_url=url,
+            channel_url=channel_url,
+            title=title,
+            published_date=published_date
+        )
+
+        if discovered_youtube_url:
+            self.logger.info(f"   🎬 [YOUTUBE DISCOVERY] Success! Using: {discovered_youtube_url}")
+            return discovered_youtube_url
+        else:
+            self.logger.info(f"   ℹ️ [YOUTUBE DISCOVERY] No YouTube URL found, using original URL")
+            return url
+
+    def _get_queue_item(self, url: str) -> Optional[Dict]:
+        """Lookup content_queue item by URL to get channel information"""
+        if not self.supabase:
+            self.logger.debug("   [QUEUE LOOKUP] No Supabase client available")
+            return None
+
+        try:
+            self.logger.info(f"   🔍 [QUEUE LOOKUP] Checking content_queue for URL...")
+            result = self.supabase.table('content_queue')\
+                .select('*')\
+                .eq('url', url)\
+                .single()\
+                .execute()
+
+            if result.data:
+                self.logger.info(f"   ✅ [QUEUE LOOKUP] Found queue item with channel_url: {result.data.get('channel_url')}")
+                return result.data
+            else:
+                self.logger.info(f"   ℹ️ [QUEUE LOOKUP] No queue item found for this URL")
+                return None
+        except Exception as e:
+            self.logger.debug(f"Queue item not found for {url}: {e}")
+            return None
+
+    def _classify_youtube_url(self, url: str) -> Optional[str]:
+        """
+        Classify a YouTube URL as a direct video, channel, or playlist
+
+        Args:
+            url: YouTube URL to classify
+
+        Returns:
+            'video' - Direct video URL
+            'channel_or_playlist' - Channel or playlist URL
+            None - Invalid or no URL
+        """
+        if not url:
+            return None
+
+        # Check for direct video URLs
+        if '/watch?v=' in url or 'youtu.be/' in url:
+            return 'video'
+
+        # Check for channel/playlist URLs
+        if any(x in url for x in ['/playlist', '/channel/', '/@', '/c/', '/user/', '/videos']):
+            return 'channel_or_playlist'
+
+        return None
+
+    async def _is_video_match_for_podcast(
+        self,
+        video_url: str,
+        video_title: Optional[str],
+        episode_title: str,
+        episode_published_date: Optional[str] = None,
+        video_published_date: Optional[str] = None
+    ) -> tuple[bool, float]:
+        """
+        Check if a YouTube video matches a podcast episode using fuzzy matching with date-based thresholds
+
+        Args:
+            video_url: YouTube video URL
+            video_title: Video title (if already known, otherwise will fetch)
+            episode_title: Podcast episode title
+            episode_published_date: Episode published date (ISO format)
+            video_published_date: Video published date (ISO format or relative like "2 days ago")
+
+        Returns:
+            Tuple of (is_match, confidence_ratio)
+        """
+        from difflib import SequenceMatcher
+        from datetime import datetime, timedelta
+        import re
+
+        # If video title not provided, we'd need to fetch it from YouTube
+        # For now, require it to be passed in
+        if not video_title:
+            self.logger.warning(f"   ⚠️ [MATCH] No video title provided for comparison")
+            return False, 0.0
+
+        # Calculate character-level similarity ratio
+        ratio = SequenceMatcher(None, episode_title.lower(), video_title.lower()).ratio()
+
+        # Default threshold is 70%
+        threshold = 0.70
+
+        # Use relaxed threshold (40%) if published within 1 day of each other
+        if episode_published_date and video_published_date:
+            self.logger.info(f"         [DATE CHECK] Episode: '{episode_published_date}' | Video: '{video_published_date}'")
+            try:
+                from dateutil import parser
+
+                # Parse episode date
+                episode_date = parser.parse(episode_published_date)
+
+                # Parse video date (handle relative dates like "2 days ago")
+                video_date = None
+                if 'ago' in video_published_date.lower():
+                    match = re.search(r'(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago', video_published_date.lower())
+                    if match:
+                        amount = int(match.group(1))
+                        unit = match.group(2)
+
+                        now = datetime.now()
+                        if unit == 'second':
+                            video_date = now - timedelta(seconds=amount)
+                        elif unit == 'minute':
+                            video_date = now - timedelta(minutes=amount)
+                        elif unit == 'hour':
+                            video_date = now - timedelta(hours=amount)
+                        elif unit == 'day':
+                            video_date = now - timedelta(days=amount)
+                        elif unit == 'week':
+                            video_date = now - timedelta(weeks=amount)
+                        elif unit == 'month':
+                            video_date = now - timedelta(days=amount*30)
+                        elif unit == 'year':
+                            video_date = now - timedelta(days=amount*365)
+                else:
+                    # Try to parse as ISO format
+                    try:
+                        video_date = parser.parse(video_published_date)
+                    except:
+                        pass
+
+                if video_date:
+                    # Compare dates
+                    days_apart = abs((episode_date.replace(tzinfo=None) - video_date.replace(tzinfo=None)).days)
+                    self.logger.info(f"         [DATE COMPARE] {days_apart} days apart (episode: {episode_date.date()}, video: {video_date.date()})")
+                    if days_apart <= 1:
+                        threshold = 0.40
+                        self.logger.info(f"         ✅ [DATE MATCH] Within 1 day! Using relaxed 40% threshold")
+                    else:
+                        self.logger.info(f"         ⚠️ [DATE DIFF] More than 1 day apart, using standard 70% threshold")
+                else:
+                    self.logger.info(f"         ⚠️ [DATE PARSE] Could not parse video date: '{video_published_date}'")
+            except Exception as e:
+                self.logger.warning(f"         ⚠️ [DATE ERROR] Error parsing dates: {e}")
+        else:
+            if not episode_published_date:
+                self.logger.info(f"         ℹ️ [NO DATE] No episode published date available")
+            if not video_published_date:
+                self.logger.info(f"         ℹ️ [NO DATE] No video published date available")
+
+        is_match = ratio >= threshold
+        return is_match, ratio
+
+    async def _discover_youtube_url(
+        self,
+        content_url: str,
+        channel_url: Optional[str],
+        title: Optional[str],
+        published_date: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Unified YouTube discovery - uses channel_url as lookup key
+        This is where ALL YouTube discovery happens now (moved from Content Checker)
+
+        Args:
+            content_url: The content URL (PocketCasts episode page, article URL, etc.)
+            channel_url: Channel URL from content_queue (RSS feed, PocketCasts channel, etc.)
+            title: Content title for matching videos in playlists
+            published_date: Content published date (for date-based matching)
+
+        Returns:
+            YouTube video URL if found, None otherwise
+        """
+        self.logger.info(f"")
+        self.logger.info(f"🔍 [YOUTUBE DISCOVERY] Starting discovery...")
+        if title:
+            self.logger.info(f"   📝 Title: {title[:80]}")
+
+        youtube_discovery = YouTubeDiscoveryService(self.logger)
+        youtube_url = None
+
+        # Step 1: Check known_channels table using channel_url
+        if channel_url:
+            self.logger.info(f"   [STEP 1] Checking known_channels for: {channel_url[:60]}")
+            try:
+                result = self.supabase.table('known_channels')\
+                    .select('youtube_url, channel_name')\
+                    .eq('source_url', channel_url)\
+                    .eq('is_active', True)\
+                    .single()\
+                    .execute()
+
+                if result.data and result.data.get('youtube_url'):
+                    youtube_url = result.data['youtube_url']
+                    channel_name = result.data.get('channel_name', 'Unknown')
+                    self.logger.info(f"   ✅ [KNOWN CHANNEL] Found for '{channel_name}': {youtube_url[:60]}")
+
+                    # Classify the URL
+                    url_type = self._classify_youtube_url(youtube_url)
+
+                    if url_type == 'video':
+                        # Data error: known_channels should only have channel URLs
+                        self.logger.warning(f"   ⚠️ [DATA ERROR] known_channels contains a video URL, not a channel. Skipping.")
+                        youtube_url = None  # Continue to Step 2
+                    elif url_type == 'channel_or_playlist':
+                        # Expected - will handle in Step 3
+                        pass
+                    else:
+                        self.logger.warning(f"   ⚠️ [UNKNOWN TYPE] Could not classify YouTube URL: {youtube_url[:60]}")
+                        youtube_url = None
+
+            except Exception as e:
+                if 'PGRST116' not in str(e):  # Ignore "no rows returned"
+                    self.logger.debug(f"   ℹ️ Not in known_channels: {e}")
+
+        # Step 2: Scrape the content page for YouTube links
+        if not youtube_url:
+            self.logger.info(f"   [STEP 2] Scraping page for YouTube link...")
+            youtube_url = youtube_discovery.extract_youtube_url_from_page(
+                content_url,
+                'podcast'  # Could detect from content_type in future
+            )
+
+            if youtube_url:
+                # Classify what we found
+                url_type = self._classify_youtube_url(youtube_url)
+
+                if url_type == 'video':
+                    # Direct video URL - this shouldn't need verification for scraped URLs
+                    # (If it's embedded on the page, it's likely correct)
+                    self.logger.info(f"   ✅ [STEP 2] Found direct video URL: {youtube_url[:60]}")
+                    return youtube_url
+                elif url_type == 'channel_or_playlist':
+                    # Will handle in Step 3
+                    pass
+                else:
+                    self.logger.warning(f"   ⚠️ [UNKNOWN TYPE] Could not classify scraped URL")
+                    youtube_url = None
+
+        # Step 3: If it's a channel/playlist, find the specific video (expensive operation)
+        if youtube_url and title:
+            url_type = self._classify_youtube_url(youtube_url)
+
+            if url_type == 'channel_or_playlist':
+                self.logger.info(f"   [STEP 3] Found channel/playlist, searching for specific video...")
+
+                # For channels, append /videos to get videos tab
+                if any(x in youtube_url for x in ['/channel/', '/@', '/c/', '/user/']):
+                    if not youtube_url.endswith('/videos'):
+                        youtube_url = youtube_url.rstrip('/') + '/videos'
+                        self.logger.info(f"   💡 Appending /videos for better scraping")
+
+                # Scrape playlist/channel to find specific video
+                specific_video_url = await self._scrape_youtube_channel_for_video(
+                    youtube_url,
+                    title,
+                    published_date
+                )
+
+                if specific_video_url:
+                    self.logger.info(f"   ✅ [CHANNEL SCRAPING] Found specific video!")
+                    return specific_video_url
+                else:
+                    self.logger.info(f"   ℹ️ [CHANNEL SCRAPING] No confident match found, will use original content URL")
+                    return None
+
+        # If we get here, no YouTube URL was found
+        self.logger.info(f"ℹ️ [YOUTUBE DISCOVERY] No YouTube URL found")
+        return None
+
+    async def _scrape_youtube_channel_for_video(
+        self,
+        channel_url: str,
+        episode_title: str,
+        episode_published_date: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Scrape YouTube channel/playlist to find specific video matching episode title
+
+        Args:
+            channel_url: YouTube channel or playlist URL
+            episode_title: Episode title to match against
+            episode_published_date: Episode published date (for date-based matching)
+
+        Returns:
+            YouTube video URL if confident match found, None otherwise
+        """
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            import re
+            import json
+
+            self.logger.info(f"      🔍 [SCRAPING] Fetching channel page...")
+
+            response = requests.get(channel_url, timeout=15)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Extract videos from ytInitialData
+            videos = []
+
+            def find_videos_recursive(obj, videos_list):
+                """Recursively search for video renderers in YouTube data"""
+                if isinstance(obj, dict):
+                    # Channel video (most common)
+                    if 'richItemRenderer' in obj:
+                        try:
+                            video_data = obj['richItemRenderer']['content']['videoRenderer']
+                            video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
+                            video_id = video_data.get('videoId', '')
+                            # Extract published date (e.g., "2 days ago")
+                            video_published = video_data.get('publishedTimeText', {}).get('simpleText', '')
+                            if video_title and video_id:
+                                videos_list.append({
+                                    'title': video_title,
+                                    'url': f'https://www.youtube.com/watch?v={video_id}',
+                                    'published': video_published
+                                })
+                        except (KeyError, TypeError):
+                            pass
+
+                    # Playlist video
+                    elif 'playlistVideoRenderer' in obj:
+                        video_data = obj['playlistVideoRenderer']
+                        video_title = video_data.get('title', {}).get('runs', [{}])[0].get('text', '')
+                        video_id = video_data.get('videoId', '')
+                        # Extract published date from playlist format
+                        video_info_runs = video_data.get('videoInfo', {}).get('runs', [])
+                        video_published = video_info_runs[-1].get('text', '') if video_info_runs else ''
+                        if video_title and video_id:
+                            videos_list.append({
+                                'title': video_title,
+                                'url': f'https://www.youtube.com/watch?v={video_id}',
+                                'published': video_published
+                            })
+
+                    # Recurse into dictionary values
+                    for value in obj.values():
+                        find_videos_recursive(value, videos_list)
+
+                elif isinstance(obj, list):
+                    # Recurse into list items
+                    for item in obj:
+                        find_videos_recursive(item, videos_list)
+
+            # Find ytInitialData in page scripts
+            for script in soup.find_all('script'):
+                if not script.string or 'ytInitialData' not in script.string:
+                    continue
+
+                match = re.search(r'var ytInitialData = ({.*?});', script.string)
+                if not match:
+                    continue
+
+                try:
+                    data = json.loads(match.group(1))
+                    find_videos_recursive(data, videos)
+                    if videos:
+                        break
+                except json.JSONDecodeError:
+                    continue
+
+            if not videos:
+                self.logger.warning(f"      ⚠️ [SCRAPING] No videos found in channel/playlist")
+                return None
+
+            self.logger.info(f"      📊 [SCRAPING] Found {len(videos)} videos, matching against title...")
+            self.logger.info(f"      📝 [EPISODE TITLE] '{episode_title}'")
+
+            # Find best match using the unified matching method
+            best_match = None
+            best_ratio = 0.0
+
+            for idx, video in enumerate(videos, 1):
+                # Use the unified matching method with date-based thresholds
+                video_published = video.get('published', '')
+                is_match, ratio = await self._is_video_match_for_podcast(
+                    video_url=video['url'],
+                    video_title=video['title'],
+                    episode_title=episode_title,
+                    episode_published_date=episode_published_date,
+                    video_published_date=video_published
+                )
+
+                # Log EVERY comparison with published date
+                pub_info = f" (published: {video_published})" if video_published else ""
+                self.logger.info(f"         [{idx}/{len(videos)}] {ratio:.1%}{pub_info} - '{video['title'][:80]}...'")
+
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_match = video
+                    best_is_match = is_match
+
+            if best_match and best_is_match:
+                self.logger.info(f"      ✅ [MATCH] Found with {best_ratio:.1%} confidence: {best_match['title'][:80]}...")
+                return best_match['url']
+            elif best_match:
+                self.logger.info(f"      ⚠️ [LOW CONFIDENCE] Best match only {best_ratio:.1%}: {best_match['title'][:80]}...")
+                return None
+            else:
+                self.logger.info(f"      ℹ️ [NO MATCH] No videos passed threshold")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"      ❌ [SCRAPING] Failed: {e}")
+            return None
+
     def _save_to_database(self, metadata: Dict, ai_summary: Dict, user_id: Optional[str] = None):
         """Save article data to Supabase database
 
@@ -2198,93 +2666,6 @@ class ArticleProcessor(BaseProcessor):
             self.logger.error(f"      ❌ [YT-DLP] Failed to extract audio URL: {e}")
             return None
 
-    def _download_and_transcribe_media(self, media_url: str, media_type: str = "audio") -> Optional[Dict]:
-        """
-        Download and transcribe audio/video file using DeepGram
-
-        Args:
-            media_url: URL of the audio/video file
-            media_type: Type of media (audio or video)
-
-        Returns:
-            Transcript data dict or None if transcription fails
-        """
-        if not self.file_transcriber:
-            self.logger.warning("   ⚠️ File transcriber not available")
-            return None
-
-        try:
-            import tempfile
-            import requests
-            import os
-
-            self.logger.info(f"   🎵 [DEEPGRAM] Attempting to transcribe {media_type} from URL...")
-
-            # Download media file to temp location
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-                temp_path = temp_file.name
-                self.logger.info(f"   📥 [DOWNLOAD] Downloading {media_type} file...")
-
-                response = requests.get(media_url, stream=True, timeout=60)
-                response.raise_for_status()
-
-                # Write to temp file
-                for chunk in response.iter_content(chunk_size=8192):
-                    temp_file.write(chunk)
-
-            # Check file size (OpenAI DeepGram limit is 25MB)
-            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
-            self.logger.info(f"   ✅ [DOWNLOAD] Downloaded to {temp_path}")
-            self.logger.info(f"   📊 [FILE SIZE] {file_size_mb:.1f}MB")
-
-            # If file exceeds 25MB, split into chunks
-            if file_size_mb > 25:
-                self.logger.info(f"   ✂️ [CHUNKING] File exceeds 25MB limit, splitting into chunks...")
-                return self._transcribe_large_audio_file(temp_path, media_type)
-
-            # Transcribe the file
-            result = self.file_transcriber.transcribe_file(temp_path)
-            transcript_data = result['transcript_data']
-            transcript_json_file = result['output_file']
-
-            # Format for our use - convert to same format as YouTube transcripts
-            segments = transcript_data.get('segments', [])
-            transcript_list = []
-            for segment in segments:
-                transcript_list.append({
-                    'start': segment.get('start', 0),
-                    'text': segment.get('text', ''),
-                    'duration': segment.get('end', 0) - segment.get('start', 0)
-                })
-
-            formatted_transcript = {
-                'success': True,
-                'transcript': transcript_list,  # Use 'transcript' key to match YouTube format
-                'segments': transcript_list,  # Also use 'segments' key for consistency
-                'text': transcript_data.get('text', ''),
-                'language': transcript_data.get('language', 'unknown'),
-                'type': 'deepgram_transcription',
-                'source': media_type,
-                'total_entries': len(transcript_list),
-                'words': transcript_data.get('words', [])  # Include word-level timestamps for frame extraction
-            }
-
-            self.logger.info(f"   ✅ [DEEPGRAM] Transcription successful ({len(formatted_transcript['text'])} chars)")
-
-            # Clean up temp files
-            try:
-                os.unlink(temp_path)  # Delete downloaded audio file
-                os.unlink(transcript_json_file)  # Delete transcript JSON file
-                self.logger.info(f"   🧹 Cleaned up temp files")
-            except Exception as cleanup_error:
-                self.logger.warning(f"   ⚠️ Could not clean up temp files: {cleanup_error}")
-
-            return formatted_transcript
-
-        except Exception as e:
-            self.logger.warning(f"   ⚠️ [DEEPGRAM] Transcription failed: {str(e)}")
-            return None
-
     async def _download_and_transcribe_media_async(
         self,
         media_url: str,
@@ -2454,158 +2835,6 @@ class ArticleProcessor(BaseProcessor):
                 self.file_transcriber.transcribe_file,
                 audio_path
             )
-
-    def _transcribe_large_audio_file(self, audio_path: str, media_type: str, max_duration_minutes: int = 30) -> Optional[Dict]:
-        """
-        Transcribe large audio files by splitting into chunks with timeout handling
-
-        Args:
-            audio_path: Path to the audio file
-            media_type: Type of media (audio or video)
-            max_duration_minutes: Maximum time to spend on transcription (default: 30 minutes)
-
-        Returns:
-            Transcript data dict or None if transcription fails
-
-        Note:
-            If max_duration_minutes is reached, returns partial transcript with whatever
-            chunks were successfully transcribed
-        """
-        try:
-            from pydub import AudioSegment
-            import tempfile
-            import os
-            import time
-
-            self.logger.info(f"   🎵 [CHUNKING] Loading audio file for splitting...")
-            start_time = time.time()
-            timeout_seconds = max_duration_minutes * 60
-
-            # Load audio file
-            audio = AudioSegment.from_file(audio_path)
-            duration_ms = len(audio)
-            duration_min = duration_ms / 1000 / 60
-
-            self.logger.info(f"   ⏱️ [DURATION] Audio is {duration_min:.1f} minutes")
-            self.logger.info(f"   ⏰ [TIMEOUT] Will process for max {max_duration_minutes} minutes")
-
-            # Split into 20-minute chunks (1200 seconds = 1,200,000 ms)
-            # At 128kbps: 20 minutes ≈ 19MB (well under 25MB DeepGram API limit)
-            chunk_length_ms = 20 * 60 * 1000  # 20 minutes
-            chunks = []
-
-            for i in range(0, duration_ms, chunk_length_ms):
-                chunk = audio[i:i + chunk_length_ms]
-                chunks.append((i / 1000, chunk))  # Store start time in seconds
-
-            self.logger.info(f"   ✂️ [CHUNKS] Split into {len(chunks)} chunks of ~20 minutes each")
-
-            # Transcribe each chunk
-            all_segments = []
-            all_words = []
-            all_text = []
-            chunks_completed = 0
-
-            for chunk_idx, (start_offset, chunk) in enumerate(chunks):
-                # Check if we've exceeded timeout
-                elapsed = time.time() - start_time
-                if elapsed > timeout_seconds:
-                    self.logger.warning(f"   ⏰ [TIMEOUT] Reached {max_duration_minutes} minute limit after {chunk_idx}/{len(chunks)} chunks")
-                    self.logger.info(f"   📦 [PARTIAL] Processing {chunks_completed} completed chunks...")
-                    break
-
-                self.logger.info(f"   🎙️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Transcribing... ({elapsed/60:.1f}/{max_duration_minutes} min elapsed)")
-
-                # Save chunk to temp file
-                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as chunk_file:
-                    chunk_path = chunk_file.name
-                    chunk.export(chunk_path, format='mp3')
-
-                # Log chunk file size
-                chunk_size_mb = os.path.getsize(chunk_path) / (1024 * 1024)
-                self.logger.info(f"   📊 [CHUNK {chunk_idx + 1}] File size: {chunk_size_mb:.1f}MB (sending to DeepGram API)")
-
-                try:
-                    # Transcribe this chunk
-                    result = self.file_transcriber.transcribe_file(chunk_path)
-                    transcript_data = result['transcript_data']
-                    transcript_json_file = result['output_file']
-
-                    # Adjust timestamps to account for chunk offset
-                    segments = transcript_data.get('segments', [])
-                    for segment in segments:
-                        all_segments.append({
-                            'start': segment.get('start', 0) + start_offset,
-                            'text': segment.get('text', ''),
-                            'duration': segment.get('end', 0) - segment.get('start', 0)
-                        })
-
-                    # Also collect word-level data with adjusted timestamps
-                    words = transcript_data.get('words', [])
-                    for word in words:
-                        all_words.append({
-                            'word': word.get('word', ''),
-                            'start': word.get('start', 0) + start_offset,
-                            'end': word.get('end', 0) + start_offset,
-                            'confidence': word.get('confidence', 0)
-                        })
-
-                    all_text.append(transcript_data.get('text', ''))
-                    chunks_completed += 1
-
-                    self.logger.info(f"   ✅ [CHUNK {chunk_idx + 1}/{len(chunks)}] Complete ({len(segments)} segments, {len(words)} words)")
-
-                    # Clean up chunk files
-                    os.unlink(chunk_path)
-                    os.unlink(transcript_json_file)
-
-                except Exception as chunk_error:
-                    self.logger.warning(f"   ⚠️ [CHUNK {chunk_idx + 1}/{len(chunks)}] Failed: {chunk_error}")
-                    # Continue with other chunks even if one fails
-                    try:
-                        os.unlink(chunk_path)
-                    except:
-                        pass
-
-            # Clean up original file
-            os.unlink(audio_path)
-
-            if not all_segments:
-                self.logger.warning(f"   ❌ [CHUNKING] No segments transcribed successfully")
-                return None
-
-            # Combine all transcripts
-            is_partial = chunks_completed < len(chunks)
-            formatted_transcript = {
-                'success': True,
-                'transcript': all_segments,
-                'segments': all_segments,  # Also use 'segments' key for consistency
-                'text': ' '.join(all_text),
-                'language': 'unknown',
-                'type': 'deepgram_transcription_chunked' + ('_partial' if is_partial else ''),
-                'source': media_type,
-                'total_entries': len(all_segments),
-                'chunks_processed': chunks_completed,
-                'total_chunks': len(chunks),
-                'is_partial': is_partial,
-                'words': all_words  # Include combined word-level data for frame extraction
-            }
-
-            if is_partial:
-                self.logger.warning(f"   ⚠️ [PARTIAL] Transcription incomplete: {chunks_completed}/{len(chunks)} chunks processed")
-                self.logger.info(f"   📊 [PARTIAL] Returning partial transcript ({len(formatted_transcript['text'])} chars)")
-            else:
-                self.logger.info(f"   ✅ [DEEPGRAM] Chunked transcription successful ({len(formatted_transcript['text'])} chars, {len(chunks)} chunks)")
-
-            return formatted_transcript
-
-        except ImportError:
-            self.logger.error(f"   ❌ [CHUNKING] pydub library not installed. Install with: pip install pydub")
-            self.logger.error(f"   ❌ [CHUNKING] Also requires ffmpeg: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")
-            return None
-        except Exception as e:
-            self.logger.error(f"   ❌ [CHUNKING] Failed to process large audio file: {e}")
-            return None
 
     async def _transcribe_large_audio_file_async(
         self,
@@ -3039,15 +3268,6 @@ class ArticleProcessor(BaseProcessor):
             timestamp = f"[{minutes}:{seconds:02d}]"
 
         sections.append(f"{timestamp} {text}")
-
-    def _convert_timestamp_to_seconds(self, timestamp: str) -> int:
-        """Convert MM:SS or H:MM:SS timestamp to seconds"""
-        parts = timestamp.split(':')
-        if len(parts) == 2:  # MM:SS
-            return int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 3:  # H:MM:SS
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        return 0
 
     # _create_metadata_for_prompt moved to core/prompts.py (create_metadata_for_prompt function)
 

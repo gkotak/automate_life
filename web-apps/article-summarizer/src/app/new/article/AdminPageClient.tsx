@@ -203,6 +203,21 @@ function AdminPageContent() {
       });
 
       eventSource.addEventListener('downloading_audio', () => {
+        // Auto-complete content extraction if it was skipped (e.g., direct YouTube URL)
+        setSteps(prev => {
+          const contentStep = prev.find(s => s.id === 'content');
+          if (contentStep && contentStep.status === 'pending') {
+            // Content extraction was skipped, mark it as complete
+            return prev.map(step => {
+              if (step.id === 'content') {
+                return { ...step, status: 'complete', detail: 'Content ready', duration: 0 };
+              }
+              return step;
+            });
+          }
+          return prev;
+        });
+
         updateStep('transcript', { status: 'processing', detail: 'Downloading audio file...' });
       });
 
@@ -244,6 +259,21 @@ function AdminPageContent() {
       eventSource.addEventListener('content_extracted', (e) => {
         const data = JSON.parse(e.data);
         const transcriptMethod = data.transcript_method;
+
+        // Auto-complete content extraction if it was skipped (e.g., direct YouTube URL)
+        setSteps(prev => {
+          const contentStep = prev.find(s => s.id === 'content');
+          if (contentStep && contentStep.status === 'pending') {
+            // Content extraction was skipped, mark it as complete
+            return prev.map(step => {
+              if (step.id === 'content') {
+                return { ...step, status: 'complete', detail: 'Content ready', duration: 0 };
+              }
+              return step;
+            });
+          }
+          return prev;
+        });
 
         if (transcriptMethod === 'youtube') {
           const durationText = audioDurationRef.current ? ` (${audioDurationRef.current.toFixed(1)} min)` : '';
