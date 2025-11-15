@@ -106,7 +106,7 @@ function AdminPageContent() {
     const initialSteps: ProcessingStep[] = [
       { id: 'fetch', label: 'Fetching article', status: 'pending' },
       { id: 'content', label: 'Extracting content', status: 'pending' },
-      { id: 'transcript', label: 'Downloading audio and processing transcript', status: 'pending', substeps: [] },
+      { id: 'transcript', label: 'Downloading media and processing transcript', status: 'pending', substeps: [] },
       { id: 'ai', label: 'Generating AI summary', status: 'pending' },
       { id: 'save', label: 'Saving to database', status: 'pending' },
     ];
