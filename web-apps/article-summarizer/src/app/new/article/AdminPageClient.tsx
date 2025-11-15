@@ -314,6 +314,23 @@ function AdminPageContent() {
       });
 
       eventSource.addEventListener('ai_start', () => {
+        // Auto-complete transcript step if it's still processing (defensive fallback)
+        setSteps(prev => {
+          const transcriptStep = prev.find(s => s.id === 'transcript');
+          if (transcriptStep && transcriptStep.status === 'processing') {
+            // Transcript processing didn't complete properly, mark it complete now
+            const duration = transcriptStep.startTime ? Math.max(1, Math.floor((Date.now() - transcriptStep.startTime) / 1000)) : 0;
+            const durationText = audioDurationRef.current ? ` (${audioDurationRef.current.toFixed(1)} min)` : '';
+            return prev.map(step => {
+              if (step.id === 'transcript') {
+                return { ...step, status: 'complete', detail: `Transcribed media${durationText}`, duration };
+              }
+              return step;
+            });
+          }
+          return prev;
+        });
+
         updateStep('ai', { status: 'processing' });
       });
 
