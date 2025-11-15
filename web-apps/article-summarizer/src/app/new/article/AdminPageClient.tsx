@@ -186,6 +186,22 @@ function AdminPageContent() {
           status: 'processing',
           detail: `Content type: Video (${data.video_count} video${data.video_count > 1 ? 's' : ''})`
         });
+
+        // Auto-complete after 1 second if still processing (for YouTube discovery path)
+        setTimeout(() => {
+          setSteps(prev => {
+            const contentStep = prev.find(s => s.id === 'content');
+            if (contentStep && contentStep.status === 'processing') {
+              return prev.map(step => {
+                if (step.id === 'content') {
+                  return { ...step, status: 'complete', detail: 'Content ready', duration: 1 };
+                }
+                return step;
+              });
+            }
+            return prev;
+          });
+        }, 1000);
       });
 
       eventSource.addEventListener('detecting_text_only', () => {
