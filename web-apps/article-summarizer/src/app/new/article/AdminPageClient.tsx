@@ -206,11 +206,12 @@ function AdminPageContent() {
         // Auto-complete content extraction if it was skipped (e.g., direct YouTube URL)
         setSteps(prev => {
           const contentStep = prev.find(s => s.id === 'content');
-          if (contentStep && contentStep.status === 'pending') {
-            // Content extraction was skipped, mark it as complete
+          if (contentStep && (contentStep.status === 'pending' || contentStep.status === 'processing')) {
+            // Content extraction was skipped or briefly processed, mark it as complete
+            const duration = contentStep.startTime ? Math.max(1, Math.floor((Date.now() - contentStep.startTime) / 1000)) : 0;
             return prev.map(step => {
               if (step.id === 'content') {
-                return { ...step, status: 'complete', detail: 'Content ready', duration: 0 };
+                return { ...step, status: 'complete', detail: 'Content ready', duration };
               }
               return step;
             });
@@ -263,11 +264,12 @@ function AdminPageContent() {
         // Auto-complete content extraction if it was skipped (e.g., direct YouTube URL)
         setSteps(prev => {
           const contentStep = prev.find(s => s.id === 'content');
-          if (contentStep && contentStep.status === 'pending') {
-            // Content extraction was skipped, mark it as complete
+          if (contentStep && (contentStep.status === 'pending' || contentStep.status === 'processing')) {
+            // Content extraction was skipped or briefly processed, mark it as complete
+            const duration = contentStep.startTime ? Math.max(1, Math.floor((Date.now() - contentStep.startTime) / 1000)) : 0;
             return prev.map(step => {
               if (step.id === 'content') {
-                return { ...step, status: 'complete', detail: 'Content ready', duration: 0 };
+                return { ...step, status: 'complete', detail: 'Content ready', duration };
               }
               return step;
             });
