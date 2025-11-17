@@ -105,7 +105,7 @@ class FrameExtractor:
                 - time_formatted: Formatted timestamp (MM:SS or HH:MM:SS)
                 - hash: Perceptual hash of the frame (for metadata only)
         """
-        print(f"[FRAMEEXTRACTOR DEBUG] extract_frames called - CV2_AVAILABLE={CV2_AVAILABLE}, face_cascade={self.face_cascade is not None}", flush=True)
+        logger.debug(f"extract_frames called - CV2_AVAILABLE={CV2_AVAILABLE}, face_cascade={self.face_cascade is not None}")
         logger.info(f"🎬 Starting frame extraction from video: {video_path}")
 
         if not IMAGEHASH_AVAILABLE:
@@ -326,22 +326,6 @@ class FrameExtractor:
         except Exception as e:
             logger.error(f"❌ Could not get video duration: {e}")
             return None
-
-    def _parse_showinfo_timestamps(self, stderr_text: str) -> List[float]:
-        """Parse timestamps from ffmpeg showinfo filter output"""
-        import re
-
-        timestamps = []
-        # Look for pts_time:X.XXX in showinfo output
-        pattern = r'pts_time:([\d.]+)'
-
-        for match in re.finditer(pattern, stderr_text):
-            try:
-                timestamps.append(float(match.group(1)))
-            except ValueError:
-                continue
-
-        return timestamps
 
     def _parse_showinfo_timestamps(self, stderr_text: str) -> List[float]:
         """Parse timestamps from ffmpeg showinfo filter output in stderr"""

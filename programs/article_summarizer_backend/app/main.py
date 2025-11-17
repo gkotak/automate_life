@@ -39,7 +39,7 @@ console_handler.setFormatter(log_format)
 # Configure root logger with environment variable support
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=getattr(logging, log_level),
+    level=getattr(logging, log_level, logging.INFO),
     handlers=[file_handler, console_handler]
 )
 

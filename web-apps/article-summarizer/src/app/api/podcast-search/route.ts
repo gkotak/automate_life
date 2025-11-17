@@ -18,13 +18,12 @@ function generateAuthHeaders(): PodcastIndexHeaders {
   const authString = API_KEY + API_SECRET + timestamp;
   const authHash = crypto.createHash('sha1').update(authString).digest('hex');
 
-  // Debug logging
+  // Debug logging (without sensitive data)
   console.log('Auth Debug:', {
-    apiKey: API_KEY,
+    apiKeyLength: API_KEY.length,
     apiSecretLength: API_SECRET.length,
     timestamp: timestamp,
-    authString: authString,
-    authHash: authHash,
+    authHashLength: authHash.length,
   });
 
   return {

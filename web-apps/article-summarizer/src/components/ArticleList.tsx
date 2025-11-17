@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
 import { Article } from '@/lib/supabase'
 import { Search, Trash2, ExternalLink, Calendar, Tag, X, CheckCircle, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 type NotificationType = 'success' | 'error' | 'warning'
 
@@ -19,12 +19,6 @@ interface Notification {
 export default function ArticleList() {
   const { user } = useAuth()
   const pathname = usePathname()
-
-  // Create authenticated Supabase client
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
 
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,6 +48,16 @@ export default function ArticleList() {
   const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
   const [showAllSources, setShowAllSources] = useState(false)
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalArticles, setTotalArticles] = useState(0)
+  const articlesPerPage = 50
+
+  // Stats states for total counts by content type
+  const [totalVideos, setTotalVideos] = useState(0)
+  const [totalAudio, setTotalAudio] = useState(0)
+  const [totalTextArticles, setTotalTextArticles] = useState(0)
+
   // Restore search state from sessionStorage on mount
   useEffect(() => {
     const savedState = sessionStorage.getItem('articleSearchState')
@@ -80,7 +84,6 @@ export default function ArticleList() {
         setDateTo(savedDateTo || '')
         setHasLoaded(true)
         setLoading(false) // Ensure we're not in loading state
-        console.log('Restored search state from session storage')
       } catch (error) {
         console.error('Failed to restore search state:', error)
         setLoading(false)
@@ -88,25 +91,68 @@ export default function ArticleList() {
     }
   }, [])
 
-  // Fetch articles on mount, when user changes, or when pathname changes (navigation)
+  // Fetch articles on mount or when pathname changes (navigation)
   useEffect(() => {
-    if (pathname === '/' && !sessionStorage.getItem('articleSearchState')) {
-      fetchArticles()
-      fetchAvailableSources()
-    } else if (pathname === '/') {
-      fetchAvailableSources()
-    }
-  }, [user, pathname])
+    // Only fetch if we're on the home page
+    if (pathname !== '/') return
 
-  // Re-fetch articles when My Articles filter changes
-  useEffect(() => {
-    if (hasLoaded && pathname === '/') {
-      fetchArticles()
+    // If we have saved search state, don't fetch (state will be restored)
+    if (sessionStorage.getItem('articleSearchState')) {
       fetchAvailableSources()
+      return
     }
+
+    // Skip if we've already loaded articles (prevents re-fetch when user profile loads)
+    if (hasLoaded) {
+      return
+    }
+
+    // If showMyArticlesOnly is true but user isn't loaded yet, wait for user
+    if (showMyArticlesOnly && !user?.id) {
+      return
+    }
+
+    // Otherwise fetch articles
+    fetchArticles()
+    fetchAvailableSources()
+  }, [pathname])
+
+  // Re-fetch articles when My Articles filter changes (but only after initial load)
+  useEffect(() => {
     // Save preference to localStorage
     localStorage.setItem('showMyArticlesOnly', String(showMyArticlesOnly))
+
+    // Only re-fetch if we've loaded before and we're on the home page
+    if (!hasLoaded || pathname !== '/') return
+
+    setCurrentPage(1) // Reset to page 1 when filter changes
+    fetchArticles()
+    fetchAvailableSources()
   }, [showMyArticlesOnly])
+
+  // Re-fetch articles when page changes
+  useEffect(() => {
+    // Only re-fetch if we've loaded before and we're on the home page
+    if (!hasLoaded || pathname !== '/') return
+
+    fetchArticles()
+
+    // Scroll to top when page changes
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [currentPage])
+
+  // Fetch articles when user loads (if we're waiting for auth)
+  useEffect(() => {
+    // Only fetch if:
+    // 1. We're on the home page
+    // 2. User just loaded (has ID now)
+    // 3. We want My Articles
+    // 4. We haven't loaded articles yet
+    if (pathname === '/' && user?.id && showMyArticlesOnly && !hasLoaded) {
+      fetchArticles()
+      fetchAvailableSources()
+    }
+  }, [user?.id])
 
   const fetchAvailableSources = async () => {
     try {
@@ -181,6 +227,11 @@ export default function ArticleList() {
 
   const fetchArticles = async () => {
     try {
+      // Wait for user to load if "My Articles" is selected
+      if (showMyArticlesOnly && !user?.id) {
+        return
+      }
+
       setLoading(true)
       // Clear search state when fetching all articles
       sessionStorage.removeItem('articleSearchState')
@@ -203,28 +254,72 @@ export default function ArticleList() {
         if (articleIds.length === 0) {
           // User has no articles yet
           setArticles([])
+          setTotalArticles(0)
           setHasLoaded(true)
           setLoading(false)
           return
         }
 
-        // Fetch the actual articles
+        // Set total count for pagination
+        setTotalArticles(articleIds.length)
+
+        // Fetch content type breakdown for stats using count queries
+        const [videoCount, audioCount, articleCount] = await Promise.all([
+          supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', articleIds).eq('content_source', 'video'),
+          supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', articleIds).eq('content_source', 'audio'),
+          supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', articleIds).eq('content_source', 'article')
+        ])
+
+        setTotalVideos(videoCount.count || 0)
+        setTotalAudio(audioCount.count || 0)
+        setTotalTextArticles(articleCount.count || 0)
+
+        // Calculate pagination offset
+        const offset = (currentPage - 1) * articlesPerPage
+
+        // Fetch the actual articles with pagination
         const { data: articlesData, error: articlesError } = await supabase
           .from('articles')
-          .select('*, key_insights, quotes, duration_minutes, word_count, topics')
+          .select('id, title, url, summary_text, content_source, source, created_at, tags')
           .in('id', articleIds)
           .order('created_at', { ascending: false })
+          .range(offset, offset + articlesPerPage - 1)
 
         if (articlesError) throw articlesError
         data = articlesData
       } else {
         // Fetch all articles (no user filter)
+        // Get total count first
+        const { count, error: countError } = await supabase
+          .from('articles')
+          .select('*', { count: 'exact', head: true })
+
+        if (countError) throw countError
+        setTotalArticles(count || 0)
+
+        // Fetch content type breakdown for stats using count queries
+        const [videoCount, audioCount, articleCount] = await Promise.all([
+          supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'video'),
+          supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'audio'),
+          supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'article')
+        ])
+
+        setTotalVideos(videoCount.count || 0)
+        setTotalAudio(audioCount.count || 0)
+        setTotalTextArticles(articleCount.count || 0)
+
+        // Calculate pagination offset
+        const offset = (currentPage - 1) * articlesPerPage
+
+        // Fetch paginated articles
         const { data: allArticles, error } = await supabase
           .from('articles')
-          .select('*, key_insights, quotes, duration_minutes, word_count, topics')
+          .select('id, title, url, summary_text, content_source, source, created_at, tags')
           .order('created_at', { ascending: false })
+          .range(offset, offset + articlesPerPage - 1)
 
         if (error) throw error
+
         data = allArticles
       }
 
@@ -251,29 +346,18 @@ export default function ArticleList() {
     if (!confirm('Are you sure you want to delete this article?')) return
 
     try {
-      console.log(`🗑️ Attempting to delete article with ID: ${id}`)
-
       const { error } = await supabase
         .from('articles')
         .delete()
         .eq('id', id)
 
-      if (error) {
-        console.error('Supabase delete error:', error)
-        throw error
-      }
+      if (error) throw error
 
       // Delete successful - remove from local state
-      console.log(`✅ Successfully deleted article with id: ${id}`)
       setArticles(articles.filter(article => article.id !== id))
       addNotification('success', 'Article deleted successfully!')
     } catch (error) {
       console.error('Error deleting article:', error)
-      console.error('Error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      })
       addNotification('error', `Failed to delete article: ${error.message}`)
     }
   }
@@ -327,7 +411,6 @@ export default function ArticleList() {
       // Store extracted terms for highlighting
       if (terms && Array.isArray(terms)) {
         setExtractedTerms(terms)
-        console.log('Received extracted terms:', terms)
       } else {
         setExtractedTerms([])
       }
@@ -676,28 +759,114 @@ export default function ArticleList() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div className="bg-white rounded-lg shadow p-4 sm:p-6 border border-[#e2e8f0]">
-            <div className="text-xl sm:text-2xl font-bold text-[#077331]">{articles.length}</div>
+            <div className="text-xl sm:text-2xl font-bold text-[#077331]">{totalArticles}</div>
             <div className="text-xs sm:text-sm text-[#475569]">Total Articles</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 sm:p-6 border border-[#e2e8f0]">
             <div className="text-xl sm:text-2xl font-bold text-[#077331]">
-              {articles.filter(a => a.content_source === 'video').length}
+              {totalVideos}
             </div>
             <div className="text-xs sm:text-sm text-[#475569]">Videos</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 sm:p-6 border border-[#e2e8f0]">
             <div className="text-xl sm:text-2xl font-bold text-[#077331]">
-              {articles.filter(a => a.content_source === 'audio').length}
+              {totalAudio}
             </div>
             <div className="text-xs sm:text-sm text-[#475569]">Audio</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 sm:p-6 border border-[#e2e8f0]">
             <div className="text-xl sm:text-2xl font-bold text-[#077331]">
-              {articles.filter(a => a.content_source === 'article').length}
+              {totalTextArticles}
             </div>
             <div className="text-xs sm:text-sm text-[#475569]">Articles</div>
           </div>
         </div>
+
+        {/* Pagination Controls - Top */}
+        {!loading && totalArticles > articlesPerPage && (
+          <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-lg shadow-md border border-[#e2e8f0]">
+            {/* Page info */}
+            <div className="text-sm text-gray-600">
+              Showing {((currentPage - 1) * articlesPerPage) + 1} to {Math.min(currentPage * articlesPerPage, totalArticles)} of {totalArticles} articles
+            </div>
+
+            {/* Pagination buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                First
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                Previous
+              </button>
+
+              {/* Page numbers */}
+              <div className="hidden sm:flex items-center gap-1">
+                {Array.from({ length: Math.min(5, Math.ceil(totalArticles / articlesPerPage)) }, (_, i) => {
+                  const totalPages = Math.ceil(totalArticles / articlesPerPage)
+                  let pageNum
+
+                  if (totalPages <= 5) {
+                    // Show all pages if 5 or fewer
+                    pageNum = i + 1
+                  } else if (currentPage <= 3) {
+                    // Near the start
+                    pageNum = i + 1
+                  } else if (currentPage >= totalPages - 2) {
+                    // Near the end
+                    pageNum = totalPages - 4 + i
+                  } else {
+                    // In the middle
+                    pageNum = currentPage - 2 + i
+                  }
+
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-[#077331] text-white'
+                          : 'bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Current page indicator for mobile */}
+              <div className="sm:hidden px-3 py-2 bg-[#077331] text-white rounded-md text-sm font-medium">
+                {currentPage} / {Math.ceil(totalArticles / articlesPerPage)}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalArticles / articlesPerPage), prev + 1))}
+                disabled={currentPage >= Math.ceil(totalArticles / articlesPerPage)}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                Next
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(Math.ceil(totalArticles / articlesPerPage))}
+                disabled={currentPage >= Math.ceil(totalArticles / articlesPerPage)}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                Last
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Articles List */}
@@ -794,6 +963,92 @@ export default function ArticleList() {
             </div>
           )}
         </div>
+        )}
+
+        {/* Pagination Controls - Bottom */}
+        {!loading && totalArticles > articlesPerPage && (
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-lg shadow-md border border-[#e2e8f0]">
+            {/* Page info */}
+            <div className="text-sm text-gray-600">
+              Showing {((currentPage - 1) * articlesPerPage) + 1} to {Math.min(currentPage * articlesPerPage, totalArticles)} of {totalArticles} articles
+            </div>
+
+            {/* Pagination buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                First
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                Previous
+              </button>
+
+              {/* Page numbers */}
+              <div className="hidden sm:flex items-center gap-1">
+                {Array.from({ length: Math.min(5, Math.ceil(totalArticles / articlesPerPage)) }, (_, i) => {
+                  const totalPages = Math.ceil(totalArticles / articlesPerPage)
+                  let pageNum
+
+                  if (totalPages <= 5) {
+                    // Show all pages if 5 or fewer
+                    pageNum = i + 1
+                  } else if (currentPage <= 3) {
+                    // Near the start
+                    pageNum = i + 1
+                  } else if (currentPage >= totalPages - 2) {
+                    // Near the end
+                    pageNum = totalPages - 4 + i
+                  } else {
+                    // In the middle
+                    pageNum = currentPage - 2 + i
+                  }
+
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-[#077331] text-white'
+                          : 'bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Current page indicator for mobile */}
+              <div className="sm:hidden px-3 py-2 bg-[#077331] text-white rounded-md text-sm font-medium">
+                {currentPage} / {Math.ceil(totalArticles / articlesPerPage)}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalArticles / articlesPerPage), prev + 1))}
+                disabled={currentPage >= Math.ceil(totalArticles / articlesPerPage)}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                Next
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(Math.ceil(totalArticles / articlesPerPage))}
+                disabled={currentPage >= Math.ceil(totalArticles / articlesPerPage)}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-white text-gray-700 border border-[#e2e8f0] hover:bg-gray-50 disabled:hover:bg-white"
+              >
+                Last
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
