@@ -72,13 +72,17 @@ class BaseProcessor:
         # Rotate log if it's too large (2MB limit - keeps ~few days)
         self._rotate_log_if_needed(log_file, max_size_mb=2)
 
+        # Get log level from environment variable (default to INFO)
+        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        log_level_int = getattr(logging, log_level, logging.INFO)
+
         logger = logging.getLogger(f'{self.session_name}_logger')
-        logger.setLevel(logging.INFO)
+        logger.setLevel(log_level_int)
         logger.handlers.clear()
 
         # File handler with detailed formatting
         file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(log_level_int)
         file_formatter = logging.Formatter(
             f'%(asctime)s - [{self.session_name.upper()}] - %(levelname)s - %(message)s'
         )
@@ -87,7 +91,7 @@ class BaseProcessor:
 
         # Console handler with simple formatting
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(log_level_int)
         console_formatter = logging.Formatter('%(message)s')
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)

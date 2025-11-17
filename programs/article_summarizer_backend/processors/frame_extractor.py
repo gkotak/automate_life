@@ -14,9 +14,16 @@ from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 import hashlib
 import asyncio
+import numpy as np
 
 # Use [FRAMEEXTRACTOR] prefix to match ArticleProcessor logging style
 logger = logging.getLogger('[FRAMEEXTRACTOR]')
+# Set logger to propagate to root logger (will inherit handlers and level from root)
+logger.propagate = True
+# Also set level from environment for standalone usage
+import os as _os
+_log_level = _os.getenv("LOG_LEVEL", "INFO").upper()
+logger.setLevel(getattr(logging, _log_level, logging.INFO))
 
 try:
     import imagehash
@@ -27,6 +34,14 @@ except ImportError:
     # This warning will appear during module import
     import sys
     print("⚠️ WARNING: imagehash library not available. Install with: pip install imagehash pillow", file=sys.stderr)
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    import sys
+    print("⚠️ WARNING: opencv-python library not available. Install with: pip install opencv-python", file=sys.stderr)
 
 
 class FrameExtractor:
@@ -44,6 +59,33 @@ class FrameExtractor:
         self.min_interval_seconds = min_interval_seconds
         self.similarity_threshold = similarity_threshold
         self.temp_dir = None
+        self.face_cascade = None
+
+        # Initialize detection cascades if OpenCV is available
+        self.upperbody_cascade = None
+        if CV2_AVAILABLE:
+            try:
+                # Face detection
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+                if self.face_cascade.empty():
+                    logger.warning("⚠️ Face detection cascade failed to load")
+                    self.face_cascade = None
+                else:
+                    logger.info("✅ Face detection cascade loaded successfully")
+
+                # Upper body detection (detects head + shoulders + torso)
+                upperbody_path = cv2.data.haarcascades + 'haarcascade_upperbody.xml'
+                self.upperbody_cascade = cv2.CascadeClassifier(upperbody_path)
+                if self.upperbody_cascade.empty():
+                    logger.warning("⚠️ Upper body detection cascade failed to load")
+                    self.upperbody_cascade = None
+                else:
+                    logger.info("✅ Upper body detection cascade loaded successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize detection cascades: {e}")
+                self.face_cascade = None
+                self.upperbody_cascade = None
 
     async def extract_frames(self, video_path: str) -> List[Dict[str, any]]:
         """
@@ -63,6 +105,7 @@ class FrameExtractor:
                 - time_formatted: Formatted timestamp (MM:SS or HH:MM:SS)
                 - hash: Perceptual hash of the frame (for metadata only)
         """
+        print(f"[FRAMEEXTRACTOR DEBUG] extract_frames called - CV2_AVAILABLE={CV2_AVAILABLE}, face_cascade={self.face_cascade is not None}", flush=True)
         logger.info(f"🎬 Starting frame extraction from video: {video_path}")
 
         if not IMAGEHASH_AVAILABLE:
@@ -83,8 +126,23 @@ class FrameExtractor:
                 logger.warning("⚠️ No scene changes detected, falling back to interval extraction")
                 frames = await self._extract_by_interval(video_path)
 
+            # Filter frames to only include screen share content
+            screen_share_frames = []
+            filtered_count = 0
+            for idx, frame in enumerate(frames, 1):
+                logger.info(f"📋 Analyzing frame {idx}/{len(frames)} at {frame['time_formatted']}")
+                is_screen_share = self._is_screen_share_frame(frame["path"])
+                if is_screen_share:
+                    screen_share_frames.append(frame)
+                else:
+                    filtered_count += 1
+                    logger.info(f"🚫 Filtered out frame {idx}/{len(frames)} at {frame['time_formatted']}")
+
+            if filtered_count > 0:
+                logger.info(f"📊 Filtered {filtered_count} frames showing faces/webcam feeds")
+
             # Compute perceptual hashes for metadata (not used for filtering)
-            for frame in frames:
+            for frame in screen_share_frames:
                 try:
                     img = Image.open(frame["path"])
                     phash = imagehash.phash(img)
@@ -93,8 +151,8 @@ class FrameExtractor:
                     logger.warning(f"⚠️ Could not compute hash for frame {frame['path']}: {e}")
                     frame["hash"] = None
 
-            logger.info(f"✅ Extracted {len(frames)} unique frames")
-            return frames
+            logger.info(f"✅ Extracted {len(screen_share_frames)} screen share frames")
+            return screen_share_frames
 
         except Exception as e:
             logger.error(f"❌ Frame extraction failed: {e}", exc_info=True)
@@ -302,6 +360,125 @@ class FrameExtractor:
 
         logger.info(f"📋 Parsed {len(timestamps)} timestamps from showinfo")
         return timestamps
+
+    def _is_screen_share_frame(self, frame_path: str) -> bool:
+        """
+        Determine if a frame contains screen share content vs just a person's face.
+
+        Uses two detection methods:
+        1. Face detection - if a large face is detected, it's likely a webcam feed
+        2. Edge density analysis - screen shares have more sharp edges (UI, text, slides)
+
+        Args:
+            frame_path: Path to the frame image file
+
+        Returns:
+            True if frame appears to be screen share content, False if it's just a face
+        """
+        if not CV2_AVAILABLE or self.face_cascade is None:
+            # If OpenCV not available, default to keeping the frame
+            logger.debug(f"⚠️ OpenCV not available, keeping frame by default")
+            return True
+
+        try:
+            # Read the image
+            img = cv2.imread(frame_path)
+            if img is None:
+                logger.warning(f"⚠️ Could not read frame {frame_path}")
+                return True  # Keep frame by default if we can't read it
+
+            # Convert to grayscale for analysis
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+            # 2. Edge density analysis (do this FIRST - it's more reliable)
+            edges = cv2.Canny(gray, 50, 150)
+            edge_density = np.count_nonzero(edges) / edges.size
+
+            # 1. Upper body detection - detects head, shoulders, torso (better for webcam detection)
+            if self.upperbody_cascade is not None:
+                upperbodies = self.upperbody_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3)
+
+                if len(upperbodies) > 0:
+                    # Calculate upper body area ratio
+                    upperbody_area = sum(w * h for (x, y, w, h) in upperbodies)
+                    frame_area = img.shape[0] * img.shape[1]
+                    upperbody_ratio = upperbody_area / frame_area
+
+                    # Upper body > 15% of frame = likely webcam/talking head
+                    if upperbody_ratio > 0.15:
+                        logger.info(f"   🚫 REJECT: Upper body {upperbody_ratio:.1%}, edges {edge_density:.1%} - webcam/talking head")
+                        return False
+                    else:
+                        logger.info(f"   👤 Upper body {upperbody_ratio:.1%} detected but below threshold")
+
+            # 2. Face detection as fallback
+            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=2)
+
+            if len(faces) > 0:
+                # Calculate face area ratio
+                face_area = sum(w * h for (x, y, w, h) in faces)
+                frame_area = img.shape[0] * img.shape[1]
+                face_ratio = face_area / frame_area
+
+                # Get largest face for position analysis
+                largest_face = max(faces, key=lambda f: f[2] * f[3])
+                x, y, w, h = largest_face
+
+                # Calculate face position (centered faces are more likely webcam)
+                face_center_x = x + w / 2
+                face_center_y = y + h / 2
+                frame_center_x = img.shape[1] / 2
+                frame_center_y = img.shape[0] / 2
+
+                # Distance from center (normalized 0-1)
+                center_dist_x = abs(face_center_x - frame_center_x) / frame_center_x
+                center_dist_y = abs(face_center_y - frame_center_y) / frame_center_y
+
+                # Talking head indicators (fallback when upper body not detected):
+                # 1. Face area > 20% - definitely talking head
+                # 2. Face detected (any size) AND low edges (<11%) - likely talking head
+                # 3. Face > 5% AND centered AND low edges - likely talking head (redundant but kept for clarity)
+
+                is_talking_head = False
+                reason = ""
+
+                if face_ratio > 0.20:
+                    is_talking_head = True
+                    reason = "large face >20%"
+                elif edge_density < 0.11:
+                    # Any face detected with low edges = talking head
+                    # Screen shares have sharp edges (UI, text), talking heads don't
+                    is_talking_head = True
+                    reason = f"face detected with low edges (<11%)"
+                elif face_ratio > 0.05 and center_dist_x < 0.3 and center_dist_y < 0.3:
+                    is_talking_head = True
+                    reason = "centered small face"
+
+                if is_talking_head:
+                    logger.info(f"   🚫 REJECT: Face {face_ratio:.1%}, edges {edge_density:.1%} - {reason}")
+                    return False
+                else:
+                    logger.info(f"   👤 Face {face_ratio:.1%}, edges {edge_density:.1%}, center ({center_dist_x:.1%}, {center_dist_y:.1%})")
+
+            # Analyze edge density for screen share characteristics
+            if edge_density > 0.12:  # Lots of sharp edges = likely screen content
+                logger.info(f"   ✅ KEEP: High edges {edge_density:.1%} - screen share")
+                return True
+
+            # If we have some edges but not many, it might still be screen content
+            # (e.g., a slide with minimal text)
+            if edge_density > 0.05:
+                logger.info(f"   ✅ KEEP: Moderate edges {edge_density:.1%} - screen share")
+                return True
+
+            # Very low edge density (<5%) and no large face detected
+            # Likely blank screen, sponsor intro, or transition slide - reject it
+            logger.info(f"   🚫 REJECT: Low edges {edge_density:.1%} - likely blank/transition screen")
+            return False
+
+        except Exception as e:
+            logger.warning(f"⚠️ Error analyzing frame {frame_path}: {e}")
+            return True  # Keep frame by default on error
 
     def _format_timestamp(self, seconds: float) -> str:
         """Format timestamp as MM:SS or HH:MM:SS"""

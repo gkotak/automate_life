@@ -36,9 +36,10 @@ log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messa
 file_handler.setFormatter(log_format)
 console_handler.setFormatter(log_format)
 
-# Configure root logger
+# Configure root logger with environment variable support
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level),
     handlers=[file_handler, console_handler]
 )
 
