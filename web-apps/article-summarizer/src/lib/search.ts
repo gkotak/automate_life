@@ -4,13 +4,8 @@
  * Shared functions for searching articles using semantic (vector) and keyword search.
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
 import { generateEmbedding } from './embeddings'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-)
 
 export interface ArticleSearchResult {
   id: number

@@ -177,9 +177,14 @@ async def process_article_direct(
                         # Associate article with user in junction table
                         if user_id:
                             try:
+                                # Get user's organization_id
+                                user_data = processor.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
+                                organization_id = user_data.data.get('organization_id') if user_data.data else None
+
                                 processor.supabase.table('article_users').insert({
                                     'article_id': article_id,
-                                    'user_id': user_id
+                                    'user_id': user_id,
+                                    'organization_id': organization_id
                                 }).execute()
                                 logger.info(f"✅ Associated article with user: {user_id}")
                             except Exception as e:

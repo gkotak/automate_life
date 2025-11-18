@@ -2357,10 +2357,15 @@ class ArticleProcessor(BaseProcessor):
                 # Associate article with user in junction table (if user_id provided)
                 if user_id:
                     try:
+                        # Get user's organization_id
+                        user_data = self.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
+                        organization_id = user_data.data.get('organization_id') if user_data.data else None
+
                         self.supabase.table('article_users').upsert(
                             {
                                 'article_id': article_id,
-                                'user_id': user_id
+                                'user_id': user_id,
+                                'organization_id': organization_id
                             },
                             on_conflict='article_id,user_id'
                         ).execute()

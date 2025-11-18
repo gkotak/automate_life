@@ -107,15 +107,16 @@ export default function ArticleList() {
       return
     }
 
-    // If showMyArticlesOnly is true but user isn't loaded yet, wait for user
-    if (showMyArticlesOnly && !user?.id) {
-      return
+    // If not logged in, ensure "My Articles" filter is off
+    if (!user?.id && showMyArticlesOnly) {
+      setShowMyArticlesOnly(false)
+      localStorage.setItem('showMyArticlesOnly', 'false')
     }
 
-    // Otherwise fetch articles
+    // Fetch articles (fetchArticles handles all edge cases internally)
     fetchArticles()
     fetchAvailableSources()
-  }, [pathname])
+  }, [pathname, user?.id])
 
   // Re-fetch articles when My Articles filter changes (but only after initial load)
   useEffect(() => {
@@ -227,11 +228,6 @@ export default function ArticleList() {
 
   const fetchArticles = async () => {
     try {
-      // Wait for user to load if "My Articles" is selected
-      if (showMyArticlesOnly && !user?.id) {
-        return
-      }
-
       setLoading(true)
       // Clear search state when fetching all articles
       sessionStorage.removeItem('articleSearchState')

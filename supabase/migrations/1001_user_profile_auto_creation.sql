@@ -26,12 +26,13 @@ BEGIN
   );
 
   -- Create a new organization for this user
-  INSERT INTO organizations (name, created_at, updated_at)
+  -- Use INSERT with explicit schema to ensure we're using the public schema
+  INSERT INTO public.organizations (name, created_at, updated_at)
   VALUES (org_name, NOW(), NOW())
   RETURNING id INTO new_org_id;
 
   -- Create user profile with reference to the new organization
-  INSERT INTO users (
+  INSERT INTO public.users (
     id,
     organization_id,
     role,
@@ -49,6 +50,12 @@ BEGIN
   );
 
   RETURN NEW;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Log the error for debugging
+    RAISE LOG 'Error in handle_new_user for user %: %', NEW.id, SQLERRM;
+    -- Re-raise the exception so signup fails with proper error
+    RAISE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -81,7 +88,7 @@ BEGIN
   FOR auth_user IN
     SELECT au.id, au.email, au.raw_user_meta_data
     FROM auth.users au
-    LEFT JOIN users u ON au.id = u.id
+    LEFT JOIN public.users u ON au.id = u.id
     WHERE u.id IS NULL
   LOOP
     RAISE NOTICE 'Creating profile for user: % (%)', auth_user.email, auth_user.id;
@@ -93,7 +100,7 @@ BEGIN
     );
 
     -- Create organization
-    INSERT INTO organizations (name, created_at, updated_at)
+    INSERT INTO public.organizations (name, created_at, updated_at)
     VALUES (org_name, NOW(), NOW())
     RETURNING id INTO new_org_id;
 
@@ -104,7 +111,7 @@ BEGIN
     );
 
     -- Create user profile
-    INSERT INTO users (
+    INSERT INTO public.users (
       id,
       organization_id,
       role,
