@@ -47,13 +47,13 @@ class ContentTypeDetector:
 
     def is_direct_media_url(self, url: str) -> Tuple[bool, Optional[str]]:
         """
-        Check if URL points directly to a video or audio file
+        Check if URL points directly to a video, audio, or document file
 
         Args:
             url: The URL to check
 
         Returns:
-            Tuple of (is_media, media_type) where media_type is 'video', 'audio', or None
+            Tuple of (is_media, media_type) where media_type is 'video', 'audio', 'document', or None
         """
         from urllib.parse import urlparse, unquote
 
@@ -72,6 +72,11 @@ class ContentTypeDetector:
             if path.endswith(ext):
                 self.logger.info(f"🎵 Detected direct audio file URL: {ext}")
                 return True, 'audio'
+
+        # Check for document extensions (PDF)
+        if path.endswith('.pdf'):
+            self.logger.info(f"📄 Detected direct PDF file URL")
+            return True, 'document'
 
         return False, None
 

@@ -29,8 +29,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  // Fetch user profile and organization
-  const fetchUserProfile = async (userId: string) => {
+  // Fetch user profile and organization with retry logic
+  const fetchUserProfile = async (userId: string, retries = 3, delay = 1000) => {
+    console.log('[Auth] Fetching profile for user:', userId)
     try {
       // Fetch user profile with organization data in a single optimized query
       const { data: profileData, error: profileError } = await supabase
@@ -40,6 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (profileError) {
+        // If error is "Row not found" (PGRST116) and we have retries left, wait and retry
+        // This handles the race condition where auth.users exists but public.users trigger hasn't finished
+        if (profileError.code === 'PGRST116' && retries > 0) {
+          console.log(`[Auth] Profile not found, retrying in ${delay}ms... (${retries} retries left)`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return fetchUserProfile(userId, retries - 1, delay * 1.5)
+        }
+
         console.error('Error fetching user profile:', profileError)
         return
       }
@@ -63,43 +72,98 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Check active session (original approach that was working)
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const currentUser = session?.user ?? null
-        setUser(currentUser)
+    console.log('[Auth] Setting up auth listener...')
+    let mounted = true
 
-        // Fetch profile if user exists
+    // Safety timeout to prevent infinite loading
+    const safetyTimeout = setTimeout(() => {
+      if (loading && mounted) {
+        console.warn('[Auth] Safety timeout triggered - forcing loading to false')
+        setLoading(false)
+      }
+    }, 5000)
+
+    // 1. Setup listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] Auth event:', event, { hasSession: !!session })
+      if (!mounted) return
+
+      const currentUser = session?.user ?? null
+      setUser(currentUser)
+
+      if (event === 'INITIAL_SESSION') {
+        // Page load - fetch profile if user exists
         if (currentUser) {
+          console.log('[Auth] Initial session - fetching profile...')
           await fetchUserProfile(currentUser.id)
         }
-      } catch (error) {
-        console.error('Error in checkSession:', error)
-      } finally {
-        // Always set loading to false, even if there's an error
+        // Always set loading to false after initial session check
         setLoading(false)
+        clearTimeout(safetyTimeout)
+      } else if (event === 'SIGNED_IN') {
+        // User just signed in - fetch profile
+        console.log('[Auth] Signed in - fetching profile...')
+        await fetchUserProfile(currentUser!.id)
+        setLoading(false)
+      } else if (event === 'SIGNED_OUT') {
+        setUserProfile(null)
+        setOrganization(null)
+        setLoading(false)
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Handle token refresh if needed
+        console.log('[Auth] Token refreshed')
+      }
+    })
+
+    // 2. Explicit check for session (fallback)
+    // This ensures we initialize even if INITIAL_SESSION doesn't fire (which can happen in some SSR/client setups)
+    const checkSession = async () => {
+      try {
+        console.log('[Auth] Checking session explicitly...')
+        const start = Date.now()
+
+        // Race getSession with a 2s timeout to detect hangs
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 4000))
+
+        // @ts-ignore
+        const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise])
+
+        console.log(`[Auth] getSession completed in ${Date.now() - start}ms`)
+
+        if (error) {
+          console.error('[Auth] Error checking session:', error)
+          return
+        }
+
+        if (mounted) {
+          if (session?.user) {
+            console.log('[Auth] Manual session check found user:', session.user.id)
+            setUser(session.user)
+            // Only fetch profile if we haven't already (optimization)
+            if (!userProfile) {
+              await fetchUserProfile(session.user.id)
+            }
+          } else {
+            console.log('[Auth] Manual session check: No session')
+          }
+          // Ensure loading is false if we're done checking
+          setLoading(false)
+          clearTimeout(safetyTimeout)
+        }
+      } catch (e) {
+        console.error('[Auth] Exception checking session:', e)
+        if (mounted) setLoading(false)
       }
     }
 
     checkSession()
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('Auth event:', _event)
-      const currentUser = session?.user ?? null
-      setUser(currentUser)
-
-      // Fetch profile when user signs in
-      if (currentUser && _event === 'SIGNED_IN') {
-        await fetchUserProfile(currentUser.id)
-      } else if (_event === 'SIGNED_OUT') {
-        setUserProfile(null)
-        setOrganization(null)
-      }
-    })
-
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      clearTimeout(safetyTimeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const signUp = async (email: string, password: string, displayName?: string) => {

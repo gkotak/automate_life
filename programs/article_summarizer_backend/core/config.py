@@ -19,7 +19,7 @@ class Config:
     MAX_DEEPGRAM_FILE_SIZE_MB = 25  # Files larger than this will be chunked
     RSS_POST_RECENCY_DAYS = 3
     TRACKING_CLEANUP_DAYS = 30
-    MAX_ARTICLE_WORDS = 15000  # Limit for Claude CLI prompt size
+    MAX_ARTICLE_WORDS = 25000  # Limit for Claude API prompt size
 
     # HTTP timeouts (seconds)
     DEFAULT_TIMEOUT = 30

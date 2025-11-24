@@ -395,7 +395,7 @@ class FrameExtractor:
                     else:
                         logger.info(f"   👤 Upper body {upperbody_ratio:.1%} detected but below threshold")
 
-            # 2. Face detection as fallback
+            # 2. Face detection
             faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=2)
 
             if len(faces) > 0:
@@ -404,61 +404,31 @@ class FrameExtractor:
                 frame_area = img.shape[0] * img.shape[1]
                 face_ratio = face_area / frame_area
 
-                # Get largest face for position analysis
-                largest_face = max(faces, key=lambda f: f[2] * f[3])
-                x, y, w, h = largest_face
-
-                # Calculate face position (centered faces are more likely webcam)
-                face_center_x = x + w / 2
-                face_center_y = y + h / 2
-                frame_center_x = img.shape[1] / 2
-                frame_center_y = img.shape[0] / 2
-
-                # Distance from center (normalized 0-1)
-                center_dist_x = abs(face_center_x - frame_center_x) / frame_center_x
-                center_dist_y = abs(face_center_y - frame_center_y) / frame_center_y
-
-                # Talking head indicators (fallback when upper body not detected):
-                # 1. Face area > 20% - definitely talking head
-                # 2. Face detected (any size) AND low edges (<11%) - likely talking head
-                # 3. Face > 5% AND centered AND low edges - likely talking head (redundant but kept for clarity)
-
-                is_talking_head = False
-                reason = ""
-
+                # REJECT if face >20% - large talking head
                 if face_ratio > 0.20:
-                    is_talking_head = True
-                    reason = "large face >20%"
-                elif edge_density < 0.11:
-                    # Any face detected with low edges = talking head
-                    # Screen shares have sharp edges (UI, text), talking heads don't
-                    is_talking_head = True
-                    reason = f"face detected with low edges (<11%)"
-                elif face_ratio > 0.05 and center_dist_x < 0.3 and center_dist_y < 0.3:
-                    is_talking_head = True
-                    reason = "centered small face"
-
-                if is_talking_head:
-                    logger.info(f"   🚫 REJECT: Face {face_ratio:.1%}, edges {edge_density:.1%} - {reason}")
+                    logger.info(f"   🚫 REJECT: Face {face_ratio:.1%}, edges {edge_density:.1%} - large face >20%")
                     return False
+
+                # If face >2%, keep only if edges >4%
+                if face_ratio > 0.02:
+                    if edge_density > 0.04:
+                        logger.info(f"   ✅ KEEP: Face {face_ratio:.1%}, edges {edge_density:.1%} - edges >4%")
+                        return True
+                    else:
+                        logger.info(f"   🚫 REJECT: Face {face_ratio:.1%}, edges {edge_density:.1%} - edges ≤4%")
+                        return False
                 else:
-                    logger.info(f"   👤 Face {face_ratio:.1%}, edges {edge_density:.1%}, center ({center_dist_x:.1%}, {center_dist_y:.1%})")
+                    # Face ≤2% - ignore as false positive, use lower edge threshold
+                    logger.info(f"   👤 Ignoring tiny face detection {face_ratio:.1%} (likely false positive)")
 
-            # Analyze edge density for screen share characteristics
-            if edge_density > 0.12:  # Lots of sharp edges = likely screen content
-                logger.info(f"   ✅ KEEP: High edges {edge_density:.1%} - screen share")
+            # No significant face detected (or face ≤2%)
+            # Keep if edges >0.01%
+            if edge_density > 0.0001:
+                logger.info(f"   ✅ KEEP: Edges {edge_density:.1%} - screen share")
                 return True
-
-            # If we have some edges but not many, it might still be screen content
-            # (e.g., a slide with minimal text)
-            if edge_density > 0.05:
-                logger.info(f"   ✅ KEEP: Moderate edges {edge_density:.1%} - screen share")
-                return True
-
-            # Very low edge density (<5%) and no large face detected
-            # Likely blank screen, sponsor intro, or transition slide - reject it
-            logger.info(f"   🚫 REJECT: Low edges {edge_density:.1%} - likely blank/transition screen")
-            return False
+            else:
+                logger.info(f"   🚫 REJECT: Edges {edge_density:.1%} - blank/transition screen")
+                return False
 
         except Exception as e:
             logger.warning(f"⚠️ Error analyzing frame {frame_path}: {e}")

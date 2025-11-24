@@ -460,25 +460,27 @@ class PodcastHistoryCheckerService:
                     self.logger.info(f"   ✅ Successfully fetched podcast title: {fetched_title}")
                     podcast_title = fetched_title
 
+            # IMPORTANT: content_queue is populated from multiple sources (RSS feeds AND PocketCasts history)
+            # channel_title is duplicated (not normalized) because:
+            # - PocketCasts entries don't have a corresponding entry in content_sources table
+            # - They're discovered from listening history, not from subscribed RSS feeds
             record = {
-                'url': episode_details['episode_url'],
-                'title': episode_details['episode_title'],
-                'content_type': 'podcast_episode',
-                'source': 'podcast_history',
-                'channel_title': podcast_title,
-                'channel_url': f"https://pocketcasts.com/podcast/{episode_details['podcast_uuid']}",
+                'url': episode_details['episode_url'],  # Episode audio file URL
+                'title': episode_details['episode_title'],  # Episode title
+                'content_type': 'podcast_episode',  # Hardcoded for PocketCasts (vs RSS's dynamic detection)
+                'source': 'podcast_history',  # Discovery mechanism for this flow (vs 'rss_feed')
+                'channel_title': podcast_title,  # Podcast name (from PocketCasts API or scraped)
                 # 'video_url': video_url,  # REMOVED - discovery happens in Article Processor
-                'platform': 'pocketcasts',
-                'source_feed': None,
+                'platform': 'pocketcasts',  # Discovery platform (vs 'podcast_rss' or 'rss_feed')
                 'found_at': datetime.now().isoformat(),
                 'published_date': published_date,
                 'status': 'failed' if has_error else 'discovered',
-                'podcast_uuid': episode_details['podcast_uuid'],
-                'episode_uuid': episode_details['episode_uuid'],
+                'podcast_uuid': episode_details['podcast_uuid'],  # PocketCasts-specific identifier
+                'episode_uuid': episode_details['episode_uuid'],  # PocketCasts-specific identifier
                 'duration_seconds': episode_details.get('duration'),
-                'played_up_to': episode_details.get('played_up_to'),
-                'progress_percent': episode_details.get('progress_percent'),
-                'playing_status': episode_details.get('playing_status')
+                'played_up_to': episode_details.get('played_up_to'),  # PocketCasts-specific: progress tracking
+                'progress_percent': episode_details.get('progress_percent'),  # PocketCasts-specific: progress tracking
+                'playing_status': episode_details.get('playing_status')  # PocketCasts-specific: playback state
             }
 
             result = self.supabase.table('content_queue').upsert(

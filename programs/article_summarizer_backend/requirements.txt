@@ -20,6 +20,9 @@ imagehash>=4.3.0
 pillow>=10.0.0
 opencv-python>=4.8.0
 
+# Document processing
+pypdf>=6.3.0
+
 # Database
 supabase>=2.0.0
 

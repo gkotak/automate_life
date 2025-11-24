@@ -363,11 +363,19 @@ export default function ArticlePage() {
   const fetchArticle = async (id: number) => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+
+      // Add timeout to prevent hanging on corrupted Supabase session
+      const fetchPromise = supabase
         .from('articles')
         .select('*, key_insights, quotes, duration_minutes, word_count, topics')
         .eq('id', id)
         .single()
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout - please refresh the page')), 10000)
+      )
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise])
 
       if (error) throw error
       setArticle(data)
@@ -588,6 +596,28 @@ export default function ArticlePage() {
         </div>
       )}
 
+      {/* PDF Viewer - for PDF documents */}
+      {article.url?.toLowerCase().endsWith('.pdf') && (
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-6 sm:mb-8">
+          <div className="space-y-2 sm:space-y-3">
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-900">📄 Document</h3>
+            <div className="relative w-full" style={{ height: '600px' }}>
+              <iframe
+                src={article.url}
+                className="absolute top-0 left-0 w-full h-full border-0 rounded-lg"
+                title="PDF Document"
+              />
+            </div>
+            <p className="text-xs text-gray-500">
+              <strong>Note:</strong> If the PDF doesn't display, you can{' '}
+              <a href={article.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                open it directly
+              </a>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Content Tabs */}
       <div className="bg-white rounded-lg shadow-md">
         <div className="border-b border-gray-200 px-4 sm:px-6 pt-3 sm:pt-4 overflow-x-auto">
@@ -602,7 +632,8 @@ export default function ArticlePage() {
             >
               Summary
             </button>
-            {article.transcript_text && (
+            {/* Hide transcript tab for PDFs - the extracted text isn't well formatted */}
+            {article.transcript_text && !article.url?.toLowerCase().endsWith('.pdf') && (
               <button
                 onClick={() => setActiveTab('transcript')}
                 className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${

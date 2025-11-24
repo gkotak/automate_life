@@ -13,7 +13,10 @@ from app.models.content_source import (
     ContentSourceUpdate,
     ContentSource,
     ContentSourceListResponse,
-    ContentSourceResponse
+    ContentSourceResponse,
+    SourceDiscoveryRequest,
+    SourceDiscoveryResponse,
+    PreviewPost
 )
 from app.middleware.auth import verify_supabase_jwt
 
@@ -151,13 +154,26 @@ async def create_content_source(
     try:
         supabase = get_supabase()
 
+        # Get user's organization_id from the users table
+        user_result = supabase.table('users').select('organization_id').eq('id', user_id).execute()
+
+        if not user_result.data or len(user_result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found in users table"
+            )
+
+        organization_id = user_result.data[0]['organization_id']
+
         # Prepare data for insertion
         source_data = {
             'user_id': user_id,
+            'organization_id': organization_id,
             'title': source.title,
             'url': str(source.url),
             'notes': source.notes,
-            'is_active': source.is_active
+            'is_active': source.is_active,
+            'source_type': source.source_type
         }
 
         result = supabase.table('content_sources').insert(source_data).execute()
@@ -230,6 +246,8 @@ async def update_content_source(
             update_data['notes'] = updates.notes
         if updates.is_active is not None:
             update_data['is_active'] = updates.is_active
+        if updates.source_type is not None:
+            update_data['source_type'] = updates.source_type
 
         if not update_data:
             raise HTTPException(
@@ -320,4 +338,110 @@ async def delete_content_source(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete content source: {str(e)}"
+        )
+
+
+@router.post("/sources/discover", response_model=SourceDiscoveryResponse)
+async def discover_source(
+    request: SourceDiscoveryRequest,
+    user_id: str = Depends(verify_supabase_jwt)
+):
+    """
+    Discover RSS feed and metadata from a URL
+
+    Tries to:
+    1. Check if URL is already an RSS feed
+    2. Auto-discover RSS feed from HTML page
+    3. Fall back to HTML scraping if no RSS found
+    4. Extract title and preview posts
+
+    Args:
+        request: URL to discover
+        user_id: User ID extracted from JWT token
+
+    Returns:
+        Discovered source information with preview posts
+    """
+    try:
+        from app.services.post_checker import PostCheckerService
+
+        url = str(request.url)
+        logger.info(f"Discovering source from URL: {url}")
+
+        # Initialize post checker service (reuse existing discovery logic)
+        post_checker = PostCheckerService()
+
+        # Try RSS discovery first
+        discovered_feed_url = None
+        has_rss = False
+        feed_type = "html_scraping"
+
+        # Fetch the URL
+        response = post_checker.session.get(url, timeout=10)
+        response.raise_for_status()
+
+        # Check if it's already an RSS feed
+        if post_checker._is_rss_feed(url, response):
+            discovered_feed_url = url
+            has_rss = True
+            feed_type = "rss_feed"
+            logger.info(f"URL is already an RSS feed: {url}")
+        else:
+            # Try to discover RSS feed from HTML
+            discovered_feed_url = post_checker._discover_rss_feed(url, response)
+            if discovered_feed_url:
+                has_rss = True
+                feed_type = "rss_feed"
+                logger.info(f"Discovered RSS feed: {discovered_feed_url}")
+
+        # Use discovered feed URL or fall back to original URL
+        final_url = discovered_feed_url if discovered_feed_url else url
+
+        # Extract posts to get title and preview
+        # Pass user's intended source_type ('newsletter' or 'podcast')
+        platform_type = post_checker._detect_platform_type(final_url)
+        posts = post_checker._extract_posts_from_feed(final_url, platform_type, user_source_type=request.source_type)
+
+        # Extract title from posts or fetch from page
+        title = "Unknown Source"
+        if posts and len(posts) > 0:
+            # Get channel title from first post if available
+            title = posts[0].get('channel_title', 'Unknown Source')
+
+        # If still no title, try to extract from HTML
+        if title == "Unknown Source":
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.content, 'html.parser')
+            title_tag = soup.find('title')
+            if title_tag:
+                title = title_tag.get_text().strip()
+            # Also try og:title meta tag
+            og_title = soup.find('meta', property='og:title')
+            if og_title and og_title.get('content'):
+                title = og_title.get('content').strip()
+
+        # Create preview posts (last 2)
+        preview_posts = []
+        for post in posts[:2]:
+            preview_posts.append(PreviewPost(
+                title=post['title'],
+                url=post['url'],
+                published_date=post['published'].isoformat() if post.get('published') else None
+            ))
+
+        logger.info(f"Successfully discovered source: {title} ({len(preview_posts)} preview posts)")
+
+        return SourceDiscoveryResponse(
+            url=final_url,
+            title=title,
+            has_rss=has_rss,
+            source_type=request.source_type,  # Return user's intended source_type, not feed_type
+            preview_posts=preview_posts
+        )
+
+    except Exception as e:
+        logger.error(f"Error discovering source from {request.url}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to discover source: {str(e)}"
         )

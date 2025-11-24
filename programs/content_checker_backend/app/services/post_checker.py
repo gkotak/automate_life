@@ -78,14 +78,15 @@ class PostCheckerService:
         # Process each source
         for source in sources:
             source_url = source['url']
-            self.logger.info(f"Checking source: {source_url}")
+            source_type = source.get('source_type', 'newsletter')  # Default to 'newsletter' if not set
+            self.logger.info(f"Checking source: {source_url} (type: {source_type})")
             total_sources_checked += 1
 
             # Detect platform type
             platform_type = self._detect_platform_type(source_url)
 
-            # Extract posts from source
-            posts = self._extract_posts_from_feed(source_url, platform_type)
+            # Extract posts from source, using the stored source_type
+            posts = self._extract_posts_from_feed(source_url, platform_type, user_source_type=source_type)
 
             if not posts:
                 self.logger.info(f"No posts found from {source_url}")
@@ -241,8 +242,14 @@ class PostCheckerService:
             self.logger.warning(f"Error discovering RSS feed: {e}")
             return None
 
-    def _extract_posts_from_feed(self, url: str, platform_type: str) -> List[Dict]:
-        """Extract posts from a content source (RSS feed or webpage)"""
+    def _extract_posts_from_feed(self, url: str, platform_type: str, user_source_type: str = 'newsletter') -> List[Dict]:
+        """Extract posts from a content source (RSS feed or webpage)
+
+        Args:
+            url: URL of the feed or webpage
+            platform_type: Detected platform type
+            user_source_type: User's intended source type ('newsletter' or 'podcast')
+        """
         try:
             # Check if this is a PocketCasts channel URL
             if 'pocketcasts.com/podcast/' in url:
@@ -256,13 +263,13 @@ class PostCheckerService:
 
             # Check if this is an RSS/XML feed
             if self._is_rss_feed(url, response):
-                return self._extract_posts_from_rss_feed(url)
+                return self._extract_posts_from_rss_feed(url, user_source_type)
 
             # Try to auto-discover RSS feed from HTML page
             discovered_feed_url = self._discover_rss_feed(url, response)
             if discovered_feed_url:
                 self.logger.info(f"Auto-discovered RSS feed: {discovered_feed_url}")
-                return self._extract_posts_from_rss_feed(discovered_feed_url)
+                return self._extract_posts_from_rss_feed(discovered_feed_url, user_source_type)
 
             # Parse HTML content
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -399,29 +406,34 @@ class PostCheckerService:
             self.logger.warning(f"Error extracting posts from {url}: {e}")
             return []
 
-    def _extract_posts_from_rss_feed(self, url: str) -> List[Dict]:
-        """Extract posts from RSS/Atom feed using feedparser"""
+    def _extract_posts_from_rss_feed(self, url: str, user_source_type: str = 'newsletter') -> List[Dict]:
+        """Extract posts from RSS/Atom feed using feedparser
+
+        Args:
+            url: RSS feed URL
+            user_source_type: User's intended source type ('newsletter' or 'podcast')
+        """
         try:
             feed = feedparser.parse(url)
 
             if feed.bozo:
                 self.logger.warning(f"Feed parsing warning: {feed.bozo_exception}")
 
-            # Detect if this is a podcast feed (has audio enclosures)
-            is_podcast_feed = False
+            # Check if feed contains any audio content (for logging purposes)
+            has_audio_content = False
             if feed.entries:
                 # Check first few entries for audio enclosures
                 for entry in feed.entries[:3]:
                     if hasattr(entry, 'enclosures'):
                         for enclosure in entry.enclosures:
                             if enclosure.get('type', '').startswith('audio/'):
-                                is_podcast_feed = True
+                                has_audio_content = True
                                 break
-                    if is_podcast_feed:
+                    if has_audio_content:
                         break
 
-            if is_podcast_feed:
-                self.logger.info(f"Detected podcast RSS feed (has audio enclosures)")
+            if has_audio_content:
+                self.logger.info(f"Detected RSS feed with audio content (may be podcast or newsletter with audio)")
 
             posts = []
             for entry in feed.entries:
@@ -463,11 +475,21 @@ class PostCheckerService:
                                     pass
                             break
 
-                # For podcast episodes without a link, use the audio URL as the primary URL
-                # This allows the content to be processed (audio transcription, etc.)
-                if not link and audio_url and is_podcast_feed:
-                    link = audio_url
-                    self.logger.debug(f"Using audio URL as primary URL for: {title[:60]}")
+                # Determine URL based on user's intended source type
+                # For 'podcast': always prefer audio URL
+                # For 'newsletter': prefer webpage link, fallback to audio if no link
+                if user_source_type == 'podcast':
+                    # User explicitly searched via "Search Podcast" - always use audio
+                    if audio_url:
+                        link = audio_url
+                        self.logger.debug(f"Using audio URL for podcast: {title[:60]}")
+                    # If no audio URL for podcast, use link (edge case)
+                else:
+                    # User searched via "Search Newsletter by URL" - prefer webpage
+                    # Only use audio if no webpage link exists
+                    if not link and audio_url:
+                        link = audio_url
+                        self.logger.debug(f"No webpage link found, using audio URL: {title[:60]}")
 
                 # Skip entries without a valid URL
                 if not title or not link:
@@ -477,7 +499,7 @@ class PostCheckerService:
                 post_data = {
                     'title': title,
                     'url': link,
-                    'platform': 'podcast_rss' if is_podcast_feed else 'rss_feed',
+                    'platform': 'podcast_rss' if user_source_type == 'podcast' else 'rss_feed',
                     'published': published,
                     'audio_url': audio_url,
                     'duration': duration
@@ -641,34 +663,56 @@ class PostCheckerService:
             return True  # Assume recent if we can't determine
 
     def _save_post_to_queue(self, post: Dict, source_feed: str, user_id: str) -> Optional[str]:
-        """Save post to content_queue table with user_id"""
+        """Save post to content_queue table with user_id and organization_id"""
         try:
-            # Determine if this is a podcast episode
-            is_podcast = post.get('platform') == 'podcast_rss' or post.get('audio_url') is not None
+            # Get user's organization_id from the users table
+            user_result = self.supabase.table('users').select('organization_id').eq('id', user_id).execute()
 
-            # Extract channel info (prefer from RSS metadata if available)
+            if not user_result.data or len(user_result.data) == 0:
+                self.logger.error(f"User {user_id} not found in users table")
+                return None
+
+            organization_id = user_result.data[0]['organization_id']
+
+            # Determine content_type based on the ACTUAL URL we're saving
+            # Check if URL contains an audio file extension (even with query params)
+            # e.g., "episode.mp3?tracking=xyz" should be detected as audio
+            from urllib.parse import urlparse
+            url_lower = post['url'].lower()
+            parsed_url = urlparse(url_lower)
+            url_path = parsed_url.path  # Gets path without query params
+            is_audio_file = any(ext in url_path for ext in ['.mp3', '.m4a', '.wav', '.ogg', '.aac', '.flac'])
+
+            # Content type describes what the URL points to:
+            # - 'podcast/audio' if URL is an audio file
+            # - 'article' if URL is a webpage
+            content_type = 'podcast/audio' if is_audio_file else 'article'
+
+            # Extract channel title from RSS metadata
             channel_title = post.get('channel_title')
-            channel_url = post.get('channel_link')
+            if not channel_title:
+                # Fallback: extract from URL (best effort)
+                channel_title, _ = self._extract_channel_info(post['url'], source_feed)
 
-            if not channel_title or not channel_url:
-                channel_title, channel_url = self._extract_channel_info(post['url'], source_feed)
-
+            # IMPORTANT: content_queue is populated from multiple sources (RSS feeds AND PocketCasts history)
+            # channel_title is duplicated (not normalized) because:
+            # - PocketCasts entries don't have a corresponding entry in content_sources table
+            # - Different discovery mechanisms provide different metadata (RSS vs PocketCasts API)
             record = {
-                'url': post['url'],
-                'title': post['title'],
-                'content_type': 'podcast_episode' if is_podcast else 'article',
-                'source': 'rss_feed',
-                'channel_title': channel_title,
-                'channel_url': channel_url,
+                'url': post['url'],  # The actual article/episode URL to process
+                'title': post['title'],  # Episode/article title
+                'content_type': content_type,  # 'podcast/audio' or 'article' (based on URL extension)
+                'source': 'rss_feed',  # Discovery mechanism for this flow (vs 'podcast_history')
+                'channel_title': channel_title,  # Podcast/newsletter name (from RSS metadata)
                 # 'video_url': None,  # REMOVED - YouTube discovery happens in Article Processor
-                'audio_url': post.get('audio_url'),  # Direct audio file URL from RSS
-                'platform': post.get('platform', 'generic'),
-                'source_feed': source_feed,
+                'audio_url': post.get('audio_url'),  # Direct audio file URL from RSS enclosure
+                'platform': post.get('platform', 'generic'),  # 'podcast_rss' or 'rss_feed' (from source_type)
                 'found_at': datetime.now().isoformat(),
                 'published_date': post['published'].isoformat() if post.get('published') else None,
                 'duration_seconds': post.get('duration'),
                 'status': 'discovered',
-                'user_id': user_id
+                'user_id': user_id,
+                'organization_id': organization_id
             }
 
             result = self.supabase.table('content_queue').upsert(

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getDiscoveredPosts, checkNewPosts } from '@/lib/api-client';
+import { getDiscoveredPosts, checkNewPosts, getContentSources } from '@/lib/api-client';
 
 interface Post {
   id: string;
@@ -11,8 +11,6 @@ interface Post {
   url: string;
   content_type: string;
   channel_title: string | null;
-  channel_url: string | null;
-  source_feed: string | null;
   published_date: string | null;
   found_at: string;
   is_new: boolean;
@@ -25,7 +23,7 @@ export default function PostsAdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start with true to show initial loading
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
@@ -34,9 +32,11 @@ export default function PostsAdminPage() {
   const [newlyDiscoveredIds, setNewlyDiscoveredIds] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [hasNoSources, setHasNoSources] = useState(false);
   const itemsPerPage = 25;
   const [sortField, setSortField] = useState<SortField>('found_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const hasLoadedOnce = useRef(false);
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -45,15 +45,29 @@ export default function PostsAdminPage() {
     }
   }, [user, authLoading, router]);
 
-  // Load posts on mount
+  // Load posts and check sources on mount (only show spinner on very first load)
   useEffect(() => {
     if (user) {
-      loadPosts();
+      const shouldShowSpinner = !hasLoadedOnce.current;
+      loadPosts(false, shouldShowSpinner);
+      checkSourcesCount();
+      if (!hasLoadedOnce.current) {
+        hasLoadedOnce.current = true;
+      }
     }
   }, [user]);
 
-  const loadPosts = async (silent: boolean = false) => {
-    if (!silent) {
+  const checkSourcesCount = async () => {
+    try {
+      const data = await getContentSources(false);
+      setHasNoSources(data.sources.length === 0);
+    } catch (error) {
+      console.error('Error checking sources:', error);
+    }
+  };
+
+  const loadPosts = async (silent: boolean = false, showLoadingSpinner: boolean = true) => {
+    if (showLoadingSpinner) {
       setLoading(true);
     }
 
@@ -61,7 +75,20 @@ export default function PostsAdminPage() {
       const data = await getDiscoveredPosts(200);
       console.log('API Response:', data);
       console.log('First post:', data.posts[0]);
-      setPosts(data.posts);
+
+      // Map posts to add is_new property and ensure proper types
+      const postsWithIsNew: Post[] = data.posts.map(post => ({
+        id: post.id,
+        title: post.title,
+        url: post.url,
+        content_type: post.content_type,
+        channel_title: post.channel_title ?? null,
+        published_date: post.published_date ?? null,
+        found_at: post.found_at,
+        is_new: false
+      }));
+
+      setPosts(postsWithIsNew);
       setTotalCount(data.total);
 
       // Don't show message when just loading from database
@@ -74,7 +101,7 @@ export default function PostsAdminPage() {
         });
       }
     } finally {
-      if (!silent) {
+      if (showLoadingSpinner) {
         setLoading(false);
       }
     }
@@ -97,8 +124,8 @@ export default function PostsAdminPage() {
         text: data.message
       });
 
-      // Refresh the post list
-      await loadPosts(true);
+      // Refresh the post list (silent = true, showLoadingSpinner = false)
+      await loadPosts(true, false);
     } catch (error) {
       console.error('Error checking posts:', error);
       setMessage({
@@ -236,29 +263,31 @@ export default function PostsAdminPage() {
           </div>
 
           {/* Actions */}
-          <div className="mb-6">
-            <button
-              onClick={checkForNewPosts}
-              disabled={checking}
-              className={`px-6 py-3 rounded-lg font-medium text-white transition-colors ${
-                checking
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-[#077331] hover:bg-[#055a24]'
-              }`}
-            >
-              {checking ? (
-                <span className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Checking...
-                </span>
-              ) : (
-                'Check for New Posts'
-              )}
-            </button>
-          </div>
+          {!hasNoSources && (
+            <div className="mb-6">
+              <button
+                onClick={checkForNewPosts}
+                disabled={checking}
+                className={`px-6 py-3 rounded-lg font-medium text-white transition-colors ${
+                  checking
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-[#077331] hover:bg-[#055a24]'
+                }`}
+              >
+                {checking ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Checking...
+                  </span>
+                ) : (
+                  'Check for New Posts'
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Message */}
           {message && (
@@ -286,13 +315,42 @@ export default function PostsAdminPage() {
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="mt-4 text-gray-600">No discovered posts found</p>
-              <button
-                onClick={checkForNewPosts}
-                className="mt-4 px-4 py-2 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] transition-colors"
-              >
-                Check for Posts
-              </button>
+              {hasNoSources ? (
+                <>
+                  <p className="mt-4 text-gray-600">No content sources found</p>
+                  <button
+                    onClick={() => router.push('/sources?addSource=true')}
+                    className="mt-4 px-4 py-2 bg-[#077331] text-white rounded-full hover:bg-[#055a24] transition-colors"
+                  >
+                    Add Your First Source
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-4 text-gray-600">No discovered posts found</p>
+                  <button
+                    onClick={checkForNewPosts}
+                    disabled={checking}
+                    className={`mt-4 px-6 py-3 rounded-lg font-medium text-white transition-colors ${
+                      checking
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-[#077331] hover:bg-[#055a24]'
+                    }`}
+                  >
+                    {checking ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Checking...
+                      </span>
+                    ) : (
+                      'Check for New Posts'
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <>

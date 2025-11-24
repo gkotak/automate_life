@@ -73,7 +73,7 @@ Analyze this article: {url}
 
 Create a comprehensive summary with the following structure:
 1. Write a clear, structured summary (2-4 paragraphs) in HTML format as paragraphs (NOT bullets)
-2. Extract 8-12 key insights combining main points, insights, and actionable takeaways
+2. Extract 5-10 key insights combining main points, insights, and actionable takeaways
 3. If video/audio content exists, identify specific timestamps with detailed descriptions
 
 {media_context}
@@ -104,9 +104,10 @@ CRITICAL TIMESTAMP RULES:
 - For insights: identify where the key concept or discussion begins and use that timestamp
 - Only include timestamps for content you can find in the provided transcript
 - If transcript is truncated, only use timestamps from the visible portion
-- key_insights should be 8-12 items combining key learnings, main points, and actionable takeaways
+- key_insights should be 5-10 items combining key learnings, main points, and actionable takeaways
 - Each insight should be a clear, concise statement of the key learning or takeaway
-- quotes should be memorable/important quotes with exact speaker attribution and context
+- quotes should be memorable/important quotes with exact speaker attribution
+- For quotes: include at least 30 seconds of surrounding context in the "context" field to give users sufficient background
 """
 
 
@@ -347,9 +348,9 @@ For text-only articles, please focus on:
 - Extracting key insights from the written content
 - Identifying main themes and arguments
 - Summarizing actionable takeaways
-- Highlighting important quotes or data points
-- Structuring the content logically with clear headings
+- Structuring the content logically
 - NO timestamps should be included (since there's no media)
+- DO NOT include quotes section - text articles don't have attributed speakers like video/audio
 
 Article text content: {article_text}
 """

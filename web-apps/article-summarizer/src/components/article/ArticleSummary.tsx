@@ -27,7 +27,7 @@ export default function ArticleSummary({ article, onTimestampClick, onTabSwitch,
           <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Summary</h3>
           <div
             className="prose prose-sm sm:prose-base lg:prose-lg max-w-none text-gray-700 leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: highlightedSummary }}
+            dangerouslySetInnerHTML={{ __html: highlightedSummary || '' }}
           />
         </div>
       )}

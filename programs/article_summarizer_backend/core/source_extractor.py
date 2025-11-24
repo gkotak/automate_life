@@ -195,6 +195,13 @@ def extract_source(url: str, metadata: Dict, session: Optional[requests.Session]
     Returns:
         Formatted source name (normalized)
     """
+    # Direct uploads from Supabase storage - use metadata source if available
+    if 'supabase.co' in url.lower() and '/storage/' in url.lower():
+        # Check if metadata already has a source defined
+        if 'source' in metadata and metadata['source']:
+            return metadata['source']
+        return 'Direct Upload'
+
     # YouTube - try to extract channel name
     if 'youtube.com' in url or 'youtu.be' in url:
         channel_name = extract_youtube_channel_name(url, session)

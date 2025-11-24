@@ -9,7 +9,10 @@ import uuid
 import asyncio
 import os
 import json
-from fastapi import APIRouter, Depends, HTTPException, status
+import tempfile
+import shutil
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from sse_starlette.sse import EventSourceResponse
@@ -187,24 +190,47 @@ async def process_article_direct(
                                     'organization_id': organization_id
                                 }).execute()
                                 logger.info(f"✅ Associated article with user: {user_id}")
+
+                                # Emit success event only if association succeeded
+                                yield {
+                                    "event": "completed",
+                                    "data": json.dumps({
+                                        "article_id": article_id,
+                                        "url": f"/article/{article_id}",
+                                        "elapsed": elapsed(),
+                                        "already_processed": True,
+                                        "message": "Article already exists - added to your library"
+                                    })
+                                }
+                                await asyncio.sleep(0)
+                                logger.info(f"✅ Article added to user's library (no reprocessing needed)")
+                                return
                             except Exception as e:
-                                logger.warning(f"⚠️ Failed to associate article with user: {e}")
-
-                        # Emit success event (article was "saved" for this user)
-                        yield {
-                            "event": "completed",
-                            "data": json.dumps({
-                                "article_id": article_id,
-                                "url": f"/article/{article_id}",
-                                "elapsed": elapsed(),
-                                "already_processed": True,
-                                "message": "Article already exists - added to your library"
-                            })
-                        }
-                        await asyncio.sleep(0)
-
-                        logger.info(f"✅ Article added to user's library (no reprocessing needed)")
-                        return
+                                logger.error(f"❌ Failed to associate article with user: {e}")
+                                # Emit error event instead of success
+                                yield {
+                                    "event": "error",
+                                    "data": json.dumps({
+                                        "error": f"Failed to add article to your library: {str(e)}",
+                                        "elapsed": elapsed()
+                                    })
+                                }
+                                await asyncio.sleep(0)
+                                return
+                        else:
+                            # No user_id - just return article exists without associating
+                            yield {
+                                "event": "completed",
+                                "data": json.dumps({
+                                    "article_id": article_id,
+                                    "url": f"/article/{article_id}",
+                                    "elapsed": elapsed(),
+                                    "already_processed": True,
+                                    "message": "Article already exists"
+                                })
+                            }
+                            await asyncio.sleep(0)
+                            return
             else:
                 logger.info(f"🔄 Force reprocessing article: {url}")
 
@@ -387,3 +413,135 @@ async def get_article_status(
         "status": "completed",
         "message": "Article processing is synchronous"
     }
+
+
+@router.post("/upload-media")
+async def upload_media(
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_supabase_jwt)
+):
+    """
+    Upload a media file via backend proxy to Supabase Storage
+
+    This securely uploads files through the backend with proper authentication.
+    File size limits are based on Supabase tier (Pro: 5GB, Free: 50MB).
+
+    Args:
+        file: The uploaded media file
+        user_id: User ID extracted from JWT token
+
+    Returns:
+        Dictionary with the file URL
+    """
+    from core.storage_manager import StorageManager
+
+    logger.info(f"📤 [UPLOAD] Receiving file upload from user {user_id}: {file.filename}")
+
+    # Validate file type
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No filename provided"
+        )
+
+    # Get file extension
+    file_ext = Path(file.filename).suffix.lower()
+
+    # Supported extensions
+    video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg'}
+    audio_extensions = {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma', '.opus'}
+    document_extensions = {'.pdf'}
+
+    if file_ext not in video_extensions and file_ext not in audio_extensions and file_ext not in document_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type: {file_ext}. Supported types: {', '.join(sorted(video_extensions | audio_extensions | document_extensions))}"
+        )
+
+    # Determine media type and content type
+    if file_ext in video_extensions:
+        media_type = 'video'
+    elif file_ext in audio_extensions:
+        media_type = 'audio'
+    else:
+        media_type = 'document'
+
+    # Map extensions to MIME types
+    mime_types = {
+        '.mp4': 'video/mp4',
+        '.mov': 'video/quicktime',
+        '.avi': 'video/x-msvideo',
+        '.mkv': 'video/x-matroska',
+        '.webm': 'video/webm',
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.m4a': 'audio/mp4',
+        '.aac': 'audio/aac',
+        '.ogg': 'audio/ogg',
+        '.flac': 'audio/flac',
+        '.pdf': 'application/pdf'
+    }
+    content_type = mime_types.get(file_ext, f"{media_type}/{file_ext[1:]}" if media_type != 'document' else 'application/octet-stream')
+
+    logger.info(f"📁 [UPLOAD] File type: {media_type} ({file_ext}, {content_type})")
+
+    # Save to temporary location first
+    temp_dir = Path(tempfile.gettempdir()) / "article_summarizer_uploads"
+    temp_dir.mkdir(exist_ok=True, parents=True)
+
+    unique_id = uuid.uuid4().hex[:12]
+    temp_filename = f"{unique_id}_{file.filename}"
+    temp_path = temp_dir / temp_filename
+
+    try:
+        # Save uploaded file to temp location
+        logger.info(f"💾 [UPLOAD] Saving to temp: {temp_path}")
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        file_size_mb = temp_path.stat().st_size / (1024 * 1024)
+        logger.info(f"✅ [UPLOAD] Temp file saved: {file_size_mb:.2f} MB")
+
+        # Upload to Supabase Storage
+        logger.info(f"☁️ [UPLOAD] Uploading to Supabase Storage...")
+        storage_manager = StorageManager(bucket_name=StorageManager.MEDIA_BUCKET_NAME)
+        success, storage_path, public_url = storage_manager.upload_media_file(
+            file_path=str(temp_path),
+            user_id=user_id,
+            original_filename=file.filename,
+            content_type=content_type
+        )
+
+        # Clean up temp file
+        try:
+            temp_path.unlink()
+            logger.info(f"🗑️ [UPLOAD] Cleaned up temp file")
+        except Exception as e:
+            logger.warning(f"⚠️ [UPLOAD] Failed to clean up temp file: {e}")
+
+        if not success or not public_url:
+            raise Exception("Failed to upload file to Supabase Storage")
+
+        logger.info(f"✅ [UPLOAD] File uploaded to Supabase: {public_url}")
+
+        return {
+            "url": public_url,
+            "filename": file.filename,
+            "size_mb": round(file_size_mb, 2),
+            "media_type": media_type,
+            "storage_path": storage_path,
+            "message": f"File uploaded successfully: {file.filename}"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ [UPLOAD ERROR] Failed to upload file: {e}")
+        # Clean up temp file if it exists
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )

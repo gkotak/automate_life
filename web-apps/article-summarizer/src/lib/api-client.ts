@@ -137,9 +137,7 @@ export async function getDiscoveredPosts(limit: number = 200): Promise<{
     url: string
     content_type: string
     channel_title?: string
-    channel_url?: string
     platform: string
-    source_feed?: string
     published_date?: string
     found_at: string
     status: string
@@ -165,7 +163,9 @@ export interface ContentSource {
   url: string
   notes?: string
   is_active: boolean
+  source_type: string
   user_id: string
+  organization_id: string
   created_at: string
   updated_at?: string
   last_checked_at?: string
@@ -176,6 +176,7 @@ export interface ContentSourceCreate {
   url: string
   notes?: string
   is_active?: boolean
+  source_type?: string
 }
 
 export interface ContentSourceUpdate {
@@ -183,6 +184,7 @@ export interface ContentSourceUpdate {
   url?: string
   notes?: string
   is_active?: boolean
+  source_type?: string
 }
 
 /**
@@ -285,4 +287,38 @@ export async function deleteContentSource(sourceId: number): Promise<void> {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(error.detail || 'Failed to delete content source')
   }
+}
+
+/**
+ * Preview post from source discovery
+ */
+export interface PreviewPost {
+  title: string
+  url: string
+  published_date?: string
+}
+
+/**
+ * Discover RSS feed and metadata from a URL
+ * @param url - URL to discover (website or RSS feed)
+ * @returns Discovered source information with preview posts
+ */
+export async function discoverSource(url: string, sourceType: 'newsletter' | 'podcast' = 'newsletter'): Promise<{
+  url: string
+  title: string
+  has_rss: boolean
+  source_type: string
+  preview_posts: PreviewPost[]
+}> {
+  const response = await fetchContentCheckerBackend('/api/sources/discover', {
+    method: 'POST',
+    body: JSON.stringify({ url, source_type: sourceType }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || 'Failed to discover source')
+  }
+
+  return response.json()
 }

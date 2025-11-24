@@ -11,7 +11,7 @@ class Config:
     """Centralized configuration constants and environment management"""
 
     # Post checking limits
-    RSS_POST_RECENCY_DAYS = 3
+    RSS_POST_RECENCY_DAYS = 7  # Check for posts/episodes from last 7 days
     TRACKING_CLEANUP_DAYS = 30
     RSS_FEED_ENTRY_LIMIT = 10
 

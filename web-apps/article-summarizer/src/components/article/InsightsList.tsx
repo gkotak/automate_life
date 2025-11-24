@@ -11,7 +11,7 @@ interface InsightsListProps {
 }
 
 export default function InsightsList({ insights, onTimestampClick, searchQuery, clickedTimestamp }: InsightsListProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false) // Expanded by default
+  const [isCollapsed, setIsCollapsed] = useState(true) // Collapsed by default
 
   if (!insights || insights.length === 0) {
     return null

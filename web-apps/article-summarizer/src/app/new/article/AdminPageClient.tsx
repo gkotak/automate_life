@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseUrl } from '@/lib/supabase';
+import * as tus from 'tus-js-client';
 
 // API configuration from environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -23,10 +24,13 @@ function AdminPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [inputMode, setInputMode] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [isDemoVideo, setIsDemoVideo] = useState(false);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [result, setResult] = useState<{
     status: 'success' | 'error' | 'info';
     message: string;
@@ -96,9 +100,13 @@ function AdminPageContent() {
     }));
   };
 
-  const initializeSteps = () => {
+  const initializeSteps = (isFileUpload: boolean = false) => {
     const initialSteps: ProcessingStep[] = [
-      { id: 'fetch', label: 'Fetching article', status: 'pending' },
+      {
+        id: 'fetch',
+        label: isFileUpload ? 'Uploading file' : 'Fetching article',
+        status: 'pending'
+      },
       { id: 'content', label: 'Extracting content', status: 'pending' },
       { id: 'transcript', label: 'Downloading media and processing transcript', status: 'pending', substeps: [] },
       { id: 'ai', label: 'Generating AI summary', status: 'pending' },
@@ -110,10 +118,19 @@ function AdminPageContent() {
   const handleSubmit = async (e: React.FormEvent, forceReprocess: boolean = false) => {
     e.preventDefault();
 
-    if (!url.trim()) {
+    // Validate input based on mode
+    if (inputMode === 'url' && !url.trim()) {
       setResult({
         status: 'error',
         message: 'Please enter a URL'
+      });
+      return;
+    }
+
+    if (inputMode === 'file' && !selectedFile) {
+      setResult({
+        status: 'error',
+        message: 'Please select a file'
       });
       return;
     }
@@ -122,7 +139,10 @@ function AdminPageContent() {
     setResult(null);
     setDuplicateWarning(null);
     audioDurationRef.current = null;
-    initializeSteps();
+    setUploadProgress(0);
+
+    const isFileUpload = inputMode === 'file' && selectedFile;
+    initializeSteps(isFileUpload);
 
     try {
       // Get auth token from Supabase
@@ -132,7 +152,65 @@ function AdminPageContent() {
         throw new Error('Not authenticated. Please sign in again.');
       }
 
-      const encodedUrl = encodeURIComponent(url.trim());
+      let processUrl = url.trim();
+
+      // If file upload mode, upload directly to Supabase using TUS protocol
+      if (isFileUpload) {
+        updateStep('fetch', { status: 'processing', detail: 'Uploading to cloud storage...' });
+
+        // Generate storage path: user_{user_id}/{timestamp}_{filename}
+        const timestamp = Math.floor(Date.now() / 1000);
+        const fileExt = selectedFile.name.split('.').pop() || '';
+        const safeName = selectedFile.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const storagePath = `user_${user?.id}/${timestamp}_${safeName}.${fileExt}`;
+        const bucketName = 'uploaded-media';
+
+        // Upload using TUS protocol with progress tracking
+        const uploadPromise = new Promise<string>((resolve, reject) => {
+          const upload = new tus.Upload(selectedFile, {
+            endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+            retryDelays: [0, 3000, 5000, 10000, 20000],
+            headers: {
+              authorization: `Bearer ${session.access_token}`,
+              'x-upsert': 'true',
+            },
+            uploadDataDuringCreation: true,
+            removeFingerprintOnSuccess: true,
+            metadata: {
+              bucketName: bucketName,
+              objectName: storagePath,
+              contentType: selectedFile.type || 'application/octet-stream',
+              cacheControl: '3600',
+            },
+            chunkSize: 6 * 1024 * 1024, // 6MB chunks
+            onError: (error) => {
+              console.error('TUS upload error:', error);
+              reject(new Error(`Upload failed: ${error.message}`));
+            },
+            onProgress: (bytesUploaded, bytesTotal) => {
+              const percentage = Math.round((bytesUploaded / bytesTotal) * 100);
+              setUploadProgress(percentage);
+            },
+            onSuccess: () => {
+              // Construct the public URL
+              const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucketName}/${storagePath}`;
+              resolve(publicUrl);
+            },
+          });
+
+          // Start the upload
+          upload.start();
+        });
+
+        processUrl = await uploadPromise;
+        setUploadProgress(100);
+        updateStep('fetch', { status: 'complete', detail: `Uploaded ${selectedFile.name} to cloud storage` });
+
+        // Hide progress bar after upload completes
+        setTimeout(() => setUploadProgress(-1), 500);
+      }
+
+      const encodedUrl = encodeURIComponent(processUrl);
       // NOTE: EventSource doesn't support custom headers, so we pass the token as a query parameter
       // The backend will be updated to accept tokens from query params for SSE endpoints
       let streamUrl = `${API_URL}/api/process-direct?url=${encodedUrl}&token=${encodeURIComponent(session.access_token)}`;
@@ -418,21 +496,160 @@ function AdminPageContent() {
           </p>
 
           <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-2">
-                Article URL
-              </label>
-              <input
-                type="url"
-                id="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/article"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-transparent"
-                disabled={loading}
-                required
-              />
-            </div>
+            {/* URL Input */}
+            {inputMode === 'url' && (
+              <div>
+                <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-2">
+                  Article URL
+                </label>
+                <input
+                  type="url"
+                  id="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://example.com/article"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-transparent"
+                  disabled={loading}
+                  required
+                />
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputMode('file');
+                      setUrl('');
+                    }}
+                    disabled={loading}
+                    className="text-sm text-[#077331] hover:text-[#055a24] underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Upload file instead
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* File Upload Input */}
+            {inputMode === 'file' && (
+              <div>
+                <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload Video or Audio File
+                </label>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-[#077331] transition-colors">
+                  <div className="space-y-1 text-center w-full">
+                    {!selectedFile ? (
+                      <>
+                        <svg
+                          className="mx-auto h-12 w-12 text-gray-400"
+                          stroke="currentColor"
+                          fill="none"
+                          viewBox="0 0 48 48"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                            strokeWidth={2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <div className="flex justify-center text-sm text-gray-600">
+                          <label
+                            htmlFor="file"
+                            className="relative cursor-pointer bg-white rounded-md font-medium text-[#077331] hover:text-[#055a24] focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-[#077331]"
+                          >
+                            <span>Upload a file</span>
+                            <input
+                              id="file"
+                              name="file"
+                              type="file"
+                              className="sr-only"
+                              accept="video/*,audio/*,.mp4,.mov,.avi,.mkv,.webm,.mp3,.wav,.m4a,.aac,.ogg,.flac,.pdf,application/pdf"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const MAX_FILE_SIZE_MB = 100;
+                                  const fileSizeMB = file.size / (1024 * 1024);
+                                  if (fileSizeMB > MAX_FILE_SIZE_MB) {
+                                    setResult({
+                                      status: 'error',
+                                      message: 'Files greater than 100 MB cannot be uploaded. Please host it elsewhere and paste the URL instead.'
+                                    });
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  setSelectedFile(file);
+                                }
+                              }}
+                              disabled={loading}
+                            />
+                          </label>
+                          <p className="pl-1">or drag and drop</p>
+                        </div>
+                        <p className="text-xs text-gray-500 text-center">
+                          Video: MP4, MOV, AVI, MKV, WebM
+                          <br />
+                          Audio: MP3, WAV, M4A, AAC, OGG, FLAC
+                          <br />
+                          Document: PDF
+                        </p>
+                      </>
+                    ) : (
+                      <div className="py-6">
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 max-w-md mx-auto">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            {/* File icon */}
+                            <div className="flex-shrink-0">
+                              <svg className="h-10 w-10 text-[#077331]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                            {/* File info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate">
+                                {selectedFile.name}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                              </p>
+                            </div>
+                          </div>
+                          {/* Remove button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedFile(null);
+                              // Reset the file input
+                              const fileInput = document.getElementById('file') as HTMLInputElement;
+                              if (fileInput) fileInput.value = '';
+                            }}
+                            disabled={loading}
+                            className="flex-shrink-0 ml-3 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Remove file"
+                          >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputMode('url');
+                      setSelectedFile(null);
+                    }}
+                    disabled={loading}
+                    className="text-sm text-[#077331] hover:text-[#055a24] underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Enter URL instead
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center">
               <input
@@ -563,6 +780,21 @@ function AdminPageContent() {
                     </div>
                     {step.detail && (
                       <p className="text-xs text-gray-500 mt-0.5">{step.detail}</p>
+                    )}
+                    {/* Upload progress bar - show only during active file upload */}
+                    {step.id === 'fetch' && step.status === 'processing' && inputMode === 'file' && uploadProgress > 0 && uploadProgress <= 100 && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                          <span>Uploading to cloud storage...</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-[#077331] h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                          ></div>
+                        </div>
+                      </div>
                     )}
                     {step.substeps && step.substeps.length > 0 && (
                       <div className="mt-1 pl-3 border-l-2 border-[#077331]">

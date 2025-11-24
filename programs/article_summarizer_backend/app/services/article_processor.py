@@ -241,11 +241,15 @@ class ArticleProcessor(BaseProcessor):
         Returns:
             Dictionary containing metadata and content analysis
         """
-        # Check if URL points to a direct media file (video/audio)
+        # Check if URL points to a direct media file (video/audio/document)
         is_media, media_type = self.content_detector.is_direct_media_url(url)
         if is_media:
-            self.logger.info(f"🎥 [DIRECT MEDIA FILE] Detected direct {media_type} file URL")
-            return await self._process_direct_media_file(url, media_type, progress_callback, extract_demo_frames)
+            if media_type == 'document':
+                self.logger.info(f"📄 [DIRECT PDF FILE] Detected direct PDF file URL")
+                return await self._process_pdf_file(url, progress_callback)
+            else:
+                self.logger.info(f"🎥 [DIRECT MEDIA FILE] Detected direct {media_type} file URL")
+                return await self._process_direct_media_file(url, media_type, progress_callback, extract_demo_frames)
 
         # Check if URL is a direct YouTube video link
         youtube_match = re.match(r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)', url)
@@ -529,36 +533,34 @@ class ArticleProcessor(BaseProcessor):
             audio_temp_path = await self._extract_audio_from_video(temp_video_path, progress_callback=progress_callback)
 
             if not audio_temp_path:
-                self.logger.error(f"❌ [DEMO VIDEO OPTIMIZED] Failed to extract audio")
-                return {
-                    'video_frames': [],
-                    'transcript_data': None,
-                    'transcript_text': '',
-                    'temp_video_path': temp_video_path,
-                    'temp_dir': temp_dir
-                }
-
-            self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Audio extracted: {audio_temp_path}")
-
-            # Step 3: Transcribe the extracted audio
-            if progress_callback:
-                await progress_callback("transcribing_audio", {
-                    "message": "Transcribing audio with DeepGram..."
-                })
-
-            self.logger.info(f"📝 [DEMO VIDEO OPTIMIZED] Transcribing audio...")
-            result = await self._transcribe_audio_with_size_check(
-                audio_temp_path,
-                media_type='video',
-                progress_callback=progress_callback
-            )
-
-            if result and result.get('transcript_data'):
-                transcript_data = result['transcript_data']
-                transcript_text = transcript_data.get('text', '')
-                self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Transcription successful ({len(transcript_text)} chars)")
+                self.logger.warning(f"⚠️ [DEMO VIDEO OPTIMIZED] Failed to extract audio - video may have no audio track")
+                self.logger.info(f"ℹ️ [DEMO VIDEO OPTIMIZED] Continuing with frame extraction only (no transcription)")
             else:
-                self.logger.warning(f"⚠️ [DEMO VIDEO OPTIMIZED] Transcription failed or empty")
+                self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Audio extracted: {audio_temp_path}")
+
+                # Step 3: Transcribe the extracted audio
+                # Get audio file size for progress reporting
+                audio_file_size_mb = os.path.getsize(audio_temp_path) / (1024 * 1024) if os.path.exists(audio_temp_path) else 0
+
+                if progress_callback:
+                    await progress_callback("transcribing_audio", {
+                        "message": "Transcribing audio with DeepGram...",
+                        "file_size_mb": audio_file_size_mb
+                    })
+
+                self.logger.info(f"📝 [DEMO VIDEO OPTIMIZED] Transcribing audio...")
+                result = await self._transcribe_audio_with_size_check(
+                    audio_temp_path,
+                    media_type='video',
+                    progress_callback=progress_callback
+                )
+
+                if result and result.get('transcript_data'):
+                    transcript_data = result['transcript_data']
+                    transcript_text = transcript_data.get('text', '')
+                    self.logger.info(f"✅ [DEMO VIDEO OPTIMIZED] Transcription successful ({len(transcript_text)} chars)")
+                else:
+                    self.logger.warning(f"⚠️ [DEMO VIDEO OPTIMIZED] Transcription failed or empty")
 
             # Step 4: Extract frames from video
             if progress_callback:
@@ -724,6 +726,9 @@ class ArticleProcessor(BaseProcessor):
         title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
         self.logger.info(f"📝 [TITLE] Extracted title from filename: {title}")
 
+        # Set source as 'Direct Upload' for all uploaded media files
+        source = 'Direct Upload'
+
         # Emit progress
         if progress_callback:
             await progress_callback("fetch_complete", {"title": title})
@@ -886,7 +891,7 @@ class ArticleProcessor(BaseProcessor):
             return {
                 'url': url,
                 'title': title,
-                'source': urlparse(url).netloc,
+                'source': source,
                 'content_type': content_type,
                 'media_info': media_info,
                 'transcripts': transcripts,
@@ -897,6 +902,143 @@ class ArticleProcessor(BaseProcessor):
 
         except Exception as e:
             self.logger.error(f"❌ [ERROR] Failed to process media file: {e}")
+            # Clean up temp file if it exists
+            if 'temp_path' in locals():
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+            raise
+
+    async def _process_pdf_file(
+        self,
+        url: str,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
+        """
+        Process a PDF file URL and extract text content
+
+        Args:
+            url: URL of the PDF file
+            progress_callback: Optional async callback for progress updates
+
+        Returns:
+            Dict with metadata and extracted text content
+        """
+        import tempfile
+        import os
+        import requests
+        from urllib.parse import urlparse, unquote
+        from pypdf import PdfReader
+
+        self.logger.info(f"📄 [PDF] Processing PDF file...")
+
+        # Extract filename from URL
+        parsed = urlparse(url)
+        path = unquote(parsed.path)
+        filename = os.path.basename(path) or "document.pdf"
+
+        # Generate a simple title from the filename
+        title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+        self.logger.info(f"📝 [TITLE] Extracted title from filename: {title}")
+
+        # Emit progress
+        if progress_callback:
+            await progress_callback("fetch_complete", {"title": title})
+
+        try:
+            # Download PDF file
+            self.logger.info(f"⬇️ [PDF] Downloading PDF file...")
+            if progress_callback:
+                await progress_callback("download_start", {"filename": filename})
+
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+
+            # Save to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
+                temp_pdf.write(response.content)
+                temp_path = temp_pdf.name
+
+            self.logger.info(f"✅ [PDF] Downloaded to: {temp_path}")
+            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+            self.logger.info(f"📊 [PDF] File size: {file_size_mb:.2f}MB")
+
+            if progress_callback:
+                await progress_callback("download_complete", {"path": temp_path, "size_mb": file_size_mb})
+
+            # Extract text from PDF
+            self.logger.info(f"📝 [PDF] Extracting text content...")
+            if progress_callback:
+                await progress_callback("extracting_text", {"message": "Extracting text from PDF..."})
+
+            reader = PdfReader(temp_path)
+            num_pages = len(reader.pages)
+            self.logger.info(f"📄 [PDF] PDF has {num_pages} pages")
+
+            # Extract text from all pages
+            text_content = []
+            for page_num, page in enumerate(reader.pages, 1):
+                try:
+                    page_text = page.extract_text()
+                    if page_text and page_text.strip():
+                        text_content.append(page_text)
+
+                    # Log progress every 10 pages
+                    if page_num % 10 == 0:
+                        self.logger.info(f"📄 [PDF] Processed {page_num}/{num_pages} pages...")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ [PDF] Failed to extract text from page {page_num}: {e}")
+
+            article_text = "\n\n".join(text_content)
+            word_count = len(article_text.split())
+
+            self.logger.info(f"✅ [PDF] Text extraction complete: {word_count} words from {num_pages} pages")
+
+            # Truncate if exceeds limit (consistent with text article processing)
+            if word_count > Config.MAX_ARTICLE_WORDS:
+                article_text = ' '.join(article_text.split()[:Config.MAX_ARTICLE_WORDS]) + '...'
+                self.logger.info(f"📄 [PDF] Truncated to {Config.MAX_ARTICLE_WORDS} words for processing")
+
+            if progress_callback:
+                await progress_callback("content_extracted", {
+                    "pages": num_pages,
+                    "word_count": word_count,
+                    "transcript_method": None  # No transcript for PDFs
+                })
+
+            # Clean up temp file
+            try:
+                os.unlink(temp_path)
+                self.logger.info(f"🗑️ [CLEANUP] Removed temporary PDF file")
+            except Exception as e:
+                self.logger.warning(f"⚠️ [CLEANUP] Failed to remove temp file: {e}")
+
+            # Build ContentType object for text-only content
+            from core.content_detector import ContentType
+            content_type = ContentType()
+            content_type.is_text_only = True
+            content_type.has_embedded_video = False
+            content_type.has_embedded_audio = False
+
+            return {
+                'url': url,
+                'title': title,
+                'source': 'Direct Upload',  # User-friendly source for uploaded files
+                'content_type': content_type,
+                'media_info': {},
+                'transcripts': {},  # No transcripts for PDFs
+                'article_text': article_text,
+                'video_frames': [],
+                'pdf_metadata': {
+                    'num_pages': num_pages,
+                    'word_count': word_count,
+                    'file_size_mb': file_size_mb
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ [PDF ERROR] Failed to process PDF file: {e}")
             # Clean up temp file if it exists
             if 'temp_path' in locals():
                 try:
@@ -1595,24 +1737,43 @@ class ArticleProcessor(BaseProcessor):
         """Extract and parse JSON from Claude's response"""
         import re
 
-        json_patterns = [
-            (r'```json\s*(\{.*?\})\s*```', 'json code block'),
-            (r'```\s*(\{.*?\})\s*```', 'generic code block'),
-            (r'"""\s*json\s*(\{.*?\})\s*"""', 'triple-quoted json block'),
-            (r'"""\s*(\{.*?\})\s*"""', 'triple-quoted block'),
-            (r'(\{.*?\})', 'raw JSON')
+        # Method 1: Try to extract JSON from code blocks first
+        code_block_patterns = [
+            (r'```json\s*(.*?)\s*```', 'json code block'),
+            (r'```\s*(.*?)\s*```', 'generic code block'),
         ]
 
-        for pattern, pattern_name in json_patterns:
+        for pattern, pattern_name in code_block_patterns:
             match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
             if match:
-                try:
-                    json_content = match.group(1)
-                    self.logger.debug(f"   🔍 [JSON] Trying {pattern_name} - found {len(json_content)} chars")
-                    return json.loads(json_content)
-                except json.JSONDecodeError as e:
-                    self.logger.debug(f"   ❌ [JSON] {pattern_name} failed: {e}")
-                    continue
+                content = match.group(1).strip()
+                if content.startswith('{'):
+                    try:
+                        self.logger.debug(f"   🔍 [JSON] Trying {pattern_name} - found {len(content)} chars")
+                        return json.loads(content)
+                    except json.JSONDecodeError as e:
+                        self.logger.debug(f"   ❌ [JSON] {pattern_name} failed: {e}")
+
+        # Method 2: Find JSON by matching balanced braces
+        # Find the first '{' and try to parse from there
+        start_idx = response.find('{')
+        if start_idx != -1:
+            # Try progressively larger substrings from first '{' to find valid JSON
+            brace_count = 0
+            for i, char in enumerate(response[start_idx:], start=start_idx):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        # Found matching closing brace
+                        json_candidate = response[start_idx:i+1]
+                        try:
+                            self.logger.debug(f"   🔍 [JSON] Trying balanced braces - found {len(json_candidate)} chars")
+                            return json.loads(json_candidate)
+                        except json.JSONDecodeError as e:
+                            self.logger.debug(f"   ❌ [JSON] Balanced braces failed: {e}")
+                            break
 
         self.logger.warning(f"   ⚠️ [JSON] No valid JSON found in {len(response)} char response")
         return None
@@ -2313,6 +2474,16 @@ class ArticleProcessor(BaseProcessor):
             # Extract source name
             source = extract_source(metadata['url'], metadata, self.session)
 
+            # Convert duration_minutes to integer (database expects INTEGER, AI may return float string)
+            duration_minutes = ai_summary.get('duration_minutes')
+            if duration_minutes is not None:
+                try:
+                    # Convert to float first (handles string "2.25"), then round to integer
+                    duration_minutes = round(float(duration_minutes))
+                except (ValueError, TypeError):
+                    self.logger.warning(f"   ⚠️ Invalid duration_minutes value: {duration_minutes}")
+                    duration_minutes = None
+
             # Build article record
             article_data = {
                 'title': metadata['title'],
@@ -2334,7 +2505,7 @@ class ArticleProcessor(BaseProcessor):
                 'video_frames': metadata.get('video_frames', []),
 
                 # Metadata
-                'duration_minutes': ai_summary.get('duration_minutes'),
+                'duration_minutes': duration_minutes,
                 'word_count': ai_summary.get('word_count'),
                 'topics': ai_summary.get('topics', []),
             }
@@ -2465,6 +2636,26 @@ class ArticleProcessor(BaseProcessor):
         try:
             import yt_dlp
             import glob
+            import shutil
+            from pathlib import Path
+            from urllib.parse import urlparse, unquote
+
+            # Handle local file:// URLs - copy directly instead of using yt-dlp
+            if video_url.startswith('file://'):
+                self.logger.info(f"      📁 [LOCAL FILE] Detected file:// URL, copying directly...")
+                # Extract local path from file:// URL
+                parsed = urlparse(video_url)
+                local_path = unquote(parsed.path)
+
+                # Get file extension
+                file_ext = Path(local_path).suffix
+                output_path = output_template + file_ext
+
+                # Copy the file
+                shutil.copy2(local_path, output_path)
+                self.logger.info(f"      ✅ [LOCAL FILE] Copied to: {output_path}")
+
+                return output_path
 
             # Clean up any existing files matching this output template
             pattern = output_template + "*"

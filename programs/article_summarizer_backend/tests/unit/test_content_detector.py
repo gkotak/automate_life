@@ -449,6 +449,19 @@ class TestDirectMediaFileDetection:
             assert is_media is True
             assert media_type == 'audio'
 
+    @pytest.mark.unit
+    def test_detects_pdf_as_document(self, detector):
+        """Should detect PDF files as document media"""
+        urls = [
+            "https://example.com/document.pdf",
+            "https://example.com/file.PDF",
+            "https://example.com/report.pdf?param=value"
+        ]
+        for url in urls:
+            is_media, media_type = detector.is_direct_media_url(url)
+            assert is_media is True
+            assert media_type == 'document'
+
     # Negative Cases
     @pytest.mark.unit
     def test_does_not_detect_non_media_urls(self, detector):
@@ -456,8 +469,7 @@ class TestDirectMediaFileDetection:
         urls = [
             "https://example.com/article.html",
             "https://example.com/page",
-            "https://example.com/image.jpg",
-            "https://example.com/document.pdf"
+            "https://example.com/image.jpg"
         ]
         for url in urls:
             is_media, media_type = detector.is_direct_media_url(url)
