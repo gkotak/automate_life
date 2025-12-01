@@ -22,6 +22,53 @@ from core.event_emitter import ProcessingEventEmitter
 
 logger = logging.getLogger(__name__)
 
+
+def get_user_friendly_error_message(error: Exception) -> str:
+    """
+    Convert an exception to a user-friendly error message.
+
+    Handles specific error types with helpful messages,
+    and provides a generic fallback for unknown errors.
+    """
+    error_str = str(error).lower()
+    error_type = type(error).__name__
+
+    # Rate limit errors (from OpenAI/Anthropic API)
+    if 'rate_limit' in error_str or 'ratelimit' in error_str or error_type == 'RateLimitError':
+        return "The AI service is temporarily busy. Please wait a moment and try again."
+
+    # API key / authentication errors
+    if 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
+        return "There was an authentication issue with the AI service. Please try again later."
+
+    # Timeout errors
+    if 'timeout' in error_str or 'timed out' in error_str:
+        return "The request timed out. Please try again with a shorter article or try again later."
+
+    # Network/connection errors
+    if 'connection' in error_str or 'network' in error_str or 'dns' in error_str:
+        return "A network error occurred. Please check your connection and try again."
+
+    # Content too large
+    if 'too large' in error_str or 'too long' in error_str or 'max.*token' in error_str:
+        return "This content is too long to process. Please try with a shorter article."
+
+    # YouTube specific errors
+    if 'youtube' in error_str and ('unavailable' in error_str or 'private' in error_str):
+        return "This YouTube video is unavailable or private. Please check the URL."
+
+    # Transcript errors
+    if 'transcript' in error_str and ('not available' in error_str or 'disabled' in error_str):
+        return "Transcripts are not available for this video."
+
+    # Database errors
+    if 'database' in error_str or 'supabase' in error_str or 'postgres' in error_str:
+        return "There was a database error. Please try again later."
+
+    # Generic fallback - don't expose internal error details
+    logger.error(f"Unhandled error type for user message: {error_type}: {error}")
+    return "Sorry, there was an internal error. Please try again."
+
 router = APIRouter()
 
 
@@ -45,6 +92,12 @@ class ProcessArticleStreamResponse(BaseModel):
     message: str
 
 
+class ExtensionProcessRequest(BaseModel):
+    """Request model for extension-based processing with HTML content"""
+    html: str
+    title: Optional[str] = None
+
+
 @router.get("/process-direct")
 async def process_article_direct(
     url: str,
@@ -57,6 +110,9 @@ async def process_article_direct(
 
     The generator itself does the processing and yields events in real-time.
     No background tasks, no queues - just direct streaming.
+
+    Privacy is auto-detected by checking if the URL matches any known public channel
+    in the public_channels table. If matched, article is public; otherwise private.
 
     NOTE: EventSource doesn't support custom headers, so we accept the token as a query parameter.
 
@@ -137,9 +193,46 @@ async def process_article_direct(
             # Initialize processor (no event emitter - we're streaming directly)
             processor = ArticleProcessor(event_emitter=None)
 
+            # Auto-detect privacy based on public_channels table
+            is_public = processor._is_public_channel(url)
+            is_private = not is_public
+
+            logger.info(f"🔐 Privacy auto-detected: {'PUBLIC' if is_public else 'PRIVATE'}")
+
+            # Emit privacy detection event
+            yield {
+                "event": "privacy_detected",
+                "data": json.dumps({"is_private": is_private, "elapsed": elapsed()})
+            }
+            await asyncio.sleep(0)
+
             # Check if article already exists (unless force_reprocess is True)
             if not force_reprocess:
-                existing = processor.check_article_exists(url)
+                existing = None
+
+                if is_private:
+                    # Check private_articles table for this org
+                    if user_id:
+                        try:
+                            # Get user's organization
+                            user_data = processor.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
+                            organization_id = user_data.data.get('organization_id') if user_data.data else None
+
+                            if organization_id:
+                                # Check if private article exists for this org
+                                result = processor.supabase.table('private_articles').select('*').eq(
+                                    'organization_id', organization_id
+                                ).eq('url', url).execute()
+
+                                if result.data and len(result.data) > 0:
+                                    existing = result.data[0]
+                                    logger.info(f"📚 Private article exists for org (ID: {existing['id']})")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error checking private articles: {e}")
+                else:
+                    # Check public articles table
+                    existing = processor.check_article_exists(url)
+
                 if existing:
                     article_id = existing['id']
 
@@ -147,18 +240,28 @@ async def process_article_direct(
                     user_already_has_article = False
                     if user_id:
                         try:
-                            result = processor.supabase.table('article_users').select('*').eq(
-                                'article_id', article_id
-                            ).eq(
-                                'user_id', user_id
-                            ).execute()
+                            if is_private:
+                                result = processor.supabase.table('private_article_users').select('*').eq(
+                                    'private_article_id', article_id
+                                ).eq(
+                                    'user_id', user_id
+                                ).execute()
+                            else:
+                                result = processor.supabase.table('article_users').select('*').eq(
+                                    'article_id', article_id
+                                ).eq(
+                                    'user_id', user_id
+                                ).execute()
                             user_already_has_article = len(result.data) > 0
                         except Exception as e:
-                            logger.warning(f"⚠️ Error checking article_users: {e}")
+                            logger.warning(f"⚠️ Error checking article association: {e}")
 
                     if user_already_has_article:
                         # User already has this article - show reprocess warning
                         logger.info(f"⚠️ User already has this article (ID: {article_id}). Asking for confirmation...")
+                        # Determine the correct URL based on article type
+                        article_url = f"/private-article/{existing['id']}" if is_private else f"/article/{existing['id']}"
+
                         yield {
                             "event": "duplicate_detected",
                             "data": json.dumps({
@@ -166,7 +269,7 @@ async def process_article_direct(
                                 "title": existing['title'],
                                 "created_at": existing['created_at'],
                                 "updated_at": existing['updated_at'],
-                                "url": f"/article/{existing['id']}",
+                                "url": article_url,
                                 "elapsed": elapsed()
                             })
                         }
@@ -174,29 +277,34 @@ async def process_article_direct(
                         logger.info(f"⚠️ Waiting for user confirmation to reprocess")
                         return
                     else:
-                        # Article exists globally but user doesn't have it - add to library
-                        logger.info(f"📚 Article exists globally (ID: {article_id}). Adding to user's library...")
+                        # Article exists but user doesn't have it - add to library
+                        article_type = "private" if is_private else "public"
+                        logger.info(f"📚 {article_type.capitalize()} article exists (ID: {article_id}). Adding to user's library...")
 
-                        # Associate article with user in junction table
+                        # Associate article with user in appropriate junction table
                         if user_id:
                             try:
-                                # Get user's organization_id
-                                user_data = processor.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
-                                organization_id = user_data.data.get('organization_id') if user_data.data else None
-
-                                processor.supabase.table('article_users').insert({
-                                    'article_id': article_id,
-                                    'user_id': user_id,
-                                    'organization_id': organization_id
-                                }).execute()
-                                logger.info(f"✅ Associated article with user: {user_id}")
+                                if is_private:
+                                    processor.supabase.table('private_article_users').insert({
+                                        'private_article_id': article_id,
+                                        'user_id': user_id
+                                    }).execute()
+                                else:
+                                    processor.supabase.table('article_users').insert({
+                                        'article_id': article_id,
+                                        'user_id': user_id
+                                    }).execute()
+                                logger.info(f"✅ Associated {article_type} article with user: {user_id}")
 
                                 # Emit success event only if association succeeded
+                                # Determine the correct URL based on article type
+                                article_url = f"/private-article/{article_id}" if is_private else f"/article/{article_id}"
+
                                 yield {
                                     "event": "completed",
                                     "data": json.dumps({
                                         "article_id": article_id,
-                                        "url": f"/article/{article_id}",
+                                        "url": article_url,
                                         "elapsed": elapsed(),
                                         "already_processed": True,
                                         "message": "Article already exists - added to your library"
@@ -317,6 +425,16 @@ async def process_article_direct(
             }
             await asyncio.sleep(0)
 
+            # Step 4b: Generate themed insights for private articles
+            themed_insights_data = None
+            if is_private and user_id:
+                logger.info("Generating themed insights for private article...")
+                themed_insights_data = await processor._generate_themed_insights_async(
+                    user_id=user_id,
+                    metadata=metadata,
+                    ai_summary=ai_summary
+                )
+
             # Step 5: Save to database
             yield {
                 "event": "save_start",
@@ -325,7 +443,7 @@ async def process_article_direct(
             await asyncio.sleep(0)
 
             logger.info("Saving to database...")
-            article_id = processor._save_to_database(metadata, ai_summary, user_id=user_id)
+            article_id = processor._save_to_database(metadata, ai_summary, user_id=user_id, is_private=is_private, themed_insights_data=themed_insights_data)
 
             yield {
                 "event": "save_complete",
@@ -334,18 +452,22 @@ async def process_article_direct(
             await asyncio.sleep(0)
 
             # Completion
+            # Determine the correct URL based on article type
+            article_url = f"/private-article/{article_id}" if is_private else f"/article/{article_id}"
+
             yield {
                 "event": "completed",
-                "data": json.dumps({"article_id": article_id, "url": f"/article/{article_id}", "elapsed": elapsed()})
+                "data": json.dumps({"article_id": article_id, "url": article_url, "elapsed": elapsed()})
             }
 
             logger.info(f"✅ Successfully processed article: ID={article_id}")
 
         except Exception as e:
             logger.error(f"❌ Processing failed: {e}", exc_info=True)
+            user_message = get_user_friendly_error_message(e)
             yield {
                 "event": "error",
-                "data": json.dumps({"message": str(e), "elapsed": elapsed()})
+                "data": json.dumps({"message": user_message, "elapsed": elapsed()})
             }
 
     return EventSourceResponse(
@@ -356,6 +478,364 @@ async def process_article_direct(
             "X-Accel-Buffering": "no",
         }
     )
+
+
+@router.post("/process-extension")
+async def process_article_from_extension(
+    url: str,
+    request: ExtensionProcessRequest,
+    force_reprocess: bool = False,
+    demo_video: bool = False,
+    token: Optional[str] = None
+):
+    """
+    Process article from Chrome extension with pre-extracted HTML content.
+
+    This endpoint is specifically for the Chrome extension which:
+    1. Extracts DOM HTML from the active tab (captures authenticated/paywalled content)
+    2. Sends HTML + URL to this endpoint
+    3. Backend processes without needing to fetch (no Playwright, no stored sessions)
+
+    For content that requires authentication (Seeking Alpha, Tegus, etc.), the extension
+    leverages the user's existing browser session to extract content, eliminating the
+    need for stored browser sessions.
+
+    Privacy is auto-detected by checking if the URL matches any known public channel
+    in the public_channels table. If matched, article is public; otherwise private.
+
+    NOTE: Audio/video files are still fetched directly by the backend (they're usually
+    publicly accessible or can be downloaded without authentication).
+
+    Args:
+        url: Original article URL
+        request: ExtensionProcessRequest with html and optional title
+        force_reprocess: If True, reprocess article even if it already exists
+        demo_video: If True, extract video frames for demo videos
+        token: Supabase JWT token (passed as query param for SSE compatibility)
+
+    Returns:
+        StreamingResponse with real-time processing events (SSE format)
+    """
+    from starlette.responses import StreamingResponse
+    from app.middleware.auth import get_supabase_admin
+
+    if not token:
+        logger.warning("🔒 Extension request without token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token"
+        )
+
+    try:
+        supabase = get_supabase_admin()
+        user_response = supabase.auth.get_user(token)
+
+        if not user_response or not user_response.user:
+            logger.warning("🔒 Invalid token for extension request")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        user_id = user_response.user.id
+        logger.info(f"📡 Starting extension processing for: {url} (user: {user_id})")
+        logger.info(f"📄 Received HTML content: {len(request.html)} characters")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error verifying token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        )
+
+    async def process_and_stream():
+        """
+        Process article using provided HTML instead of fetching.
+        Yields SSE events for real-time progress updates.
+        """
+        from app.services.article_processor import ArticleProcessor
+        import time
+
+        start_time = time.time()
+
+        def elapsed():
+            return int(time.time() - start_time)
+
+        try:
+            # Send ping to establish connection
+            yield f"event: ping\ndata: {json.dumps({'message': 'SSE connection established', 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            # Send started event
+            yield f"event: started\ndata: {json.dumps({'url': url, 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            # Send html_received event
+            yield f"event: html_received\ndata: {json.dumps({'content_length': len(request.html), 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            # Initialize processor with extension mode (no fetching)
+            processor = ArticleProcessor(event_emitter=None)
+
+            # Auto-detect privacy based on public_channels table
+            is_public = processor._is_public_channel(url)
+            is_private = not is_public
+
+            logger.info(f"🔐 Privacy auto-detected: {'PUBLIC' if is_public else 'PRIVATE'}")
+
+            # Emit privacy detection event
+            yield f"event: privacy_detected\ndata: {json.dumps({'is_private': is_private, 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            # Check if article already exists (unless force_reprocess is True)
+            if not force_reprocess:
+                existing = None
+
+                if is_private:
+                    if user_id:
+                        try:
+                            user_data = processor.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
+                            organization_id = user_data.data.get('organization_id') if user_data.data else None
+
+                            if organization_id:
+                                result = processor.supabase.table('private_articles').select('*').eq(
+                                    'organization_id', organization_id
+                                ).eq('url', url).execute()
+
+                                if result.data and len(result.data) > 0:
+                                    existing = result.data[0]
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error checking private articles: {e}")
+                else:
+                    existing = processor.check_article_exists(url)
+
+                if existing:
+                    article_id = existing['id']
+                    user_already_has_article = False
+
+                    if user_id:
+                        try:
+                            if is_private:
+                                result = processor.supabase.table('private_article_users').select('*').eq(
+                                    'private_article_id', article_id
+                                ).eq('user_id', user_id).execute()
+                            else:
+                                result = processor.supabase.table('article_users').select('*').eq(
+                                    'article_id', article_id
+                                ).eq('user_id', user_id).execute()
+                            user_already_has_article = len(result.data) > 0
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error checking article association: {e}")
+
+                    if user_already_has_article:
+                        article_url = f"/private-article/{existing['id']}" if is_private else f"/article/{existing['id']}"
+                        yield f"event: duplicate_detected\ndata: {json.dumps({'article_id': existing['id'], 'title': existing['title'], 'created_at': existing['created_at'], 'updated_at': existing['updated_at'], 'url': article_url, 'elapsed': elapsed()})}\n\n"
+                        return
+                    else:
+                        # Add to user's library
+                        if user_id:
+                            try:
+                                if is_private:
+                                    processor.supabase.table('private_article_users').insert({
+                                        'private_article_id': article_id,
+                                        'user_id': user_id
+                                    }).execute()
+                                else:
+                                    processor.supabase.table('article_users').insert({
+                                        'article_id': article_id,
+                                        'user_id': user_id
+                                    }).execute()
+
+                                article_url = f"/private-article/{article_id}" if is_private else f"/article/{article_id}"
+                                yield f"event: completed\ndata: {json.dumps({'article_id': article_id, 'url': article_url, 'elapsed': elapsed(), 'already_processed': True, 'message': 'Article already exists - added to your library'})}\n\n"
+                                return
+                            except Exception as e:
+                                yield f"event: error\ndata: {json.dumps({'error': f'Failed to add article to your library: {str(e)}', 'elapsed': elapsed()})}\n\n"
+                                return
+
+            # Process using provided HTML (extension mode)
+            yield f"event: fetch_start\ndata: {json.dumps({'url': url, 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            yield f"event: fetch_complete\ndata: {json.dumps({'message': 'Using HTML from browser', 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            # Create async queue for progress events
+            event_queue = asyncio.Queue()
+            metadata_result = None
+            extraction_error = None
+
+            async def progress_callback(event_type: str, data: dict):
+                await event_queue.put({
+                    "event": event_type,
+                    "data": {**data, "elapsed": elapsed()}
+                })
+
+            logger.info(f"Starting metadata extraction from provided HTML (demo_video={demo_video})")
+
+            # Run metadata extraction with provided HTML
+            async def extract_metadata_task():
+                nonlocal metadata_result, extraction_error
+                try:
+                    metadata_result = await processor._extract_metadata_from_html(
+                        url=url,
+                        html_content=request.html,
+                        title_hint=request.title,
+                        progress_callback=progress_callback,
+                        extract_demo_frames=demo_video
+                    )
+                    await event_queue.put(None)
+                except Exception as e:
+                    extraction_error = e
+                    await event_queue.put(None)
+
+            extraction_task = asyncio.create_task(extract_metadata_task())
+
+            # Stream progress events
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    break
+                yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
+                await asyncio.sleep(0)
+
+            await extraction_task
+
+            if extraction_error:
+                raise extraction_error
+
+            metadata = metadata_result
+
+            # Generate AI summary
+            yield f"event: ai_start\ndata: {json.dumps({'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            logger.info("Starting AI summary generation...")
+            ai_summary = await processor._generate_summary_async(url, metadata)
+
+            yield f"event: ai_complete\ndata: {json.dumps({'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            # Generate themed insights for private articles
+            themed_insights_data = None
+            if is_private and user_id:
+                logger.info("Generating themed insights for private article...")
+                themed_insights_data = await processor._generate_themed_insights_async(
+                    user_id=user_id,
+                    metadata=metadata,
+                    ai_summary=ai_summary
+                )
+
+            # Save to database
+            yield f"event: save_start\ndata: {json.dumps({'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            logger.info("Saving to database...")
+            article_id = processor._save_to_database(metadata, ai_summary, user_id=user_id, is_private=is_private, themed_insights_data=themed_insights_data)
+
+            yield f"event: save_complete\ndata: {json.dumps({'article_id': article_id, 'elapsed': elapsed()})}\n\n"
+            await asyncio.sleep(0)
+
+            article_url = f"/private-article/{article_id}" if is_private else f"/article/{article_id}"
+            yield f"event: completed\ndata: {json.dumps({'article_id': article_id, 'url': article_url, 'elapsed': elapsed()})}\n\n"
+
+            logger.info(f"✅ Successfully processed article from extension: ID={article_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Extension processing failed: {e}", exc_info=True)
+            user_message = get_user_friendly_error_message(e)
+            yield f"event: error\ndata: {json.dumps({'message': user_message, 'elapsed': elapsed()})}\n\n"
+
+    return StreamingResponse(
+        process_and_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@router.get("/check-article")
+async def check_article_exists(
+    url: str,
+    token: Optional[str] = None
+):
+    """
+    Check if an article with the given URL already exists.
+
+    Used by the Chrome extension to show duplicate warning before processing.
+
+    Args:
+        url: Article URL to check
+        token: Supabase JWT token (passed as query param)
+
+    Returns:
+        JSON with exists flag and article details if found
+    """
+    from app.middleware.auth import get_supabase_admin
+    from app.services.article_processor import ArticleProcessor
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token"
+        )
+
+    try:
+        supabase = get_supabase_admin()
+        user_response = supabase.auth.get_user(token)
+
+        if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        user_id = user_response.user.id
+        logger.info(f"🔍 Checking if article exists: {url} (user: {user_id})")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error verifying token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        )
+
+    # Check if article exists
+    processor = ArticleProcessor(event_emitter=None)
+    existing = processor.check_article_exists(url)
+
+    if not existing:
+        return {"exists": False}
+
+    article_id = existing['id']
+
+    # Check if user already has this article
+    user_has_article = False
+    try:
+        result = processor.supabase.table('article_users').select('*').eq(
+            'article_id', article_id
+        ).eq('user_id', user_id).execute()
+        user_has_article = len(result.data) > 0
+    except Exception as e:
+        logger.warning(f"⚠️ Error checking article association: {e}")
+
+    if user_has_article:
+        return {
+            "exists": True,
+            "article_id": existing['id'],
+            "title": existing['title'],
+            "created_at": existing['created_at'],
+            "article_url": f"/article/{existing['id']}"
+        }
+
+    # Article exists but user doesn't have it - don't show as duplicate
+    return {"exists": False}
 
 
 @router.get("/status/{job_id}")

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { canAccessPodcastHistory } from '@/types/database';
 
 // API configuration from environment variables
 const CONTENT_CHECKER_API_URL = process.env.NEXT_PUBLIC_CONTENT_CHECKER_API_URL || 'http://localhost:8001';
@@ -26,7 +27,7 @@ type SortField = 'title' | 'published_date' | 'found_at' | 'duration_seconds' | 
 type SortDirection = 'asc' | 'desc';
 
 export default function PodcastHistoryPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, organization } = useAuth();
   const router = useRouter();
   const [podcasts, setPodcasts] = useState<PodcastEpisode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,12 +43,16 @@ export default function PodcastHistoryPage() {
   const [sortField, setSortField] = useState<SortField>('found_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
-  // Protect this page - redirect to login if not authenticated
+  // Protect this page - redirect to login if not authenticated, or home if no access
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login');
+    if (!authLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (!canAccessPodcastHistory(organization)) {
+        router.push('/');
+      }
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, organization, router]);
 
   // Load podcasts on mount
   useEffect(() => {
@@ -275,8 +280,8 @@ export default function PodcastHistoryPage() {
     );
   }
 
-  // Don't render if not authenticated (will redirect)
-  if (!user) {
+  // Don't render if not authenticated or no access (will redirect)
+  if (!user || !canAccessPodcastHistory(organization)) {
     return null;
   }
 

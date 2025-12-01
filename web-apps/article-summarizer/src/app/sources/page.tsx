@@ -12,6 +12,8 @@ import {
   PreviewPost,
 } from '@/lib/api-client';
 import { searchPodcastIndex, getPodcastEpisodes } from '@/lib/podcast-index';
+import { searchYouTubeChannels, getYouTubeChannelVideos, getChannelRSSFeedUrl, YouTubeChannel, YouTubeVideo } from '@/lib/youtube-api';
+import { supabase } from '@/lib/supabase';
 import { Trash2, X, Check, AlertCircle, Search } from 'lucide-react';
 
 type NotificationType = 'success' | 'error' | 'info';
@@ -43,7 +45,7 @@ interface PodcastEpisode {
   link?: string;
 }
 
-type AddMode = 'url' | 'podcast';
+type AddMode = 'url' | 'podcast' | 'youtube';
 
 interface DiscoveredSource {
   url: string;
@@ -74,6 +76,14 @@ export default function ContentSourcesPage() {
   const [selectedPodcast, setSelectedPodcast] = useState<PodcastSearchResult | null>(null);
   const [podcastEpisodes, setPodcastEpisodes] = useState<Record<number, PodcastEpisode[]>>({});
   const [loadingEpisodes, setLoadingEpisodes] = useState<Record<number, boolean>>({});
+
+  // YouTube channel search mode state
+  const [youtubeSearchTerm, setYoutubeSearchTerm] = useState('');
+  const [youtubeResults, setYoutubeResults] = useState<YouTubeChannel[]>([]);
+  const [searchingYoutube, setSearchingYoutube] = useState(false);
+  const [selectedYoutubeChannel, setSelectedYoutubeChannel] = useState<YouTubeChannel | null>(null);
+  const [youtubeVideos, setYoutubeVideos] = useState<Record<string, YouTubeVideo[]>>({});
+  const [loadingVideos, setLoadingVideos] = useState<Record<string, boolean>>({});
 
   // Protect this page - redirect to login if not authenticated
   useEffect(() => {
@@ -121,6 +131,104 @@ export default function ContentSourcesPage() {
     }
   };
 
+  /**
+   * Add a channel to the public_channels table for privacy auto-detection
+   * This ensures articles from this source are treated as public
+   * Uses upsert logic - updates if URL already exists, inserts if new
+   */
+  const addToPublicChannels = async (params: {
+    channelName: string;
+    newsletterUrl?: string;
+    rssFeedUrl?: string;
+    podcastFeedUrl?: string;
+    youtubeChannelUrl?: string;
+  }) => {
+    try {
+      // Check if channel already exists by any of the provided URLs
+      // This prevents duplicates when same channel is added with different name
+      let existingId: number | null = null;
+
+      if (params.youtubeChannelUrl) {
+        const { data } = await supabase
+          .from('public_channels')
+          .select('id')
+          .eq('youtube_channel_url', params.youtubeChannelUrl)
+          .single();
+        if (data) existingId = data.id;
+      }
+
+      if (!existingId && params.podcastFeedUrl) {
+        const { data } = await supabase
+          .from('public_channels')
+          .select('id')
+          .eq('podcast_feed_url', params.podcastFeedUrl)
+          .single();
+        if (data) existingId = data.id;
+      }
+
+      if (!existingId && params.newsletterUrl) {
+        const { data } = await supabase
+          .from('public_channels')
+          .select('id')
+          .eq('newsletter_url', params.newsletterUrl)
+          .single();
+        if (data) existingId = data.id;
+      }
+
+      if (!existingId && params.rssFeedUrl) {
+        const { data } = await supabase
+          .from('public_channels')
+          .select('id')
+          .eq('rss_feed_url', params.rssFeedUrl)
+          .single();
+        if (data) existingId = data.id;
+      }
+
+      // Note: We intentionally don't check by channel_name as a fallback
+      // because different channels can have the same name
+
+      const channelData = {
+        channel_name: params.channelName,
+        newsletter_url: params.newsletterUrl || null,
+        rss_feed_url: params.rssFeedUrl || null,
+        podcast_feed_url: params.podcastFeedUrl || null,
+        youtube_channel_url: params.youtubeChannelUrl || null,
+        is_active: true,
+      };
+
+      if (existingId) {
+        // Update existing record
+        const { error } = await supabase
+          .from('public_channels')
+          .update(channelData)
+          .eq('id', existingId);
+
+        if (error) {
+          console.error('Error updating public_channels:', error);
+        } else {
+          console.log(`Updated public channel "${params.channelName}" (id: ${existingId})`);
+        }
+      } else {
+        // Insert new record
+        const { error } = await supabase
+          .from('public_channels')
+          .insert(channelData);
+
+        if (error) {
+          // Ignore duplicate key errors (race condition)
+          if (!error.message.includes('duplicate') && !error.message.includes('unique')) {
+            console.error('Error adding to public_channels:', error);
+          }
+        } else {
+          console.log(`Added "${params.channelName}" to public_channels`);
+        }
+      }
+    } catch (error) {
+      // Non-critical error - don't block the main flow
+      console.error('Error adding to public_channels:', error);
+    }
+  };
+
   const handleDiscoverURL = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -153,6 +261,15 @@ export default function ContentSourcesPage() {
         is_active: true,
         source_type: discoveredSource.source_type,
       });
+
+      // Add to public_channels for privacy auto-detection
+      // Newsletters/RSS feeds use domain-level matching
+      await addToPublicChannels({
+        channelName: discoveredSource.title,
+        newsletterUrl: discoveredSource.source_type === 'newsletter' ? discoveredSource.url : undefined,
+        rssFeedUrl: discoveredSource.has_rss ? discoveredSource.url : undefined,
+      });
+
       addNotification('success', 'Source added successfully!');
       resetForm();
       loadSources();
@@ -231,12 +348,98 @@ export default function ContentSourcesPage() {
         is_active: true,
         source_type: 'podcast',
       });
+
+      // Add to public_channels for privacy auto-detection
+      await addToPublicChannels({
+        channelName: selectedPodcast.title,
+        podcastFeedUrl: feedUrl,
+      });
+
       addNotification('success', 'Podcast added successfully!');
       resetForm();
       loadSources();
     } catch (error) {
       console.error('Error creating source:', error);
       addNotification('error', error instanceof Error ? error.message : 'Failed to add podcast');
+    }
+  };
+
+  const handleSearchYouTube = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!youtubeSearchTerm.trim()) {
+      addNotification('error', 'Please enter a channel name');
+      return;
+    }
+
+    setSearchingYoutube(true);
+    setYoutubeResults([]);
+    setSelectedYoutubeChannel(null);
+    setYoutubeVideos({});
+
+    try {
+      const channels = await searchYouTubeChannels(youtubeSearchTerm);
+      setYoutubeResults(channels);
+
+      if (channels.length === 0) {
+        addNotification('info', 'No channels found. Try a different search term.');
+      } else {
+        // Fetch recent videos for each channel (first 3)
+        channels.forEach(async (channel: YouTubeChannel) => {
+          try {
+            setLoadingVideos(prev => ({ ...prev, [channel.id]: true }));
+            const videos = await getYouTubeChannelVideos(channel.id, 3);
+            setYoutubeVideos(prev => ({ ...prev, [channel.id]: videos }));
+          } catch (error) {
+            console.error(`Error fetching videos for channel ${channel.id}:`, error);
+          } finally {
+            setLoadingVideos(prev => ({ ...prev, [channel.id]: false }));
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error searching YouTube:', error);
+      addNotification('error', error instanceof Error ? error.message : 'Failed to search YouTube channels');
+    } finally {
+      setSearchingYoutube(false);
+    }
+  };
+
+  const handleSelectYouTubeChannel = (channel: YouTubeChannel) => {
+    setSelectedYoutubeChannel(channel);
+  };
+
+  const handleConfirmYouTubeChannel = async () => {
+    if (!selectedYoutubeChannel) {
+      addNotification('error', 'No channel selected');
+      return;
+    }
+
+    // Use RSS feed URL as the normalized format across both tables
+    // Format: https://www.youtube.com/feeds/videos.xml?channel_id=UCxxxx
+    // This is easier to traverse when checking for new videos
+    const rssFeedUrl = getChannelRSSFeedUrl(selectedYoutubeChannel.id);
+
+    try {
+      await createContentSource({
+        title: selectedYoutubeChannel.title,
+        url: rssFeedUrl,
+        is_active: true,
+        source_type: 'youtube_channel',
+      });
+
+      // Add to public_channels - use same RSS feed URL format for consistency
+      await addToPublicChannels({
+        channelName: selectedYoutubeChannel.title,
+        youtubeChannelUrl: rssFeedUrl,
+      });
+
+      addNotification('success', 'YouTube channel added successfully!');
+      resetForm();
+      loadSources();
+    } catch (error) {
+      console.error('Error creating source:', error);
+      addNotification('error', error instanceof Error ? error.message : 'Failed to add YouTube channel');
     }
   };
 
@@ -258,9 +461,12 @@ export default function ContentSourcesPage() {
   const resetForm = () => {
     setUrlInput('');
     setPodcastSearchTerm('');
+    setYoutubeSearchTerm('');
     setDiscoveredSource(null);
     setPodcastResults([]);
     setSelectedPodcast(null);
+    setYoutubeResults([]);
+    setSelectedYoutubeChannel(null);
     // Keep form open - just reset to URL mode
     setAddMode('url');
   };
@@ -339,6 +545,8 @@ export default function ContentSourcesPage() {
                     setAddMode('url');
                     setPodcastResults([]);
                     setSelectedPodcast(null);
+                    setYoutubeResults([]);
+                    setSelectedYoutubeChannel(null);
                     // Keep urlInput - don't clear it
                   }}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -353,6 +561,8 @@ export default function ContentSourcesPage() {
                   onClick={() => {
                     setAddMode('podcast');
                     setDiscoveredSource(null);
+                    setYoutubeResults([]);
+                    setSelectedYoutubeChannel(null);
                     // Keep podcastSearchTerm - don't clear it
                   }}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -362,6 +572,22 @@ export default function ContentSourcesPage() {
                   }`}
                 >
                   Search Podcast
+                </button>
+                <button
+                  onClick={() => {
+                    setAddMode('youtube');
+                    setDiscoveredSource(null);
+                    setPodcastResults([]);
+                    setSelectedPodcast(null);
+                    // Keep youtubeSearchTerm - don't clear it
+                  }}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    addMode === 'youtube'
+                      ? 'bg-[#077331] text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Search YouTube Channel
                 </button>
               </div>
 
@@ -573,6 +799,135 @@ export default function ContentSourcesPage() {
                       </button>
                       <button
                         onClick={() => setSelectedPodcast(null)}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* YouTube Channel Search Mode */}
+              {addMode === 'youtube' && (
+                <div>
+                  <form onSubmit={handleSearchYouTube} className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Search for a YouTube channel by name
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={youtubeSearchTerm}
+                        onChange={(e) => setYoutubeSearchTerm(e.target.value)}
+                        placeholder="e.g., Lex Fridman"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#077331] focus:border-transparent"
+                      />
+                      <button
+                        type="submit"
+                        disabled={searchingYoutube}
+                        className={`px-4 py-2 rounded-md font-medium text-white transition-colors inline-flex items-center ${
+                          searchingYoutube
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-[#077331] hover:bg-[#055a24]'
+                        }`}
+                      >
+                        <Search className="h-4 w-4 mr-2" />
+                        {searchingYoutube ? 'Searching...' : 'Search'}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* YouTube Channel Results */}
+                  {youtubeResults.length > 0 && (
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {youtubeResults.map((channel) => {
+                        const videos = youtubeVideos[channel.id] || [];
+                        const isLoadingVideos = loadingVideos[channel.id];
+
+                        return (
+                          <div
+                            key={channel.id}
+                            onClick={() => handleSelectYouTubeChannel(channel)}
+                            className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${
+                              selectedYoutubeChannel?.id === channel.id
+                                ? 'border-[#077331] bg-white'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex gap-3">
+                              {channel.thumbnail && (
+                                <img
+                                  src={channel.thumbnail}
+                                  alt={channel.title}
+                                  className="w-16 h-16 rounded-full object-cover flex-shrink-0"
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold">{channel.title}</h3>
+                                <div className="flex gap-3 text-xs text-gray-500 mt-1">
+                                  {channel.subscriberCount && (
+                                    <span>
+                                      {parseInt(channel.subscriberCount).toLocaleString()} subscribers
+                                    </span>
+                                  )}
+                                  {channel.videoCount && (
+                                    <span>
+                                      {parseInt(channel.videoCount).toLocaleString()} videos
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Video Previews */}
+                                {isLoadingVideos && (
+                                  <div className="mt-2 text-xs text-gray-500">
+                                    Loading recent videos...
+                                  </div>
+                                )}
+                                {!isLoadingVideos && videos.length > 0 && (
+                                  <div className="mt-3 space-y-2">
+                                    {videos.map((video) => (
+                                      <div
+                                        key={video.id}
+                                        className="text-xs text-gray-600 border-l-2 border-gray-300 pl-2"
+                                      >
+                                        <div className="font-medium line-clamp-1">
+                                          {video.title}
+                                        </div>
+                                        <div className="text-gray-500">
+                                          {new Date(video.publishedAt).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              {selectedYoutubeChannel?.id === channel.id && (
+                                <Check className="h-5 w-5 text-[#077331] flex-shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Confirm YouTube Channel Selection */}
+                  {selectedYoutubeChannel && (
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={handleConfirmYouTubeChannel}
+                        className="px-4 py-2 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] transition-colors"
+                      >
+                        Add "{selectedYoutubeChannel.title}"
+                      </button>
+                      <button
+                        onClick={() => setSelectedYoutubeChannel(null)}
                         className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         Cancel

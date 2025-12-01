@@ -154,21 +154,9 @@ async def create_content_source(
     try:
         supabase = get_supabase()
 
-        # Get user's organization_id from the users table
-        user_result = supabase.table('users').select('organization_id').eq('id', user_id).execute()
-
-        if not user_result.data or len(user_result.data) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found in users table"
-            )
-
-        organization_id = user_result.data[0]['organization_id']
-
-        # Prepare data for insertion
+        # Prepare data for insertion (organization_id removed - scoped by user_id only)
         source_data = {
             'user_id': user_id,
-            'organization_id': organization_id,
             'title': source.title,
             'url': str(source.url),
             'notes': source.notes,

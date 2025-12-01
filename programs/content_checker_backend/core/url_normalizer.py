@@ -1,8 +1,8 @@
 """
 URL Normalization Utility
 
-Standardizes URLs for consistent lookups in known_channels table.
-Ensures that content_sources URLs match known_channels.source_url.
+Standardizes URLs for consistent lookups in public_channels table.
+Ensures that content_sources URLs match public_channels URL columns.
 """
 
 from urllib.parse import urlparse, urlunparse

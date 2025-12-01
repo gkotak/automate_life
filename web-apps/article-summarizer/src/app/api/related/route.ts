@@ -1,10 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
+import { generateEmbedding } from '@/lib/embeddings';
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,46 +13,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // First, get the embedding of the current article
-    const { data: article, error: articleError } = await supabase
+    const supabase = await createClient();
+
+    // First get the source article to get its embedding or generate one
+    const { data: sourceArticle, error: fetchError } = await supabase
       .from('articles')
-      .select('embedding, title')
+      .select('*')
       .eq('id', articleId)
       .single();
 
-    if (articleError || !article || !article.embedding) {
+    if (fetchError || !sourceArticle) {
       return NextResponse.json(
-        { error: 'Article not found or has no embedding' },
+        { error: 'Article not found' },
         { status: 404 }
       );
     }
 
-    // Find similar articles using the embedding
-    const { data: relatedArticles, error } = await supabase.rpc('search_articles', {
-      query_embedding: article.embedding,
-      match_threshold: 0.5, // Higher threshold for better quality matches
-      match_count: 10, // Get more to ensure we have 5 after filtering
+    // If we don't have an embedding stored (assuming we might store it later),
+    // we generate one from the content
+    // Note: In a real app, you'd likely store embeddings in a vector column
+    // For now, we'll generate it on the fly from the summary/title
+    const textToEmbed = `${sourceArticle.title} ${sourceArticle.summary_text || ''}`;
+    const embedding = await generateEmbedding(textToEmbed);
+
+    // Call the search RPC function
+    const { data: relatedArticles, error: searchError } = await supabase.rpc('search_articles', {
+      query_embedding: embedding,
+      match_threshold: 0.5, // Higher threshold for "related" than general search
+      match_count: limit + 1, // Fetch one extra to filter out self
     });
 
-    if (error) {
-      console.error('Related articles error:', error);
+    if (searchError) {
+      console.error('Related search error:', searchError);
       return NextResponse.json(
-        { error: 'Failed to find related articles', details: error.message },
+        { error: 'Failed to find related articles' },
         { status: 500 }
       );
     }
 
-    // Filter out the current article itself and only keep similarity >= 0.5
-    const filtered = (relatedArticles || [])
-      .filter((a: any) => a.id !== articleId && a.similarity >= 0.5)
-      .slice(0, 5); // Limit to exactly 5 articles
+    // Filter out the source article itself
+    const filteredResults = (relatedArticles || [])
+      .filter((a: any) => a.id !== articleId)
+      .slice(0, limit);
 
     return NextResponse.json({
-      related: filtered,
-      count: filtered.length
+      related: filteredResults
     });
+
   } catch (error) {
-    console.error('Related articles API error:', error);
+    console.error('Related API error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

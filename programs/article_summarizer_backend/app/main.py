@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 logger.info(f"Logging to file: {log_file}")
 
 # Import routes
-from app.routes import article, auth
+from app.routes import article, auth, reprocess
 
 
 @asynccontextmanager
@@ -107,6 +107,7 @@ app.add_middleware(
 # Include routers
 app.include_router(article.router, prefix="/api", tags=["articles"])
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
+app.include_router(reprocess.router, prefix="/api/reprocess", tags=["reprocessing"])
 
 
 @app.get("/")

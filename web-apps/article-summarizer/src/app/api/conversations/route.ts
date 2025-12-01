@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
 
 /**
  * GET - List all conversations
@@ -12,6 +7,7 @@ const supabase = createClient(
  */
 export async function GET() {
   try {
+    const supabase = await createClient();
     const { data: conversations, error } = await supabase
       .from('conversations')
       .select('*')
@@ -46,6 +42,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const { title } = await request.json().catch(() => ({}));
+    const supabase = await createClient();
 
     const { data: conversation, error } = await supabase
       .from('conversations')

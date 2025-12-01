@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Article } from '@/lib/supabase'
 import { Search, Trash2, ExternalLink, Calendar, Tag, X, CheckCircle, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { FolderWithCount, ThemeWithCount } from '@/types/database'
+import AddToFolderDropdown from './AddToFolderDropdown'
+import CreateFolderModal from './CreateFolderModal'
 
 type NotificationType = 'success' | 'error' | 'warning'
 
@@ -16,14 +19,17 @@ interface Notification {
   message: string
 }
 
-export default function ArticleList() {
+interface ArticleListProps {
+  folderId?: number | null
+}
+
+export default function ArticleList({ folderId = null }: ArticleListProps) {
   const { user } = useAuth()
   const pathname = usePathname()
 
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchFilter, setSearchFilter] = useState<'all' | 'summary' | 'transcript' | 'article'>('all')
   const [searchMode, setSearchMode] = useState<'keyword' | 'hybrid'>('hybrid')
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [hasLoaded, setHasLoaded] = useState(false)
@@ -48,6 +54,10 @@ export default function ArticleList() {
   const [availableSources, setAvailableSources] = useState<Array<{name: string, count: number}>>([])
   const [showAllSources, setShowAllSources] = useState(false)
 
+  // Theme filter states
+  const [availableThemes, setAvailableThemes] = useState<ThemeWithCount[]>([])
+  const [selectedThemes, setSelectedThemes] = useState<number[]>([])
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [totalArticles, setTotalArticles] = useState(0)
@@ -57,6 +67,11 @@ export default function ArticleList() {
   const [totalVideos, setTotalVideos] = useState(0)
   const [totalAudio, setTotalAudio] = useState(0)
   const [totalTextArticles, setTotalTextArticles] = useState(0)
+
+  // Folder-related state
+  const [folders, setFolders] = useState<FolderWithCount[]>([])
+  const [articleFolderMap, setArticleFolderMap] = useState<Map<string, number[]>>(new Map())
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false)
 
   // Restore search state from sessionStorage on mount
   useEffect(() => {
@@ -91,18 +106,21 @@ export default function ArticleList() {
     }
   }, [])
 
-  // Fetch articles on mount or when pathname changes (navigation)
+  // Fetch articles on mount or when user changes
   useEffect(() => {
-    // Only fetch if we're on the home page
-    if (pathname !== '/') return
+    // Only fetch if we're on the home page or a folder page
+    const isValidPath = pathname === '/' || pathname.startsWith('/folder/')
+    if (!isValidPath) return
 
-    // If we have saved search state, don't fetch (state will be restored)
-    if (sessionStorage.getItem('articleSearchState')) {
+    // If we have saved search state and we're on home page, don't fetch (state will be restored)
+    if (pathname === '/' && sessionStorage.getItem('articleSearchState')) {
       fetchAvailableSources()
+      fetchThemes()
       return
     }
 
     // Skip if we've already loaded articles (prevents re-fetch when user profile loads)
+    // folderId changes are handled by a separate effect
     if (hasLoaded) {
       return
     }
@@ -116,6 +134,7 @@ export default function ArticleList() {
     // Fetch articles (fetchArticles handles all edge cases internally)
     fetchArticles()
     fetchAvailableSources()
+    fetchThemes()
   }, [pathname, user?.id])
 
   // Re-fetch articles when My Articles filter changes (but only after initial load)
@@ -123,8 +142,9 @@ export default function ArticleList() {
     // Save preference to localStorage
     localStorage.setItem('showMyArticlesOnly', String(showMyArticlesOnly))
 
-    // Only re-fetch if we've loaded before and we're on the home page
-    if (!hasLoaded || pathname !== '/') return
+    // Only re-fetch if we've loaded before and we're on a valid page
+    const isValidPath = pathname === '/' || pathname.startsWith('/folder/')
+    if (!hasLoaded || !isValidPath) return
 
     setCurrentPage(1) // Reset to page 1 when filter changes
     fetchArticles()
@@ -133,8 +153,9 @@ export default function ArticleList() {
 
   // Re-fetch articles when page changes
   useEffect(() => {
-    // Only re-fetch if we've loaded before and we're on the home page
-    if (!hasLoaded || pathname !== '/') return
+    // Only re-fetch if we've loaded before and we're on a valid page
+    const isValidPath = pathname === '/' || pathname.startsWith('/folder/')
+    if (!hasLoaded || !isValidPath) return
 
     fetchArticles()
 
@@ -145,15 +166,157 @@ export default function ArticleList() {
   // Fetch articles when user loads (if we're waiting for auth)
   useEffect(() => {
     // Only fetch if:
-    // 1. We're on the home page
+    // 1. We're on a valid page (home or folder)
     // 2. User just loaded (has ID now)
     // 3. We want My Articles
     // 4. We haven't loaded articles yet
-    if (pathname === '/' && user?.id && showMyArticlesOnly && !hasLoaded) {
+    const isValidPath = pathname === '/' || pathname.startsWith('/folder/')
+    if (isValidPath && user?.id && showMyArticlesOnly && !hasLoaded) {
       fetchArticles()
       fetchAvailableSources()
     }
   }, [user?.id])
+
+  // Fetch folders when user is logged in
+  useEffect(() => {
+    if (user?.id) {
+      fetchFolders()
+    } else {
+      setFolders([])
+      setArticleFolderMap(new Map())
+    }
+  }, [user?.id])
+
+  // Fetch articles when folderId changes (including initial load with folder)
+  useEffect(() => {
+    const isValidPath = pathname === '/' || pathname.startsWith('/folder/')
+    if (!isValidPath) return
+
+    // For folder pages, fetch even on initial load
+    // For home page, only re-fetch if already loaded (initial load handled above)
+    if (folderId === null && !hasLoaded) return
+
+    setCurrentPage(1)
+    fetchArticles()
+  }, [folderId])
+
+  // Fetch folders from API
+  const fetchFolders = async () => {
+    try {
+      const response = await fetch('/api/folders')
+      if (response.ok) {
+        const data = await response.json()
+        setFolders(data.folders || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch folders:', error)
+    }
+  }
+
+  // Fetch which folders an article belongs to
+  const fetchArticleFolders = async (articleIds: number[], privateArticleIds: number[]) => {
+    if (!user?.id) return
+
+    try {
+      const newMap = new Map<string, number[]>()
+
+      // Fetch folder memberships for public articles
+      if (articleIds.length > 0) {
+        const { data: publicMemberships } = await supabase
+          .from('folder_articles')
+          .select('article_id, folder_id')
+          .in('article_id', articleIds)
+
+        publicMemberships?.forEach((m) => {
+          const key = `public-${m.article_id}`
+          const existing = newMap.get(key) || []
+          newMap.set(key, [...existing, m.folder_id])
+        })
+      }
+
+      // Fetch folder memberships for private articles
+      if (privateArticleIds.length > 0) {
+        const { data: privateMemberships } = await supabase
+          .from('folder_private_articles')
+          .select('private_article_id, folder_id')
+          .in('private_article_id', privateArticleIds)
+
+        privateMemberships?.forEach((m) => {
+          const key = `private-${m.private_article_id}`
+          const existing = newMap.get(key) || []
+          newMap.set(key, [...existing, m.folder_id])
+        })
+      }
+
+      setArticleFolderMap(newMap)
+    } catch (error) {
+      console.error('Failed to fetch article folders:', error)
+    }
+  }
+
+  // Toggle article in/out of folder
+  const handleToggleFolder = async (articleId: number, isPrivate: boolean, targetFolderId: number, isInFolder: boolean) => {
+    try {
+      const response = await fetch(`/api/folders/${targetFolderId}/articles`, {
+        method: isInFolder ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ articleId, isPrivate }),
+      })
+
+      if (response.ok) {
+        // Update local state
+        const key = `${isPrivate ? 'private' : 'public'}-${articleId}`
+        const currentFolders = articleFolderMap.get(key) || []
+
+        const newFolders = isInFolder
+          ? currentFolders.filter((id) => id !== targetFolderId)
+          : [...currentFolders, targetFolderId]
+
+        setArticleFolderMap((prev) => {
+          const updated = new Map(prev)
+          updated.set(key, newFolders)
+          return updated
+        })
+
+        // Update folder counts
+        setFolders((prev) =>
+          prev.map((f) =>
+            f.id === targetFolderId
+              ? {
+                  ...f,
+                  [isPrivate ? 'private_article_count' : 'article_count']:
+                    f[isPrivate ? 'private_article_count' : 'article_count'] + (isInFolder ? -1 : 1),
+                  total_count: f.total_count + (isInFolder ? -1 : 1),
+                }
+              : f
+          )
+        )
+
+        addNotification('success', isInFolder ? 'Removed from folder' : 'Added to folder')
+      }
+    } catch (error) {
+      console.error('Failed to toggle folder:', error)
+      addNotification('error', 'Failed to update folder')
+    }
+  }
+
+  // Create a new folder
+  const handleCreateFolder = async (name: string, description: string) => {
+    const response = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to create folder')
+    }
+
+    const data = await response.json()
+    setFolders((prev) => [...prev, data.folder].sort((a, b) => a.name.localeCompare(b.name)))
+    addNotification('success', `Folder "${name}" created`)
+  }
 
   const fetchAvailableSources = async () => {
     try {
@@ -211,6 +374,22 @@ export default function ArticleList() {
     }
   }
 
+  // Fetch available themes for the user's organization
+  const fetchThemes = async () => {
+    if (!user) return
+
+    try {
+      const response = await fetch('/api/themes')
+      if (!response.ok) {
+        throw new Error('Failed to fetch themes')
+      }
+      const data = await response.json()
+      setAvailableThemes(data.themes || [])
+    } catch (error) {
+      console.error('Error fetching themes:', error)
+    }
+  }
+
   const addNotification = (type: NotificationType, message: string) => {
     const id = Date.now().toString()
     const notification: Notification = { id, type, message }
@@ -236,18 +415,117 @@ export default function ArticleList() {
 
       let data
 
+      // If filtering by folder, fetch articles from that folder
+      if (folderId !== null) {
+        // Fetch articles in the selected folder
+        const [folderArticlesData, folderPrivateArticlesData] = await Promise.all([
+          supabase
+            .from('folder_articles')
+            .select('article_id')
+            .eq('folder_id', folderId),
+          supabase
+            .from('folder_private_articles')
+            .select('private_article_id')
+            .eq('folder_id', folderId),
+        ])
+
+        const publicArticleIds = folderArticlesData.data?.map((fa) => fa.article_id) || []
+        const privateArticleIds = folderPrivateArticlesData.data?.map((fpa) => fpa.private_article_id) || []
+
+        if (publicArticleIds.length === 0 && privateArticleIds.length === 0) {
+          setArticles([])
+          setTotalArticles(0)
+          setTotalVideos(0)
+          setTotalAudio(0)
+          setTotalTextArticles(0)
+          setHasLoaded(true)
+          setLoading(false)
+          return
+        }
+
+        setTotalArticles(publicArticleIds.length + privateArticleIds.length)
+
+        // Fetch stats for folder articles
+        const [videoCountPublic, audioCountPublic, articleCountPublic, videoCountPrivate, audioCountPrivate, articleCountPrivate] = await Promise.all([
+          publicArticleIds.length > 0 ? supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', publicArticleIds).eq('content_source', 'video') : Promise.resolve({ count: 0 }),
+          publicArticleIds.length > 0 ? supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', publicArticleIds).eq('content_source', 'audio') : Promise.resolve({ count: 0 }),
+          publicArticleIds.length > 0 ? supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', publicArticleIds).eq('content_source', 'article') : Promise.resolve({ count: 0 }),
+          privateArticleIds.length > 0 ? supabase.from('private_articles').select('*', { count: 'exact', head: true }).in('id', privateArticleIds).eq('content_source', 'video') : Promise.resolve({ count: 0 }),
+          privateArticleIds.length > 0 ? supabase.from('private_articles').select('*', { count: 'exact', head: true }).in('id', privateArticleIds).eq('content_source', 'audio') : Promise.resolve({ count: 0 }),
+          privateArticleIds.length > 0 ? supabase.from('private_articles').select('*', { count: 'exact', head: true }).in('id', privateArticleIds).eq('content_source', 'article') : Promise.resolve({ count: 0 })
+        ])
+
+        setTotalVideos((videoCountPublic.count || 0) + (videoCountPrivate.count || 0))
+        setTotalAudio((audioCountPublic.count || 0) + (audioCountPrivate.count || 0))
+        setTotalTextArticles((articleCountPublic.count || 0) + (articleCountPrivate.count || 0))
+
+        // Fetch article details
+        const [publicArticlesData, privateArticlesData] = await Promise.all([
+          publicArticleIds.length > 0
+            ? supabase
+                .from('articles')
+                .select('id, title, url, summary_text, content_source, source, created_at, tags')
+                .in('id', publicArticleIds)
+            : Promise.resolve({ data: [] }),
+          privateArticleIds.length > 0
+            ? supabase
+                .from('private_articles')
+                .select('id, title, url, summary_text, content_source, source, created_at, tags')
+                .in('id', privateArticleIds)
+            : Promise.resolve({ data: [] })
+        ])
+
+        // Combine and tag articles
+        const combinedArticles = [
+          ...(publicArticlesData.data || []).map((article) => ({
+            ...article,
+            type: 'public' as const,
+          })),
+          ...(privateArticlesData.data || []).map((article) => ({
+            ...article,
+            type: 'private' as const,
+          })),
+        ]
+
+        // Sort by created_at descending
+        combinedArticles.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+        // Apply pagination
+        const offset = (currentPage - 1) * articlesPerPage
+        data = combinedArticles.slice(offset, offset + articlesPerPage)
+
+        // Fetch folder memberships
+        fetchArticleFolders(publicArticleIds, privateArticleIds)
+
+        setArticles(data as any)
+        setHasLoaded(true)
+        setLoading(false)
+        return
+      }
+
       if (showMyArticlesOnly && user?.id) {
-        // Fetch only articles the user has saved via article_users junction table
+        // Fetch both public and private articles the user has saved
+
+        // Fetch public articles via article_users junction table
         const { data: articleUsers, error: junctionError } = await supabase
           .from('article_users')
-          .select('article_id')
+          .select('article_id, saved_at')
           .eq('user_id', user.id)
 
         if (junctionError) throw junctionError
 
-        const articleIds = articleUsers.map(au => au.article_id)
+        // Fetch private articles via private_article_users junction table
+        const { data: privateArticleUsers, error: privateJunctionError } = await supabase
+          .from('private_article_users')
+          .select('private_article_id, saved_at')
+          .eq('user_id', user.id)
 
-        if (articleIds.length === 0) {
+        if (privateJunctionError) throw privateJunctionError
+
+        const publicArticleIds = articleUsers.map(au => au.article_id)
+        const privateArticleIds = privateArticleUsers.map(pau => pau.private_article_id)
+
+        if (publicArticleIds.length === 0 && privateArticleIds.length === 0) {
           // User has no articles yet
           setArticles([])
           setTotalArticles(0)
@@ -257,71 +535,127 @@ export default function ArticleList() {
         }
 
         // Set total count for pagination
-        setTotalArticles(articleIds.length)
+        setTotalArticles(publicArticleIds.length + privateArticleIds.length)
 
-        // Fetch content type breakdown for stats using count queries
-        const [videoCount, audioCount, articleCount] = await Promise.all([
-          supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', articleIds).eq('content_source', 'video'),
-          supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', articleIds).eq('content_source', 'audio'),
-          supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', articleIds).eq('content_source', 'article')
+        // Fetch content type breakdown for stats using count queries (both public and private)
+        const [videoCountPublic, audioCountPublic, articleCountPublic, videoCountPrivate, audioCountPrivate, articleCountPrivate] = await Promise.all([
+          publicArticleIds.length > 0 ? supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', publicArticleIds).eq('content_source', 'video') : Promise.resolve({ count: 0 }),
+          publicArticleIds.length > 0 ? supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', publicArticleIds).eq('content_source', 'audio') : Promise.resolve({ count: 0 }),
+          publicArticleIds.length > 0 ? supabase.from('articles').select('*', { count: 'exact', head: true }).in('id', publicArticleIds).eq('content_source', 'article') : Promise.resolve({ count: 0 }),
+          privateArticleIds.length > 0 ? supabase.from('private_articles').select('*', { count: 'exact', head: true }).in('id', privateArticleIds).eq('content_source', 'video') : Promise.resolve({ count: 0 }),
+          privateArticleIds.length > 0 ? supabase.from('private_articles').select('*', { count: 'exact', head: true }).in('id', privateArticleIds).eq('content_source', 'audio') : Promise.resolve({ count: 0 }),
+          privateArticleIds.length > 0 ? supabase.from('private_articles').select('*', { count: 'exact', head: true }).in('id', privateArticleIds).eq('content_source', 'article') : Promise.resolve({ count: 0 })
         ])
 
-        setTotalVideos(videoCount.count || 0)
-        setTotalAudio(audioCount.count || 0)
-        setTotalTextArticles(articleCount.count || 0)
+        setTotalVideos((videoCountPublic.count || 0) + (videoCountPrivate.count || 0))
+        setTotalAudio((audioCountPublic.count || 0) + (audioCountPrivate.count || 0))
+        setTotalTextArticles((articleCountPublic.count || 0) + (articleCountPrivate.count || 0))
 
-        // Calculate pagination offset
+        // Fetch both public and private articles
+        const [publicArticlesData, privateArticlesData] = await Promise.all([
+          publicArticleIds.length > 0
+            ? supabase
+                .from('articles')
+                .select('id, title, url, summary_text, content_source, source, created_at, tags')
+                .in('id', publicArticleIds)
+            : Promise.resolve({ data: [] }),
+          privateArticleIds.length > 0
+            ? supabase
+                .from('private_articles')
+                .select('id, title, url, summary_text, content_source, source, created_at, tags')
+                .in('id', privateArticleIds)
+            : Promise.resolve({ data: [] })
+        ])
+
+        if (publicArticlesData.error) throw publicArticlesData.error
+        if (privateArticlesData.error) throw privateArticlesData.error
+
+        // Combine and tag articles with type and saved_at
+        const combinedArticles = [
+          ...(publicArticlesData.data || []).map(article => ({
+            ...article,
+            type: 'public' as const,
+            saved_at: articleUsers.find(au => au.article_id === article.id)?.saved_at
+          })),
+          ...(privateArticlesData.data || []).map(article => ({
+            ...article,
+            type: 'private' as const,
+            saved_at: privateArticleUsers.find(pau => pau.private_article_id === article.id)?.saved_at
+          }))
+        ]
+
+        // Sort by created_at descending
+        combinedArticles.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+        // Apply pagination
         const offset = (currentPage - 1) * articlesPerPage
-
-        // Fetch the actual articles with pagination
-        const { data: articlesData, error: articlesError } = await supabase
-          .from('articles')
-          .select('id, title, url, summary_text, content_source, source, created_at, tags')
-          .in('id', articleIds)
-          .order('created_at', { ascending: false })
-          .range(offset, offset + articlesPerPage - 1)
-
-        if (articlesError) throw articlesError
-        data = articlesData
+        data = combinedArticles.slice(offset, offset + articlesPerPage)
       } else {
-        // Fetch all articles (no user filter)
-        // Get total count first
-        const { count, error: countError } = await supabase
-          .from('articles')
-          .select('*', { count: 'exact', head: true })
+        // Fetch all articles (both public and private, no user filter)
+        // Get total counts first - both public and private
+        const [publicCount, privateCount] = await Promise.all([
+          supabase.from('articles').select('*', { count: 'exact', head: true }),
+          supabase.from('private_articles').select('*', { count: 'exact', head: true })
+        ])
 
-        if (countError) throw countError
-        setTotalArticles(count || 0)
+        if (publicCount.error) throw publicCount.error
+        setTotalArticles((publicCount.count || 0) + (privateCount.count || 0))
 
-        // Fetch content type breakdown for stats using count queries
-        const [videoCount, audioCount, articleCount] = await Promise.all([
+        // Fetch content type breakdown for stats using count queries (both public and private)
+        const [videoCountPublic, audioCountPublic, articleCountPublic, videoCountPrivate, audioCountPrivate, articleCountPrivate] = await Promise.all([
           supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'video'),
           supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'audio'),
-          supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'article')
+          supabase.from('articles').select('*', { count: 'exact', head: true }).eq('content_source', 'article'),
+          supabase.from('private_articles').select('*', { count: 'exact', head: true }).eq('content_source', 'video'),
+          supabase.from('private_articles').select('*', { count: 'exact', head: true }).eq('content_source', 'audio'),
+          supabase.from('private_articles').select('*', { count: 'exact', head: true }).eq('content_source', 'article')
         ])
 
-        setTotalVideos(videoCount.count || 0)
-        setTotalAudio(audioCount.count || 0)
-        setTotalTextArticles(articleCount.count || 0)
+        setTotalVideos((videoCountPublic.count || 0) + (videoCountPrivate.count || 0))
+        setTotalAudio((audioCountPublic.count || 0) + (audioCountPrivate.count || 0))
+        setTotalTextArticles((articleCountPublic.count || 0) + (articleCountPrivate.count || 0))
 
-        // Calculate pagination offset
+        // Fetch both public and private articles
+        const [publicArticlesData, privateArticlesData] = await Promise.all([
+          supabase
+            .from('articles')
+            .select('id, title, url, summary_text, content_source, source, created_at, tags')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('private_articles')
+            .select('id, title, url, summary_text, content_source, source, created_at, tags')
+            .order('created_at', { ascending: false })
+        ])
+
+        if (publicArticlesData.error) throw publicArticlesData.error
+
+        // Combine and tag articles with type
+        const combinedArticles = [
+          ...(publicArticlesData.data || []).map(article => ({
+            ...article,
+            type: 'public' as const
+          })),
+          ...(privateArticlesData.data || []).map(article => ({
+            ...article,
+            type: 'private' as const
+          }))
+        ]
+
+        // Sort by created_at descending
+        combinedArticles.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+        // Apply pagination
         const offset = (currentPage - 1) * articlesPerPage
-
-        // Fetch paginated articles
-        const { data: allArticles, error } = await supabase
-          .from('articles')
-          .select('id, title, url, summary_text, content_source, source, created_at, tags')
-          .order('created_at', { ascending: false })
-          .range(offset, offset + articlesPerPage - 1)
-
-        if (error) throw error
-
-        data = allArticles
+        data = combinedArticles.slice(offset, offset + articlesPerPage)
       }
 
       // Only update articles after we have the data
       if (data) {
         setArticles(data)
+        // Fetch folder memberships for displayed articles
+        const publicIds = data.filter((a: any) => a.type !== 'private').map((a: any) => a.id)
+        const privateIds = data.filter((a: any) => a.type === 'private').map((a: any) => a.id)
+        fetchArticleFolders(publicIds, privateIds)
       }
       setHasLoaded(true)
     } catch (error) {
@@ -358,9 +692,9 @@ export default function ArticleList() {
     }
   }
 
-  const performSearch = async (query: string, contentTypes: string[], sources: string[], from: string, to: string) => {
+  const performSearch = async (query: string, contentTypes: string[], sources: string[], from: string, to: string, themes: number[] = []) => {
     // Check if we have any filters applied
-    const hasFilters = contentTypes.length > 0 || sources.length > 0 || from || to || showMyArticlesOnly
+    const hasFilters = contentTypes.length > 0 || sources.length > 0 || from || to || showMyArticlesOnly || themes.length > 0
 
     // If no search query and no filters, just fetch all articles
     if (!query.trim() && !hasFilters) {
@@ -378,6 +712,7 @@ export default function ArticleList() {
       if (from) filters.dateFrom = from
       if (to) filters.dateTo = to
       if (showMyArticlesOnly && user?.id) filters.userId = user.id
+      if (themes.length > 0) filters.themeIds = themes
 
       // Use API for search with filters (even if query is empty)
       const response = await fetch('/api/search', {
@@ -432,12 +767,13 @@ export default function ArticleList() {
   }
 
   const searchArticles = async () => {
-    await performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, dateTo)
+    await performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, dateTo, selectedThemes)
   }
 
   const clearFilters = () => {
     setSelectedContentTypes([])
     setSelectedSources([])
+    setSelectedThemes([])
     setDateFrom('')
     setDateTo('')
   }
@@ -446,7 +782,7 @@ export default function ArticleList() {
     setSelectedContentTypes(prev => {
       const newTypes = prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
       // Trigger search with the new state immediately
-      setTimeout(() => performSearch(searchQuery, newTypes, selectedSources, dateFrom, dateTo), 0)
+      setTimeout(() => performSearch(searchQuery, newTypes, selectedSources, dateFrom, dateTo, selectedThemes), 0)
       return newTypes
     })
   }
@@ -455,8 +791,17 @@ export default function ArticleList() {
     setSelectedSources(prev => {
       const newSources = prev.includes(source) ? prev.filter(s => s !== source) : [...prev, source]
       // Trigger search with the new state immediately
-      setTimeout(() => performSearch(searchQuery, selectedContentTypes, newSources, dateFrom, dateTo), 0)
+      setTimeout(() => performSearch(searchQuery, selectedContentTypes, newSources, dateFrom, dateTo, selectedThemes), 0)
       return newSources
+    })
+  }
+
+  const toggleTheme = (themeId: number) => {
+    setSelectedThemes(prev => {
+      const newThemes = prev.includes(themeId) ? prev.filter(t => t !== themeId) : [...prev, themeId]
+      // Trigger search with the new state immediately
+      setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, dateTo, newThemes), 0)
+      return newThemes
     })
   }
 
@@ -688,6 +1033,27 @@ export default function ArticleList() {
                     </div>
                   </div>
 
+                  {/* Theme Filter (only shown if themes exist) */}
+                  {availableThemes.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Themes</label>
+                      <div className="space-y-2">
+                        {availableThemes.map(theme => (
+                          <label key={theme.id} className="flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedThemes.includes(theme.id)}
+                              onChange={() => toggleTheme(theme.id)}
+                              className="rounded border-gray-300 text-[#077331] focus:ring-[#077331]"
+                            />
+                            <span className="ml-2 text-sm text-gray-700">{theme.name}</span>
+                            <span className="ml-auto text-xs text-gray-500">({theme.article_count})</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Date Range Filter */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
@@ -698,7 +1064,7 @@ export default function ArticleList() {
                         const newDateFrom = e.target.value
                         setDateFrom(newDateFrom)
                         // Trigger search with the new date
-                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, newDateFrom, dateTo), 0)
+                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, newDateFrom, dateTo, selectedThemes), 0)
                       }}
                       className="w-full px-3 py-2 border border-[#e2e8f0] rounded-md focus:ring-2 focus:ring-[#077331]"
                     />
@@ -713,7 +1079,7 @@ export default function ArticleList() {
                         const newDateTo = e.target.value
                         setDateTo(newDateTo)
                         // Trigger search with the new date
-                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, newDateTo), 0)
+                        setTimeout(() => performSearch(searchQuery, selectedContentTypes, selectedSources, dateFrom, newDateTo, selectedThemes), 0)
                       }}
                       className="w-full px-3 py-2 border border-[#e2e8f0] rounded-md focus:ring-2 focus:ring-[#077331]"
                     />
@@ -721,7 +1087,7 @@ export default function ArticleList() {
                 </div>
 
                 {/* Active Filters Display */}
-                {(selectedContentTypes.length > 0 || selectedSources.length > 0 || dateFrom || dateTo) && (
+                {(selectedContentTypes.length > 0 || selectedSources.length > 0 || selectedThemes.length > 0 || dateFrom || dateTo) && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {selectedContentTypes.map(type => (
                       <span key={type} className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-[#077331] rounded-full text-sm border border-[#077331]">
@@ -739,6 +1105,17 @@ export default function ArticleList() {
                         </button>
                       </span>
                     ))}
+                    {selectedThemes.map(themeId => {
+                      const theme = availableThemes.find(t => t.id === themeId)
+                      return theme ? (
+                        <span key={themeId} className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm border border-blue-300">
+                          {theme.name}
+                          <button onClick={() => toggleTheme(themeId)} className="hover:text-blue-900">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : null
+                    })}
                     <button
                       onClick={clearFilters}
                       className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
@@ -884,18 +1261,27 @@ export default function ArticleList() {
           </div>
         ) : (
           <div className="grid gap-4 sm:gap-6">
-          {articles.map((article) => (
-            <div key={article.id} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-[#e2e8f0]">
-              <div className="p-4 sm:p-6">
-                <div className="flex justify-between items-start mb-3 sm:mb-4 gap-2">
-                  <Link
-                    href={`/article/${article.id}${searchQuery ? `?q=${encodeURIComponent(searchQuery)}&mode=${searchMode}${extractedTerms.length > 0 ? `&terms=${encodeURIComponent(extractedTerms.join(','))}` : ''}` : ''}`}
-                    className="flex-1 min-w-0"
-                  >
-                    <h2 className="text-base sm:text-lg lg:text-xl font-semibold text-[#030712] hover:text-[#077331] transition-colors cursor-pointer line-clamp-2">
-                      {article.title}
-                    </h2>
-                  </Link>
+          {articles.map((article) => {
+            // Determine article path based on type
+            const articlePath = (article as any).type === 'private'
+              ? `/private-article/${article.id}`
+              : `/article/${article.id}`
+            const queryString = searchQuery
+              ? `?q=${encodeURIComponent(searchQuery)}&mode=${searchMode}${extractedTerms.length > 0 ? `&terms=${encodeURIComponent(extractedTerms.join(','))}` : ''}`
+              : ''
+
+            return (
+              <div key={`${(article as any).type || 'public'}-${article.id}`} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-[#e2e8f0]">
+                <div className="p-4 sm:p-6">
+                  <div className="flex justify-between items-start mb-3 sm:mb-4 gap-2">
+                    <Link
+                      href={`${articlePath}${queryString}`}
+                      className="flex-1 min-w-0"
+                    >
+                      <h2 className="text-base sm:text-lg lg:text-xl font-semibold text-[#030712] hover:text-[#077331] transition-colors cursor-pointer line-clamp-2">
+                        {article.title}
+                      </h2>
+                    </Link>
                   <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                     <a
                       href={article.url}
@@ -907,13 +1293,25 @@ export default function ArticleList() {
                       <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </a>
                     {user && (
-                      <button
-                        onClick={() => deleteArticle(article.id)}
-                        className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 transition-colors"
-                        title="Delete article"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      </button>
+                      <>
+                        <AddToFolderDropdown
+                          articleId={article.id}
+                          isPrivate={(article as any).type === 'private'}
+                          folders={folders}
+                          articleFolderIds={articleFolderMap.get(`${(article as any).type === 'private' ? 'private' : 'public'}-${article.id}`) || []}
+                          onToggleFolder={(targetFolderId, isInFolder) =>
+                            handleToggleFolder(article.id, (article as any).type === 'private', targetFolderId, isInFolder)
+                          }
+                          onCreateFolder={() => setShowCreateFolderModal(true)}
+                        />
+                        <button
+                          onClick={() => deleteArticle(article.id)}
+                          className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 transition-colors"
+                          title="Delete article"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -930,6 +1328,24 @@ export default function ArticleList() {
                       {article.source}
                     </span>
                   )}
+                  {/* Folder badges */}
+                  {(() => {
+                    const articleKey = `${(article as any).type === 'private' ? 'private' : 'public'}-${article.id}`
+                    const folderIds = articleFolderMap.get(articleKey) || []
+                    return folderIds.map((fId) => {
+                      const folder = folders.find((f) => f.id === fId)
+                      if (!folder) return null
+                      return (
+                        <Link
+                          key={fId}
+                          href={`/folder/${encodeURIComponent(folder.name)}`}
+                          className="px-2 py-0.5 sm:py-1 bg-[#077331] text-white rounded-full text-xs font-medium hover:bg-[#055a24] transition-colors"
+                        >
+                          {folder.name}
+                        </Link>
+                      )
+                    })
+                  })()}
                   {article.tags?.map((tag, index) => (
                     <span key={index} className="px-2 py-0.5 sm:py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
                       <Tag className="inline h-3 w-3 mr-1" />
@@ -951,7 +1367,8 @@ export default function ArticleList() {
                 )}
               </div>
             </div>
-          ))}
+          )
+        })}
 
           {articles.length === 0 && !loading && hasLoaded && (
             <div className="text-center py-12">
@@ -1047,6 +1464,13 @@ export default function ArticleList() {
           </div>
         )}
       </div>
+
+      {/* Create Folder Modal */}
+      <CreateFolderModal
+        isOpen={showCreateFolderModal}
+        onClose={() => setShowCreateFolderModal(false)}
+        onSave={handleCreateFolder}
+      />
     </div>
   )
 }

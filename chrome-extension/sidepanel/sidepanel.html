@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Particles - Summarizer</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <img src="../icons/particles_logo_white.svg" alt="Particles" class="logo-full">
+      </div>
+      <div class="header-subtitle">AI-powered content analysis</div>
+    </header>
+
+    <!-- Authentication Section (shown when not logged in) -->
+    <div id="auth-section" class="auth-section hidden">
+      <div class="auth-card">
+        <div class="auth-icon">🔐</div>
+        <h2>Sign In Required</h2>
+        <p>Please sign in to your Particles account to use the summarizer.</p>
+        <p class="auth-hint">Already signed in? Click "Check Auth Status" below.</p>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <button id="login-btn" class="btn btn-primary">
+            Sign In to Particles
+          </button>
+          <button id="check-auth-btn" class="btn btn-secondary">
+            Check Auth Status
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content (shown when logged in) -->
+    <div id="main-content" class="main-content hidden">
+      <!-- Current Page Info -->
+      <div class="page-info">
+        <div class="page-info-header">
+          <span class="page-info-label">Current Page</span>
+          <button id="refresh-btn" class="btn-icon" title="Refresh page info">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+          </button>
+        </div>
+        <div class="page-title" id="page-title">Loading...</div>
+        <div class="page-url" id="page-url">...</div>
+      </div>
+
+      <!-- Options -->
+      <div class="options-section">
+        <label class="checkbox-label">
+          <input type="checkbox" id="demo-video-checkbox">
+          <span>Extract demo video frames (for screen shares)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="private-checkbox">
+          <span>Save as private article</span>
+        </label>
+      </div>
+
+      <!-- Action Button -->
+      <div class="action-section">
+        <button id="process-btn" class="btn btn-primary btn-large">
+          <span class="btn-icon-wrapper">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12l7 7 7-7"/>
+            </svg>
+          </span>
+          Summarize This Page
+        </button>
+      </div>
+
+      <!-- Duplicate Warning -->
+      <div id="duplicate-warning" class="warning-card hidden">
+        <div class="warning-header">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span>Article Already Processed</span>
+        </div>
+        <div class="warning-content">
+          <p id="duplicate-message"></p>
+          <div class="warning-actions">
+            <button id="view-existing-btn" class="btn btn-secondary">View Existing</button>
+            <button id="reprocess-btn" class="btn btn-outline">Reprocess Anyway</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Processing Section -->
+      <div id="processing-section" class="processing-section hidden">
+        <div class="processing-header">
+          <span class="processing-status" id="processing-status">Processing...</span>
+          <span class="processing-elapsed" id="processing-elapsed">0s</span>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="steps-container" id="steps-container">
+          <!-- Steps will be dynamically inserted here -->
+        </div>
+      </div>
+
+      <!-- Result Section -->
+      <div id="result-section" class="result-section hidden">
+        <div class="result-card success" id="result-card">
+          <div class="result-icon" id="result-icon">✅</div>
+          <div class="result-title" id="result-title">Success!</div>
+          <div class="result-message" id="result-message"></div>
+          <button id="view-article-btn" class="btn btn-primary">
+            View Article
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <a href="https://tryparticles.com" target="_blank" class="footer-link">
+        View All Articles →
+      </a>
+    </footer>
+  </div>
+
+  <script src="sidepanel.js" type="module"></script>
+</body>
+</html>

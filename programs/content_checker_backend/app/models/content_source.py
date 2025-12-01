@@ -13,7 +13,7 @@ class ContentSourceBase(BaseModel):
     url: HttpUrl = Field(..., description="RSS feed or content URL")
     notes: Optional[str] = Field(None, max_length=1000, description="Optional notes")
     is_active: bool = Field(True, description="Whether to actively check this source")
-    source_type: str = Field(default='newsletter', description="Type of source: 'newsletter' or 'podcast'")
+    source_type: str = Field(default='newsletter', description="Type of source: 'newsletter', 'podcast', or 'youtube_channel'")
 
 
 class ContentSourceCreate(ContentSourceBase):
@@ -34,7 +34,6 @@ class ContentSource(ContentSourceBase):
     """Full content source model with database fields"""
     id: int
     user_id: str
-    organization_id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
     last_checked_at: Optional[datetime] = None
@@ -58,7 +57,7 @@ class ContentSourceResponse(BaseModel):
 class SourceDiscoveryRequest(BaseModel):
     """Request model for discovering source from URL"""
     url: HttpUrl = Field(..., description="URL to discover RSS feed and metadata from")
-    source_type: str = Field(default='newsletter', description="Type of source: 'newsletter' or 'podcast'")
+    source_type: str = Field(default='newsletter', description="Type of source: 'newsletter', 'podcast', or 'youtube_channel'")
 
 
 class PreviewPost(BaseModel):

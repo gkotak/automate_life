@@ -356,6 +356,81 @@ Article text content: {article_text}
 """
 
 
+class ThemedInsightsPrompt:
+    """
+    Prompt for generating theme-specific insights from article content
+
+    Organizational themes are strategic categories (e.g., "Competition", "International Expansion")
+    that help users analyze content through specific lenses relevant to their organization.
+
+    Output: JSON with insights grouped by theme
+    """
+
+    # Braintrust metadata
+    SLUG = "themed-insights"
+    NAME = "Themed Insights"
+    MODEL = "claude-sonnet-4-20250514"
+    MAX_TOKENS = 4000
+
+    @staticmethod
+    def build(themes: list, transcript_text: str, article_summary: str) -> str:
+        """
+        Build the themed insights prompt
+
+        Args:
+            themes: List of theme names (e.g., ["Competition", "International Expansion"])
+            transcript_text: Full transcript or article text
+            article_summary: The general summary already generated for this article
+
+        Returns:
+            Complete prompt string ready for Claude API
+        """
+        themes_list = "\n".join([f"- {theme}" for theme in themes])
+
+        return f"""Analyze the following content and extract insights that are specifically relevant to each of the provided organizational themes.
+
+IMPORTANT GUIDELINES:
+- Do NOT force-fit insights. If a theme has no relevant content, return an empty array for that theme.
+- Only include genuinely relevant insights - not tangentially related content.
+- Each insight should provide actionable, specific information relevant to the theme.
+- Include timestamps when the insight can be tied to a specific moment in the transcript.
+- The same content can appear as both a general insight AND a themed insight if genuinely relevant.
+- It is completely acceptable to return empty arrays for themes that aren't discussed in the content.
+
+ORGANIZATIONAL THEMES TO ANALYZE:
+{themes_list}
+
+ARTICLE SUMMARY:
+{article_summary}
+
+TRANSCRIPT/SOURCE TEXT:
+{transcript_text[:100000]}
+
+Return your response in this exact JSON format:
+{{
+    "themed_insights": {{
+        "Theme Name 1": [
+            {{"insight_text": "Specific insight relevant to this theme", "timestamp_seconds": 300, "time_formatted": "5:00"}},
+            {{"insight_text": "Another insight without timestamp", "timestamp_seconds": null, "time_formatted": null}}
+        ],
+        "Theme Name 2": []
+    }}
+}}
+
+TIMESTAMP RULES:
+- Use PRECISE timestamps from the transcript when you can identify where the insight is discussed
+- Use null for timestamp_seconds and time_formatted if the insight is derived from general context
+- NEVER guess or estimate timestamps - if you can't find it precisely, use null
+- Search the transcript for the specific phrase or concept and use that exact timestamp
+
+QUALITY GUIDELINES:
+- Focus on insights that would help someone understand the content through the lens of each theme
+- Prioritize actionable, concrete insights over vague observations
+- Include specific names, numbers, or details when available
+- Each insight should stand alone as a meaningful piece of information
+"""
+
+
 class ChatAssistantPrompt:
     """
     Prompt for chat assistant that answers questions based on article context

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase-server';
 import { NextRequest } from 'next/server';
 import { searchArticlesBySemantic } from '@/lib/search';
 import { Message, ArticleSource } from '@/types/chat';
@@ -23,11 +23,6 @@ function getBraintrustLogger() {
   }
   return braintrustLogger;
 }
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
 
 interface ChatRequestBody {
   message: string;
@@ -66,6 +61,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Search for relevant articles
+    const supabase = await createClient();
+
     let articles = await searchArticlesBySemantic(message, {
       matchThreshold: 0.3,
       matchCount: 10
@@ -79,14 +76,16 @@ export async function POST(request: NextRequest) {
     // Limit to top 5 most relevant articles to keep context manageable
     const topArticles = articles.slice(0, 5);
 
-    // Step 2: Build context from articles
+    // Step 2: Build context from articles (now includes both public and private)
     const context: ArticleContext[] = topArticles.map(article => ({
       title: article.title,
       source: article.source || article.platform,
       summary: article.summary_text,
       key_insights: article.key_insights,
       url: article.url,
-      similarity: article.similarity
+      similarity: article.similarity,
+      type: article.type,
+      id: article.id
     }));
 
     // Step 3: Get conversation history if continuing a chat
@@ -105,10 +104,16 @@ export async function POST(request: NextRequest) {
     // Step 4: Build messages array for OpenAI (using prompt from prompts.ts)
     const systemPrompt = buildChatSystemPrompt(context);
 
+    // Fix type error by ensuring role is strictly typed
+    const formattedHistory = conversationHistory.map(msg => ({
+      role: msg.role as 'user' | 'assistant' | 'system',
+      content: msg.content
+    }));
+
     const messages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationHistory.slice(-10), // Last 10 messages to avoid token limits
-      { role: 'user', content: message }
+      { role: 'system' as const, content: systemPrompt },
+      ...formattedHistory.slice(-10), // Last 10 messages to avoid token limits
+      { role: 'user' as const, content: message }
     ];
 
     // Step 5: Call OpenAI Chat API with streaming (using Braintrust wrapper)
@@ -171,12 +176,13 @@ export async function POST(request: NextRequest) {
                 content: message
               });
 
-              // Prepare sources for assistant message
+              // Prepare sources for assistant message (includes type for correct URL generation)
               const sources: ArticleSource[] = topArticles.map(a => ({
                 id: a.id,
                 title: a.title,
                 similarity: a.similarity || 0,
-                url: a.url
+                url: a.url,
+                type: a.type
               }));
 
               // Save assistant response

@@ -1,36 +1,25 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase-server';
 import { NextRequest, NextResponse } from 'next/server';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
 
 /**
  * GET - Get a specific conversation with all its messages
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const conversationId = parseInt(params.id);
-
-    if (isNaN(conversationId)) {
-      return NextResponse.json(
-        { error: 'Invalid conversation ID' },
-        { status: 400 }
-      );
-    }
+    const { id } = await params;
+    const supabase = await createClient();
 
     // Fetch conversation
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select('*')
-      .eq('id', conversationId)
+      .eq('id', id)
       .single();
 
-    if (convError || !conversation) {
+    if (convError) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
@@ -41,13 +30,12 @@ export async function GET(
     const { data: messages, error: messagesError } = await supabase
       .from('messages')
       .select('*')
-      .eq('conversation_id', conversationId)
+      .eq('conversation_id', id)
       .order('created_at', { ascending: true });
 
     if (messagesError) {
-      console.error('Error fetching messages:', messagesError);
       return NextResponse.json(
-        { error: 'Failed to fetch messages', details: messagesError.message },
+        { error: 'Failed to fetch messages' },
         { status: 500 }
       );
     }
@@ -70,19 +58,12 @@ export async function GET(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const conversationId = parseInt(params.id);
-
-    if (isNaN(conversationId)) {
-      return NextResponse.json(
-        { error: 'Invalid conversation ID' },
-        { status: 400 }
-      );
-    }
-
+    const { id } = await params;
     const { title } = await request.json();
+    const supabase = await createClient();
 
     if (!title) {
       return NextResponse.json(
@@ -94,14 +75,13 @@ export async function PATCH(
     const { data: conversation, error } = await supabase
       .from('conversations')
       .update({ title })
-      .eq('id', conversationId)
+      .eq('id', id)
       .select()
       .single();
 
     if (error) {
-      console.error('Error updating conversation:', error);
       return NextResponse.json(
-        { error: 'Failed to update conversation', details: error.message },
+        { error: 'Failed to update conversation' },
         { status: 500 }
       );
     }

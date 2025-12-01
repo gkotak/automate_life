@@ -149,9 +149,9 @@ class YouTubeDiscoveryService:
             self.logger.debug(f"Error in _extract_from_text: {e}")
             return None
 
-    def get_youtube_url_for_known_source(self, source_url: str, supabase_client) -> Optional[str]:
+    def get_youtube_url_for_public_channel(self, source_url: str, supabase_client) -> Optional[str]:
         """
-        Check known_channels table for YouTube URL by source URL
+        Check public_channels table for YouTube URL by source URL
 
         Args:
             source_url: Content source URL (RSS feed, PocketCasts channel, etc.)
@@ -166,23 +166,23 @@ class YouTubeDiscoveryService:
             # Normalize URL for consistent lookup
             normalized_url = URLNormalizer.normalize_url(source_url)
 
-            result = supabase_client.table('known_channels')\
-                .select('youtube_url, channel_name')\
-                .eq('source_url', normalized_url)\
+            result = supabase_client.table('public_channels')\
+                .select('youtube_channel_url, channel_name')\
+                .eq('pocketcasts_channel_url', normalized_url)\
                 .eq('is_active', True)\
                 .single()\
                 .execute()
 
             if result.data:
-                youtube_url = result.data.get('youtube_url')
+                youtube_url = result.data.get('youtube_channel_url')
                 channel_name = result.data.get('channel_name', 'Unknown')
                 if youtube_url:
-                    self.logger.info(f"✅ [KNOWN SOURCE] Found YouTube URL for '{channel_name}': {youtube_url}")
+                    self.logger.info(f"✅ [PUBLIC CHANNEL] Found YouTube URL for '{channel_name}': {youtube_url}")
                     return youtube_url
 
         except Exception as e:
             # Not found is expected for unknown sources
             if 'PGRST116' not in str(e):  # Ignore "no rows returned" error
-                self.logger.debug(f"ℹ️ [KNOWN SOURCE] Source not in database: {source_url[:60]}")
+                self.logger.debug(f"ℹ️ [PUBLIC CHANNEL] Source not in database: {source_url[:60]}")
 
         return None

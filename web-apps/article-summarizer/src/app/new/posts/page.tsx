@@ -310,6 +310,11 @@ export default function PostsAdminPage() {
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#077331]"></div>
               <p className="mt-4 text-gray-600">Loading posts...</p>
             </div>
+          ) : checking && posts.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#077331]"></div>
+              <p className="mt-4 text-gray-600">Checking for new posts...</p>
+            </div>
           ) : posts.length === 0 ? (
             <div className="text-center py-12">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,27 +332,13 @@ export default function PostsAdminPage() {
                 </>
               ) : (
                 <>
-                  <p className="mt-4 text-gray-600">No discovered posts found</p>
+                  <p className="mt-4 text-gray-600">No posts found</p>
                   <button
                     onClick={checkForNewPosts}
                     disabled={checking}
-                    className={`mt-4 px-6 py-3 rounded-lg font-medium text-white transition-colors ${
-                      checking
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-[#077331] hover:bg-[#055a24]'
-                    }`}
+                    className="mt-4 px-6 py-3 rounded-lg font-medium text-white transition-colors bg-[#077331] hover:bg-[#055a24]"
                   >
-                    {checking ? (
-                      <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Checking...
-                      </span>
-                    ) : (
-                      'Check for New Posts'
-                    )}
+                    Check for New Posts
                   </button>
                 </>
               )}

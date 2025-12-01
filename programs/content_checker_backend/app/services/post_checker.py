@@ -85,6 +85,10 @@ class PostCheckerService:
             # Detect platform type
             platform_type = self._detect_platform_type(source_url)
 
+            # For YouTube channels, skip platform detection and go straight to RSS parsing
+            if source_type == 'youtube_channel':
+                platform_type = 'youtube_rss'
+
             # Extract posts from source, using the stored source_type
             posts = self._extract_posts_from_feed(source_url, platform_type, user_source_type=source_type)
 
@@ -248,7 +252,7 @@ class PostCheckerService:
         Args:
             url: URL of the feed or webpage
             platform_type: Detected platform type
-            user_source_type: User's intended source type ('newsletter' or 'podcast')
+            user_source_type: User's intended source type ('newsletter', 'podcast', or 'youtube_channel')
         """
         try:
             # Check if this is a PocketCasts channel URL
@@ -257,6 +261,10 @@ class PostCheckerService:
                 self.logger.warning(f"   Please use the podcast's RSS feed URL instead.")
                 self.logger.warning(f"   Tip: Most podcasts have an RSS feed you can find via their website or podcast directories.")
                 return []
+
+            # YouTube RSS feeds are direct XML feeds - parse them directly
+            if user_source_type == 'youtube_channel' or platform_type == 'youtube_rss':
+                return self._extract_posts_from_rss_feed(url, user_source_type)
 
             response = self.session.get(url, timeout=Config.DEFAULT_TIMEOUT)
             response.raise_for_status()
@@ -477,6 +485,7 @@ class PostCheckerService:
 
                 # Determine URL based on user's intended source type
                 # For 'podcast': always prefer audio URL
+                # For 'youtube_channel': always use webpage link (video URL)
                 # For 'newsletter': prefer webpage link, fallback to audio if no link
                 if user_source_type == 'podcast':
                     # User explicitly searched via "Search Podcast" - always use audio
@@ -484,6 +493,10 @@ class PostCheckerService:
                         link = audio_url
                         self.logger.debug(f"Using audio URL for podcast: {title[:60]}")
                     # If no audio URL for podcast, use link (edge case)
+                elif user_source_type == 'youtube_channel':
+                    # User searched via "Search YouTube Channel" - always use video URL (link)
+                    # YouTube RSS feeds provide video URLs in the <link> field
+                    self.logger.debug(f"Using video URL for YouTube channel: {title[:60]}")
                 else:
                     # User searched via "Search Newsletter by URL" - prefer webpage
                     # Only use audio if no webpage link exists
@@ -496,10 +509,23 @@ class PostCheckerService:
                     self.logger.debug(f"Skipping entry without title or URL: {entry.get('id', 'unknown')}")
                     continue
 
+                # Skip YouTube Shorts - they have /shorts/ in the URL
+                if user_source_type == 'youtube_channel' and '/shorts/' in link:
+                    self.logger.debug(f"Skipping YouTube Short: {title[:60]}")
+                    continue
+
+                # Determine platform based on source type
+                if user_source_type == 'podcast':
+                    platform = 'podcast_rss'
+                elif user_source_type == 'youtube_channel':
+                    platform = 'youtube_rss'
+                else:
+                    platform = 'rss_feed'
+
                 post_data = {
                     'title': title,
                     'url': link,
-                    'platform': 'podcast_rss' if user_source_type == 'podcast' else 'rss_feed',
+                    'platform': platform,
                     'published': published,
                     'audio_url': audio_url,
                     'duration': duration
@@ -663,17 +689,8 @@ class PostCheckerService:
             return True  # Assume recent if we can't determine
 
     def _save_post_to_queue(self, post: Dict, source_feed: str, user_id: str) -> Optional[str]:
-        """Save post to content_queue table with user_id and organization_id"""
+        """Save post to content_queue table with user_id"""
         try:
-            # Get user's organization_id from the users table
-            user_result = self.supabase.table('users').select('organization_id').eq('id', user_id).execute()
-
-            if not user_result.data or len(user_result.data) == 0:
-                self.logger.error(f"User {user_id} not found in users table")
-                return None
-
-            organization_id = user_result.data[0]['organization_id']
-
             # Determine content_type based on the ACTUAL URL we're saving
             # Check if URL contains an audio file extension (even with query params)
             # e.g., "episode.mp3?tracking=xyz" should be detected as audio
@@ -683,10 +700,23 @@ class PostCheckerService:
             url_path = parsed_url.path  # Gets path without query params
             is_audio_file = any(ext in url_path for ext in ['.mp3', '.m4a', '.wav', '.ogg', '.aac', '.flac'])
 
+            # Check if this is a YouTube video URL
+            is_youtube_video = (
+                'youtube.com/watch' in url_lower or
+                'youtu.be/' in url_lower or
+                post.get('platform') == 'youtube_rss'
+            )
+
             # Content type describes what the URL points to:
+            # - 'youtube_video' if URL is a YouTube video
             # - 'podcast/audio' if URL is an audio file
             # - 'article' if URL is a webpage
-            content_type = 'podcast/audio' if is_audio_file else 'article'
+            if is_youtube_video:
+                content_type = 'youtube_video'
+            elif is_audio_file:
+                content_type = 'podcast/audio'
+            else:
+                content_type = 'article'
 
             # Extract channel title from RSS metadata
             channel_title = post.get('channel_title')
@@ -699,11 +729,11 @@ class PostCheckerService:
             # - PocketCasts entries don't have a corresponding entry in content_sources table
             # - Different discovery mechanisms provide different metadata (RSS vs PocketCasts API)
             record = {
-                'url': post['url'],  # The actual article/episode URL to process
-                'title': post['title'],  # Episode/article title
-                'content_type': content_type,  # 'podcast/audio' or 'article' (based on URL extension)
+                'url': post['url'],  # The actual article/episode/video URL to process
+                'title': post['title'],  # Episode/article/video title
+                'content_type': content_type,  # 'youtube_video', 'podcast/audio', or 'article' (based on URL)
                 'source': 'rss_feed',  # Discovery mechanism for this flow (vs 'podcast_history')
-                'channel_title': channel_title,  # Podcast/newsletter name (from RSS metadata)
+                'channel_title': channel_title,  # Channel/podcast/newsletter name (from RSS metadata)
                 # 'video_url': None,  # REMOVED - YouTube discovery happens in Article Processor
                 'audio_url': post.get('audio_url'),  # Direct audio file URL from RSS enclosure
                 'platform': post.get('platform', 'generic'),  # 'podcast_rss' or 'rss_feed' (from source_type)
@@ -711,8 +741,7 @@ class PostCheckerService:
                 'published_date': post['published'].isoformat() if post.get('published') else None,
                 'duration_seconds': post.get('duration'),
                 'status': 'discovered',
-                'user_id': user_id,
-                'organization_id': organization_id
+                'user_id': user_id
             }
 
             result = self.supabase.table('content_queue').upsert(

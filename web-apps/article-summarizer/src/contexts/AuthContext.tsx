@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Fetch user profile with organization data in a single optimized query
       const { data: profileData, error: profileError } = await supabase
         .from('users')
-        .select('id, organization_id, role, display_name, created_at, updated_at, organization:organizations(id, name, created_at, updated_at)')
+        .select('id, organization_id, role, display_name, created_at, updated_at, organization:organizations(id, name, metadata, created_at, updated_at)')
         .eq('id', userId)
         .single()
 
@@ -116,43 +116,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     // 2. Explicit check for session (fallback)
-    // This ensures we initialize even if INITIAL_SESSION doesn't fire (which can happen in some SSR/client setups)
+    // We use getUser() instead of getSession() because getSession() can hang if local storage is locked/corrupt.
+    // getUser() forces a network call to validate the token, which is safer.
     const checkSession = async () => {
       try {
-        console.log('[Auth] Checking session explicitly...')
+        console.log('[Auth] Checking user explicitly (getUser)...')
         const start = Date.now()
 
-        // Race getSession with a 2s timeout to detect hangs
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 4000))
+        // Race getUser with a 4s timeout
+        const userPromise = supabase.auth.getUser()
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('getUser timeout')), 4000))
 
         // @ts-ignore
-        const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise])
+        const { data: { user }, error } = await Promise.race([userPromise, timeoutPromise])
 
-        console.log(`[Auth] getSession completed in ${Date.now() - start}ms`)
+        console.log(`[Auth] getUser completed in ${Date.now() - start}ms`)
 
         if (error) {
-          console.error('[Auth] Error checking session:', error)
-          return
+          console.error('[Auth] Error checking user:', error)
+          // If getUser fails, we might still have a session in storage, but it's invalid.
+          // We don't need to do anything else, just stop loading.
         }
 
         if (mounted) {
-          if (session?.user) {
-            console.log('[Auth] Manual session check found user:', session.user.id)
-            setUser(session.user)
-            // Only fetch profile if we haven't already (optimization)
+          if (user) {
+            console.log('[Auth] Manual check found user:', user.id)
+            setUser(user)
             if (!userProfile) {
-              await fetchUserProfile(session.user.id)
+              await fetchUserProfile(user.id)
             }
           } else {
-            console.log('[Auth] Manual session check: No session')
+            console.log('[Auth] Manual check: No user')
           }
-          // Ensure loading is false if we're done checking
           setLoading(false)
           clearTimeout(safetyTimeout)
         }
-      } catch (e) {
-        console.error('[Auth] Exception checking session:', e)
+      } catch (e: any) {
+        console.error('[Auth] Exception checking user:', e)
+
+        // AUTO-RECOVERY
+        if (e.message === 'getUser timeout' || e.message?.includes('Corrupted')) {
+          const ATTEMPT_KEY = 'auth_recovery_attempts'
+          const attempts = parseInt(sessionStorage.getItem(ATTEMPT_KEY) || '0')
+
+          if (attempts < 3) {
+            console.warn(`[Auth] Detected hang. Recovery attempt ${attempts + 1}/3...`)
+            if (typeof window !== 'undefined') {
+              // 1. Clear LocalStorage
+              console.log('[Auth] Clearing LocalStorage...')
+              localStorage.clear() // Clear everything to be safe
+
+              // 2. Clear Cookies
+              console.log('[Auth] Clearing Cookies...')
+              document.cookie.split(";").forEach((c) => {
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+              });
+
+              // 3. Increment attempt counter
+              sessionStorage.setItem(ATTEMPT_KEY, (attempts + 1).toString())
+
+              // 4. Force reload
+              console.log('[Auth] Reloading...')
+              window.location.reload()
+              return
+            }
+          } else {
+            console.error('[Auth] Recovery failed after 3 attempts. Stopping loop.')
+            sessionStorage.removeItem(ATTEMPT_KEY)
+            // Try to sign out one last time
+            await supabase.auth.signOut().catch(e => console.error('SignOut error:', e))
+            // Force loading to false so the user at least sees the app (logged out)
+            setLoading(false)
+          }
+        }
+
         if (mounted) setLoading(false)
       }
     }

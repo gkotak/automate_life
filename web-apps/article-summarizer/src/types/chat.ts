@@ -25,6 +25,7 @@ export interface ArticleSource {
   title: string
   similarity: number
   url: string
+  type?: 'public' | 'private'  // Distinguishes between public and private articles
 }
 
 /**

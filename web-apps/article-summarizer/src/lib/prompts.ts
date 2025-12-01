@@ -44,6 +44,8 @@ export interface ArticleContext {
   key_insights?: any[];
   url: string;
   similarity?: number;
+  type?: 'public' | 'private';  // Distinguishes between public and private articles
+  id?: number;  // Article ID for generating correct links
 }
 
 /**

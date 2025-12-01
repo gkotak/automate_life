@@ -27,7 +27,7 @@ import re
 import asyncio
 import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable, Awaitable
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
@@ -54,6 +54,7 @@ from core.prompts import (
     VideoContextBuilder,
     AudioContextBuilder,
     TextContextBuilder,
+    ThemedInsightsPrompt,
     create_metadata_for_prompt
 )
 from processors.transcript_processor import TranscriptProcessor
@@ -118,23 +119,48 @@ class ArticleProcessor(BaseProcessor):
         else:
             self.logger.warning("⚠️ OPENAI_API_KEY not found - embeddings will not be generated")
 
-    async def process_article(self, url: str, user_id: Optional[str] = None) -> str:
+        # Phase 2: Media persistence configuration
+        self.persist_media = os.getenv('PERSIST_ARTICLE_MEDIA', 'false').lower() == 'true'
+        self.media_retention_days = int(os.getenv('MEDIA_RETENTION_DAYS', '30'))
+        if self.persist_media:
+            self.logger.info(f"✅ Media persistence enabled (retention: {self.media_retention_days} days)")
+
+    async def process_article(self, url: str, user_id: Optional[str] = None, is_private: bool = False) -> str:
         """
-        Main processing pipeline for any article type
+        DEPRECATED: Use the /api/article/process-direct endpoint instead.
+
+        This method is kept for backwards compatibility but lacks features:
+        - No privacy auto-detection (must pass is_private manually)
+        - No duplicate handling
+        - No demo video frame support
+        - No library management
+
+        For CLI usage, use scripts/process_article_cli.py which calls the API.
 
         Args:
             url: URL of the article to process
             user_id: Optional user ID for authentication (Supabase auth user)
+            is_private: If True, save to private_articles table (org-scoped)
 
         Returns:
-            Path to generated HTML file
+            Article ID
         """
+        import warnings
+        warnings.warn(
+            "process_article() is deprecated. Use /api/article/process-direct endpoint instead. "
+            "See scripts/process_article_cli.py for CLI usage.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.logger.info(f"Processing article: {url}")
         if user_id:
             self.logger.info(f"   User ID: {user_id}")
+        if is_private:
+            self.logger.info(f"   Privacy: Private (org-scoped)")
 
-        # Store user_id for database save
+        # Store user_id and privacy flag for database save
         self.current_user_id = user_id
+        self.is_private = is_private
 
         try:
             # Step 0: Try to discover YouTube URL from content_queue
@@ -205,12 +231,21 @@ class ArticleProcessor(BaseProcessor):
             if self.event_emitter:
                 await self.event_emitter.emit('ai_complete')
 
+            # Step 4b: Generate themed insights for private articles
+            themed_insights_data = None
+            if self.is_private and self.current_user_id:
+                themed_insights_data = await self._generate_themed_insights_async(
+                    user_id=self.current_user_id,
+                    metadata=metadata,
+                    ai_summary=ai_summary
+                )
+
             # Step 5: Save to Supabase database
             if self.event_emitter:
                 await self.event_emitter.emit('save_start')
 
             self.logger.info("3. Saving to Supabase database...")
-            article_id = self._save_to_database(metadata, ai_summary, self.current_user_id)
+            article_id = self._save_to_database(metadata, ai_summary, self.current_user_id, self.is_private, themed_insights_data)
 
             if self.event_emitter:
                 await self.event_emitter.emit('save_complete', {
@@ -402,7 +437,8 @@ class ArticleProcessor(BaseProcessor):
                     if page_text:
                         article_text = f"{article_text}\n\n{page_text}" if article_text else page_text
 
-                    images = self._extract_article_images(soup, url)
+                    # Skip image extraction for YouTube videos (images are just other video thumbnails)
+                    images = [] if video_platform == 'youtube' else self._extract_article_images(soup, url)
 
                     # TODO: TEMPORARY - Keep temp files for debugging
                     if result.get('temp_video_path'):
@@ -441,6 +477,153 @@ class ArticleProcessor(BaseProcessor):
             if progress_callback:
                 await progress_callback("content_extracted", {"transcript_method": "text"})
 
+        return metadata
+
+    async def _extract_metadata_from_html(
+        self,
+        url: str,
+        html_content: str,
+        title_hint: Optional[str] = None,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None,
+        extract_demo_frames: bool = False
+    ) -> Dict:
+        """
+        Extract metadata from pre-provided HTML content (for Chrome extension).
+
+        This method is used when the Chrome extension sends HTML content extracted
+        from the user's browser tab. Since the content is already fetched (with the
+        user's authentication), we skip all fetching/Playwright/auth steps.
+
+        NOTE: Audio/video files are still downloaded directly by the backend since
+        they're typically publicly accessible.
+
+        Args:
+            url: Original URL (for reference/metadata)
+            html_content: Pre-extracted HTML content from extension
+            title_hint: Optional title from browser tab
+            progress_callback: Optional async callback for progress updates
+            extract_demo_frames: If True, extract video frames for demo videos
+
+        Returns:
+            Dictionary containing metadata and content analysis
+        """
+        self.logger.info(f"📄 [EXTENSION MODE] Processing pre-provided HTML ({len(html_content)} chars)")
+
+        # Parse the provided HTML
+        soup = self._get_soup(html_content)
+
+        # Extract basic metadata (title)
+        title = self._extract_title(soup, url)
+        if title_hint and not title:
+            title = title_hint
+
+        # Emit fetch_complete callback
+        if progress_callback:
+            await progress_callback("fetch_complete", {"title": title, "source": "extension"})
+
+        # Detect platform from URL
+        platform = self.auth_manager.detect_platform(url)
+
+        # Detect content type from the HTML
+        content_type = self.content_detector.detect_content_type(soup, url)
+
+        # Build metadata based on content type
+        metadata = {
+            'title': title,
+            'url': url,
+            'platform': platform,
+            'content_type': content_type,
+            'extracted_at': datetime.now().isoformat(),
+            'media_info': {},
+            'source': 'extension'  # Mark that this came from extension
+        }
+
+        # Handle different content types
+        if content_type.has_embedded_video:
+            if progress_callback:
+                await progress_callback("detecting_video", {"video_count": len(content_type.video_urls)})
+
+            # Use standard video processing (downloads videos directly - they're usually public)
+            if extract_demo_frames and content_type.video_urls:
+                first_video = content_type.video_urls[0]
+                video_platform = first_video.get('platform')
+                video_id = first_video.get('video_id')
+                video_url = first_video.get('url')
+
+                self.logger.info(f"🎬 [EXTENSION MODE] Processing demo video from {video_platform}")
+
+                result = await self._process_demo_video_optimized(
+                    video_url=video_url,
+                    video_id=video_id,
+                    platform=video_platform,
+                    base_url=url,
+                    progress_callback=progress_callback,
+                    referer=url
+                )
+
+                video_frames = result.get('video_frames', [])
+                transcript_data = result.get('transcript_data')
+
+                if not transcript_data:
+                    self.logger.warning(f"⚠️ [EXTENSION MODE] Failed to get transcript, falling back")
+                    fallback_result = await self._process_video_content_async(
+                        content_type.video_urls, soup, url, progress_callback, extract_demo_frames=False
+                    )
+                    if video_frames:
+                        fallback_result['video_frames'] = video_frames
+                    metadata.update(fallback_result)
+                else:
+                    transcripts = {}
+                    article_text = ''
+                    formatted_transcript = {
+                        'success': True,
+                        'type': 'deepgram',
+                        'text': transcript_data.get('text', ''),
+                        'segments': transcript_data.get('segments', []),
+                        'transcript': transcript_data.get('segments', []),
+                        'language': transcript_data.get('language', 'en'),
+                        'words': transcript_data.get('words', [])
+                    }
+                    transcripts[video_id] = formatted_transcript
+                    article_text = transcript_data.get('text', '')
+
+                    page_text = self._extract_article_text_content(soup)
+                    if page_text:
+                        article_text = f"{article_text}\n\n{page_text}" if article_text else page_text
+
+                    images = self._extract_article_images(soup, url)
+                    video_platform = content_type.video_urls[0].get('platform', 'youtube')
+                    media_key = f'{video_platform}_urls'
+
+                    metadata.update({
+                        'media_info': {media_key: content_type.video_urls},
+                        'transcripts': transcripts,
+                        'article_text': article_text,
+                        'images': images,
+                        'video_frames': video_frames
+                    })
+            else:
+                metadata.update(await self._process_video_content_async(
+                    content_type.video_urls, soup, url, progress_callback, extract_demo_frames
+                ))
+
+        elif content_type.has_embedded_audio:
+            if progress_callback:
+                await progress_callback("detecting_audio", {"audio_count": len(content_type.audio_urls)})
+            # Audio files are typically publicly accessible, download directly
+            metadata.update(await self._process_audio_content_async(
+                content_type.audio_urls, soup, url, progress_callback
+            ))
+
+        else:
+            # Text-only content - just extract from provided HTML
+            if progress_callback:
+                await progress_callback("detecting_text_only", {})
+            metadata.update(self._process_text_content(soup, url))
+            if progress_callback:
+                await progress_callback("content_extracted", {"transcript_method": "text"})
+
+        self.logger.info(f"✅ [EXTENSION MODE] Metadata extraction complete")
         return metadata
 
     async def _process_demo_video_optimized(
@@ -1215,6 +1398,7 @@ class ArticleProcessor(BaseProcessor):
             'media_info': {'youtube_urls': video_urls},
             'transcripts': transcripts,
             'article_text': article_text,
+            'images': [],  # Skip images for YouTube - they're just other video thumbnails
             'video_frames': video_frames
         }
 
@@ -1407,8 +1591,8 @@ class ArticleProcessor(BaseProcessor):
         else:
             self.logger.info("   ⚠️ [ARTICLE TEXT] No readable article content found")
 
-        # Extract images from article
-        images = self._extract_article_images(soup, base_url)
+        # Extract images from article (skip for YouTube - images are just other video thumbnails)
+        images = [] if platform == 'youtube' else self._extract_article_images(soup, base_url)
 
         # IMPORTANT: _process_video_content_async should NOT be used for demo videos anymore.
         # Demo videos should use _process_demo_video_optimized directly for efficiency.
@@ -1728,6 +1912,128 @@ class ArticleProcessor(BaseProcessor):
 
     # Prompt building methods moved to core/prompts.py for Braintrust versioning
     # See: VideoContextBuilder, AudioContextBuilder, TextContextBuilder, ArticleAnalysisPrompt
+
+    async def _generate_themed_insights_async(self, user_id: str, metadata: Dict, ai_summary: Dict) -> Optional[Dict]:
+        """
+        Generate theme-specific insights for private articles.
+
+        Fetches the organization's themes and asks Claude to generate insights
+        relevant to each theme. Only called for private articles.
+
+        Args:
+            user_id: User ID to look up organization
+            metadata: Article metadata including transcripts
+            ai_summary: Already-generated general insights
+
+        Returns:
+            Dict with themed insights and theme mapping, or None if no themes
+        """
+        if not self.supabase:
+            return None
+
+        try:
+            # Get user's organization_id
+            user_data = self.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
+            organization_id = user_data.data.get('organization_id') if user_data.data else None
+
+            if not organization_id:
+                self.logger.info("   ℹ️ No organization found for user - skipping themed insights")
+                return None
+
+            # Fetch organization's themes
+            themes_data = self.supabase.table('themes').select('id, name').eq('organization_id', organization_id).execute()
+            themes = themes_data.data if themes_data.data else []
+
+            if not themes:
+                self.logger.info("   ℹ️ No organizational themes configured - skipping themed insights")
+                return None
+
+            self.logger.info(f"   📊 Generating themed insights for {len(themes)} themes...")
+
+            # Build transcript text for the prompt
+            transcript_text = ""
+            transcripts = metadata.get('transcripts', {})
+            if transcripts:
+                for video_id, transcript_data in transcripts.items():
+                    if transcript_data.get('success'):
+                        # Get full transcript text
+                        if transcript_data.get('words'):
+                            transcript_text += " ".join([w.get('word', '') for w in transcript_data['words']])
+                        elif transcript_data.get('transcript'):
+                            for entry in transcript_data['transcript']:
+                                transcript_text += entry.get('text', '') + " "
+
+            # Fallback to article text if no transcript
+            if not transcript_text:
+                transcript_text = metadata.get('article_text', '')
+
+            # Build and call the themed insights prompt
+            theme_names = [t['name'] for t in themes]
+            prompt = ThemedInsightsPrompt.build(
+                themes=theme_names,
+                transcript_text=transcript_text,
+                article_summary=ai_summary.get('summary', '')
+            )
+
+            # Run in thread pool to avoid blocking
+            response = await asyncio.to_thread(self._call_claude_api, prompt)
+            parsed = self._extract_json_from_response(response)
+
+            if parsed and 'themed_insights' in parsed:
+                # Create theme name to ID mapping
+                theme_name_to_id = {t['name']: t['id'] for t in themes}
+
+                # Count total insights generated
+                total_insights = sum(len(insights) for insights in parsed['themed_insights'].values())
+                self.logger.info(f"   ✅ Generated {total_insights} themed insights across {len(themes)} themes")
+
+                return {
+                    'themed_insights': parsed['themed_insights'],
+                    'theme_mapping': theme_name_to_id
+                }
+            else:
+                self.logger.warning("   ⚠️ Failed to parse themed insights response")
+                return None
+
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ Failed to generate themed insights: {e}")
+            return None
+
+    def _save_themed_insights(self, article_id: int, themed_data: Dict):
+        """
+        Save themed insights to the database.
+
+        Args:
+            article_id: Private article ID
+            themed_data: Dict containing themed_insights and theme_mapping
+        """
+        if not self.supabase or not themed_data:
+            return
+
+        insights_by_theme = themed_data.get('themed_insights', {})
+        theme_mapping = themed_data.get('theme_mapping', {})
+
+        saved_count = 0
+        for theme_name, insights in insights_by_theme.items():
+            theme_id = theme_mapping.get(theme_name)
+            if not theme_id or not insights:
+                continue
+
+            for insight in insights:
+                try:
+                    self.supabase.table('private_article_themed_insights').insert({
+                        'private_article_id': article_id,
+                        'theme_id': theme_id,
+                        'insight_text': insight.get('insight_text', ''),
+                        'timestamp_seconds': insight.get('timestamp_seconds'),
+                        'time_formatted': insight.get('time_formatted')
+                    }).execute()
+                    saved_count += 1
+                except Exception as e:
+                    self.logger.warning(f"   ⚠️ Failed to save themed insight: {e}")
+
+        if saved_count > 0:
+            self.logger.info(f"   ✅ Saved {saved_count} themed insights to database")
 
     def _call_claude_api(self, prompt: str) -> str:
         """Call Claude Code API for AI-powered analysis"""
@@ -2156,28 +2462,28 @@ class ArticleProcessor(BaseProcessor):
         youtube_discovery = YouTubeDiscoveryService(self.logger)
         youtube_url = None
 
-        # Step 1: Check known_channels table using channel_url
+        # Step 1: Check public_channels table using channel_url
         if channel_url:
-            self.logger.info(f"   [STEP 1] Checking known_channels for: {channel_url[:60]}")
+            self.logger.info(f"   [STEP 1] Checking public_channels for: {channel_url[:60]}")
             try:
-                result = self.supabase.table('known_channels')\
-                    .select('youtube_url, channel_name')\
-                    .eq('source_url', channel_url)\
+                result = self.supabase.table('public_channels')\
+                    .select('youtube_channel_url, channel_name')\
+                    .eq('pocketcasts_channel_url', channel_url)\
                     .eq('is_active', True)\
                     .single()\
                     .execute()
 
-                if result.data and result.data.get('youtube_url'):
-                    youtube_url = result.data['youtube_url']
+                if result.data and result.data.get('youtube_channel_url'):
+                    youtube_url = result.data['youtube_channel_url']
                     channel_name = result.data.get('channel_name', 'Unknown')
-                    self.logger.info(f"   ✅ [KNOWN CHANNEL] Found for '{channel_name}': {youtube_url[:60]}")
+                    self.logger.info(f"   ✅ [PUBLIC CHANNEL] Found for '{channel_name}': {youtube_url[:60]}")
 
                     # Classify the URL
                     url_type = self._classify_youtube_url(youtube_url)
 
                     if url_type == 'video':
-                        # Data error: known_channels should only have channel URLs
-                        self.logger.warning(f"   ⚠️ [DATA ERROR] known_channels contains a video URL, not a channel. Skipping.")
+                        # Data error: public_channels should only have channel URLs
+                        self.logger.warning(f"   ⚠️ [DATA ERROR] public_channels contains a video URL, not a channel. Skipping.")
                         youtube_url = None  # Continue to Step 2
                     elif url_type == 'channel_or_playlist':
                         # Expected - will handle in Step 3
@@ -2188,7 +2494,7 @@ class ArticleProcessor(BaseProcessor):
 
             except Exception as e:
                 if 'PGRST116' not in str(e):  # Ignore "no rows returned"
-                    self.logger.debug(f"   ℹ️ Not in known_channels: {e}")
+                    self.logger.debug(f"   ℹ️ Not in public_channels: {e}")
 
         # Step 2: Scrape the content page for YouTube links
         if not youtube_url:
@@ -2384,13 +2690,173 @@ class ArticleProcessor(BaseProcessor):
             self.logger.error(f"      ❌ [SCRAPING] Failed: {e}")
             return None
 
-    def _save_to_database(self, metadata: Dict, ai_summary: Dict, user_id: Optional[str] = None):
+    def _is_public_channel(self, url: str) -> bool:
+        """
+        Check if a URL matches any known public channel.
+
+        All YouTube URLs are automatically considered public.
+
+        For other URLs, queries the public_channels table across all URL columns:
+        - pocketcasts_channel_url
+        - podcast_feed_url
+        - rss_feed_url
+        - newsletter_url
+
+        Also checks domain-level matches for newsletters/blogs.
+
+        Args:
+            url: The article/content URL to check
+
+        Returns:
+            True if the URL matches a public channel, False otherwise (private)
+        """
+        if not self.supabase:
+            self.logger.warning("   ⚠️ Supabase not initialized - defaulting to private")
+            return False
+
+        try:
+            from urllib.parse import urlparse
+
+            # Normalize the URL for comparison
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            if domain.startswith('www.'):
+                domain = domain[4:]
+
+            # All YouTube URLs are automatically public
+            if 'youtube.com' in domain or 'youtu.be' in domain:
+                self.logger.info(f"   ✅ [PUBLIC] YouTube URL - automatically public: {url[:60]}...")
+                return True
+
+            self.logger.info(f"🔍 [PRIVACY CHECK] Checking if URL is from public channel: {url[:60]}...")
+
+            # Query public_channels table - check all URL columns
+            result = self.supabase.table('public_channels')\
+                .select('id, channel_name, pocketcasts_channel_url, youtube_channel_url, podcast_feed_url, rss_feed_url, newsletter_url')\
+                .eq('is_active', True)\
+                .execute()
+
+            if not result.data:
+                self.logger.info(f"   ℹ️ No public channels found - article is private")
+                return False
+
+            # Check each public channel for a match
+            for channel in result.data:
+                channel_name = channel.get('channel_name', 'Unknown')
+
+                # Check exact URL matches for podcast/YouTube URLs
+                if channel.get('pocketcasts_channel_url'):
+                    if self._urls_match(url, channel['pocketcasts_channel_url']):
+                        self.logger.info(f"   ✅ [PUBLIC] Matched pocketcasts_channel_url for '{channel_name}'")
+                        return True
+
+                if channel.get('youtube_channel_url'):
+                    # For YouTube, check if the URL contains the channel/playlist
+                    yt_channel = channel['youtube_channel_url']
+                    if self._youtube_urls_match(url, yt_channel):
+                        self.logger.info(f"   ✅ [PUBLIC] Matched youtube_channel_url for '{channel_name}'")
+                        return True
+
+                if channel.get('podcast_feed_url'):
+                    if self._urls_match(url, channel['podcast_feed_url']):
+                        self.logger.info(f"   ✅ [PUBLIC] Matched podcast_feed_url for '{channel_name}'")
+                        return True
+
+                # For RSS feeds and newsletters, check domain-level match
+                if channel.get('rss_feed_url'):
+                    channel_domain = self._extract_domain(channel['rss_feed_url'])
+                    if channel_domain and domain == channel_domain:
+                        self.logger.info(f"   ✅ [PUBLIC] Domain matched rss_feed_url for '{channel_name}'")
+                        return True
+
+                if channel.get('newsletter_url'):
+                    channel_domain = self._extract_domain(channel['newsletter_url'])
+                    if channel_domain and domain == channel_domain:
+                        self.logger.info(f"   ✅ [PUBLIC] Domain matched newsletter_url for '{channel_name}'")
+                        return True
+
+            self.logger.info(f"   ℹ️ No public channel match found - article is private")
+            return False
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Error checking public channels: {e}")
+            # Default to private if there's an error
+            return False
+
+    def _urls_match(self, url1: str, url2: str) -> bool:
+        """Compare two URLs after normalization"""
+        from urllib.parse import urlparse
+
+        try:
+            p1 = urlparse(url1.lower())
+            p2 = urlparse(url2.lower())
+
+            # Normalize domains (remove www.)
+            d1 = p1.netloc.replace('www.', '')
+            d2 = p2.netloc.replace('www.', '')
+
+            # Normalize paths (remove trailing slashes)
+            path1 = p1.path.rstrip('/')
+            path2 = p2.path.rstrip('/')
+
+            return d1 == d2 and path1 == path2
+        except Exception:
+            return False
+
+    def _youtube_urls_match(self, content_url: str, channel_url: str) -> bool:
+        """Check if a content URL belongs to a YouTube channel/playlist"""
+        try:
+            # Extract channel/playlist identifier from the channel_url
+            if '@' in channel_url:
+                # Handle @username format
+                import re
+                match = re.search(r'@([\w-]+)', channel_url)
+                if match:
+                    handle = match.group(1).lower()
+                    return f'@{handle}' in content_url.lower()
+
+            if '/channel/' in channel_url:
+                # Handle /channel/UCxxxxx format
+                import re
+                match = re.search(r'/channel/([\w-]+)', channel_url)
+                if match:
+                    channel_id = match.group(1)
+                    return channel_id in content_url
+
+            if '/playlist' in channel_url:
+                # Handle playlist URLs
+                import re
+                match = re.search(r'list=([\w-]+)', channel_url)
+                if match:
+                    playlist_id = match.group(1)
+                    return playlist_id in content_url
+
+            # Fallback: check if the channel URL is a substring
+            return channel_url.lower().rstrip('/') in content_url.lower()
+        except Exception:
+            return False
+
+    def _extract_domain(self, url: str) -> str:
+        """Extract normalized domain from URL"""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            return domain
+        except Exception:
+            return ''
+
+    def _save_to_database(self, metadata: Dict, ai_summary: Dict, user_id: Optional[str] = None, is_private: bool = False, themed_insights_data: Optional[Dict] = None):
         """Save article data to Supabase database
 
         Args:
             metadata: Article metadata
             ai_summary: AI-generated summary
             user_id: Optional user ID for authentication (Supabase auth user)
+            is_private: If True, save to private_articles table (org-scoped)
+            themed_insights_data: Optional themed insights data for private articles
         """
         if not self.supabase:
             self.logger.warning("   ⚠️ Supabase not initialized - skipping database save")
@@ -2514,6 +2980,23 @@ class ArticleProcessor(BaseProcessor):
             if embedding:
                 article_data['embedding'] = embedding
 
+            # Route to appropriate table based on privacy setting
+            if is_private:
+                # Save to private_articles table (org-scoped)
+                article_id = self._save_private_article(article_data, user_id, themed_insights_data)
+            else:
+                # Save to public articles table (globally deduplicated)
+                article_id = self._save_public_article(article_data, user_id)
+
+            return article_id
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Database save failed: {e}")
+            return None
+
+    def _save_public_article(self, article_data: Dict, user_id: Optional[str] = None) -> Optional[int]:
+        """Save article to public articles table (globally deduplicated)"""
+        try:
             # Try to update existing article or insert new one
             # Note: user_id is no longer on articles table (moved to article_users junction table)
             result = self.supabase.table('articles').upsert(
@@ -2523,20 +3006,15 @@ class ArticleProcessor(BaseProcessor):
 
             if result.data:
                 article_id = result.data[0]['id']
-                self.logger.info(f"   ✅ Saved to database (article ID: {article_id})")
+                self.logger.info(f"   ✅ Saved to public articles (article ID: {article_id})")
 
                 # Associate article with user in junction table (if user_id provided)
                 if user_id:
                     try:
-                        # Get user's organization_id
-                        user_data = self.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
-                        organization_id = user_data.data.get('organization_id') if user_data.data else None
-
                         self.supabase.table('article_users').upsert(
                             {
                                 'article_id': article_id,
-                                'user_id': user_id,
-                                'organization_id': organization_id
+                                'user_id': user_id
                             },
                             on_conflict='article_id,user_id'
                         ).execute()
@@ -2548,9 +3026,85 @@ class ArticleProcessor(BaseProcessor):
             else:
                 self.logger.warning("   ⚠️ Database save completed but no data returned")
                 return None
-
         except Exception as e:
-            self.logger.error(f"   ❌ Database save failed: {e}")
+            self.logger.error(f"   ❌ Failed to save public article: {e}")
+            return None
+
+    def _save_private_article(self, article_data: Dict, user_id: Optional[str], themed_insights_data: Optional[Dict] = None) -> Optional[int]:
+        """Save article to private_articles table (org-scoped)
+
+        Args:
+            article_data: Article data to save
+            user_id: User ID for authentication
+            themed_insights_data: Optional themed insights data from AI generation
+        """
+        if not user_id:
+            self.logger.error("   ❌ Cannot save private article without user_id")
+            return None
+
+        try:
+            # Get user's organization_id
+            user_data = self.supabase.table('users').select('organization_id').eq('id', user_id).single().execute()
+            organization_id = user_data.data.get('organization_id') if user_data.data else None
+
+            if not organization_id:
+                self.logger.error("   ❌ User must belong to an organization to create private articles")
+                return None
+
+            # Add organization_id to article data
+            article_data['organization_id'] = organization_id
+
+            # Check if private article already exists for this org+url
+            existing = self.supabase.table('private_articles') \
+                .select('id') \
+                .eq('organization_id', organization_id) \
+                .eq('url', article_data['url']) \
+                .execute()
+
+            if existing.data:
+                # Update existing private article
+                article_id = existing.data[0]['id']
+                result = self.supabase.table('private_articles').update(article_data).eq('id', article_id).execute()
+                self.logger.info(f"   ✅ Updated existing private article (article ID: {article_id})")
+
+                # Delete existing themed insights before re-saving (for reprocessing)
+                try:
+                    self.supabase.table('private_article_themed_insights') \
+                        .delete() \
+                        .eq('private_article_id', article_id) \
+                        .execute()
+                except Exception as e:
+                    self.logger.warning(f"   ⚠️ Failed to clear existing themed insights: {e}")
+            else:
+                # Create new private article
+                result = self.supabase.table('private_articles').insert(article_data).execute()
+                if result.data:
+                    article_id = result.data[0]['id']
+                    self.logger.info(f"   ✅ Saved to private articles (article ID: {article_id})")
+                else:
+                    self.logger.warning("   ⚠️ Database save completed but no data returned")
+                    return None
+
+            # Associate article with user in junction table
+            try:
+                self.supabase.table('private_article_users').upsert(
+                    {
+                        'private_article_id': article_id,
+                        'user_id': user_id
+                    },
+                    on_conflict='private_article_id,user_id'
+                ).execute()
+                self.logger.info(f"   ✅ Associated private article with user: {user_id}")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Failed to associate private article with user: {e}")
+
+            # Save themed insights if available
+            if themed_insights_data:
+                self._save_themed_insights(article_id, themed_insights_data)
+
+            return article_id
+        except Exception as e:
+            self.logger.error(f"   ❌ Failed to save private article: {e}")
             return None
 
     # Utility methods
@@ -3687,6 +4241,1095 @@ class ArticleProcessor(BaseProcessor):
             self.logger.error(f"❌ Frame extraction and upload failed: {e}", exc_info=True)
             return []
 
+    # ============================================================================
+    # MEDIA PERSISTENCE METHODS (Phase 2)
+    # ============================================================================
+
+    def _is_direct_upload_url(self, url: str) -> bool:
+        """
+        Check if a URL is a direct upload from Supabase storage.
+
+        Direct uploads are already stored permanently in the 'uploaded-media' bucket,
+        so we should not duplicate them to the 'article-media' bucket.
+
+        Args:
+            url: Article URL to check
+
+        Returns:
+            True if this is a direct upload URL
+        """
+        return 'supabase.co/storage' in url and 'uploaded-media' in url
+
+    def _detect_content_type(self, file_path: str) -> str:
+        """
+        Detect MIME content type from file extension.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            MIME type string
+        """
+        ext = Path(file_path).suffix.lower()
+        mime_types = {
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.mkv': 'video/x-matroska',
+            '.mov': 'video/quicktime',
+            '.avi': 'video/x-msvideo',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.m4a': 'audio/mp4',
+            '.ogg': 'audio/ogg',
+            '.flac': 'audio/flac',
+        }
+        return mime_types.get(ext, 'application/octet-stream')
+
+    def _get_media_duration(self, file_path: str) -> Optional[float]:
+        """
+        Get duration of a media file in seconds using ffprobe.
+
+        Args:
+            file_path: Path to the media file
+
+        Returns:
+            Duration in seconds, or None if detection fails
+        """
+        try:
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return float(result.stdout.strip())
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not get media duration: {e}")
+        return None
+
+    async def _persist_media_to_storage(
+        self,
+        file_path: str,
+        article_id: int,
+        article_type: str,
+        article_url: str
+    ) -> bool:
+        """
+        Persist downloaded media file to Supabase storage for later reprocessing.
+
+        This is called after downloading media during article processing.
+        Direct uploads are skipped since they're already stored permanently.
+
+        Args:
+            file_path: Local path to the downloaded media file
+            article_id: Database ID of the article
+            article_type: 'public' or 'private'
+            article_url: Original article URL (to check if it's a direct upload)
+
+        Returns:
+            True if media was persisted successfully
+        """
+        # Skip if media persistence is disabled
+        if not self.persist_media:
+            self.logger.info("   📦 [MEDIA PERSIST] Media persistence disabled, skipping storage")
+            return False
+
+        # Skip direct uploads - they're already stored permanently
+        if self._is_direct_upload_url(article_url):
+            self.logger.info("   📦 [MEDIA PERSIST] Direct upload detected - already stored in uploaded-media bucket")
+            # Still update the database to reference the existing storage
+            return await self._update_media_storage_info_for_direct_upload(
+                article_id, article_type, article_url, file_path
+            )
+
+        try:
+            from core.storage_manager import StorageManager
+
+            # Get file metadata
+            file_size = os.path.getsize(file_path)
+            content_type = self._detect_content_type(file_path)
+            duration = self._get_media_duration(file_path)
+
+            self.logger.info(f"   📦 [MEDIA PERSIST] Uploading media to storage ({file_size / 1024 / 1024:.1f}MB)...")
+
+            # Upload to storage
+            storage = StorageManager()
+            success, storage_path = storage.upload_article_media(
+                file_path=file_path,
+                article_id=article_id,
+                article_type=article_type,
+                content_type=content_type
+            )
+
+            if not success:
+                self.logger.error("   ❌ [MEDIA PERSIST] Failed to upload media to storage")
+                return False
+
+            # Update database with storage info
+            table = 'private_articles' if article_type == 'private' else 'articles'
+            bucket_name = StorageManager.ARTICLE_MEDIA_BUCKET_NAME
+
+            update_data = {
+                'media_storage_path': storage_path,
+                'media_storage_bucket': bucket_name,
+                'media_uploaded_at': datetime.utcnow().isoformat(),
+                'media_content_type': content_type,
+                'media_size_bytes': file_size,
+                'media_duration_seconds': duration
+            }
+
+            self.supabase.table(table).update(update_data).eq('id', article_id).execute()
+
+            self.logger.info(f"   ✅ [MEDIA PERSIST] Media stored: {bucket_name}/{storage_path}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"   ❌ [MEDIA PERSIST] Error persisting media: {e}", exc_info=True)
+            return False
+
+    async def _update_media_storage_info_for_direct_upload(
+        self,
+        article_id: int,
+        article_type: str,
+        article_url: str,
+        file_path: str
+    ) -> bool:
+        """
+        Update database with storage info for a direct upload.
+
+        Direct uploads are already stored in the 'uploaded-media' bucket,
+        so we just need to record the reference in the database columns.
+
+        Args:
+            article_id: Database ID of the article
+            article_type: 'public' or 'private'
+            article_url: The Supabase storage URL
+            file_path: Local path to the file (for size/duration info)
+
+        Returns:
+            True if database was updated successfully
+        """
+        try:
+            from core.storage_manager import StorageManager
+            from urllib.parse import urlparse
+
+            # Extract storage path from URL
+            # URL format: https://xxx.supabase.co/storage/v1/object/public/uploaded-media/user_xxx/timestamp_filename.ext
+            parsed = urlparse(article_url)
+            path_parts = parsed.path.split('/uploaded-media/')
+            if len(path_parts) > 1:
+                storage_path = path_parts[1]
+            else:
+                storage_path = parsed.path
+
+            # Get file metadata
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else None
+            content_type = self._detect_content_type(file_path) if file_path else None
+            duration = self._get_media_duration(file_path) if file_path and os.path.exists(file_path) else None
+
+            # Update database - direct uploads use 'uploaded-media' bucket
+            table = 'private_articles' if article_type == 'private' else 'articles'
+
+            update_data = {
+                'media_storage_path': storage_path,
+                'media_storage_bucket': StorageManager.MEDIA_BUCKET_NAME,  # 'uploaded-media'
+                'media_uploaded_at': datetime.utcnow().isoformat(),
+                'media_content_type': content_type,
+                'media_size_bytes': file_size,
+                'media_duration_seconds': duration
+            }
+
+            self.supabase.table(table).update(update_data).eq('id', article_id).execute()
+
+            self.logger.info(f"   ✅ [MEDIA PERSIST] Direct upload reference saved: uploaded-media/{storage_path}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"   ❌ [MEDIA PERSIST] Error updating direct upload info: {e}", exc_info=True)
+            return False
+
+    def _is_media_available(self, article: Dict) -> tuple:
+        """
+        Check if stored media is available for reprocessing.
+
+        Args:
+            article: Article record from database
+
+        Returns:
+            Tuple of (is_available, reason_if_not)
+        """
+        storage_path = article.get('media_storage_path')
+        storage_bucket = article.get('media_storage_bucket')
+        uploaded_at = article.get('media_uploaded_at')
+
+        if not storage_path:
+            return False, "No stored media - re-process article with media persistence enabled"
+
+        # Direct uploads (uploaded-media bucket) never expire
+        if storage_bucket == 'uploaded-media':
+            return True, None
+
+        # Check TTL for article-media bucket
+        if uploaded_at:
+            try:
+                uploaded_dt = datetime.fromisoformat(uploaded_at.replace('Z', '+00:00'))
+                expiry_dt = uploaded_dt + timedelta(days=self.media_retention_days)
+                if datetime.utcnow().replace(tzinfo=uploaded_dt.tzinfo) > expiry_dt:
+                    return False, f"Media expired on {expiry_dt.strftime('%Y-%m-%d')} - re-process article"
+            except Exception:
+                pass
+
+        return True, None
+
+    # ============================================================================
+    # REPROCESSING METHODS
+    # ============================================================================
+
+    async def reprocess_article(
+        self,
+        article_id: int,
+        article_type: str,
+        steps: List[str],
+        user_id: Optional[str] = None,
+        progress_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
+    ) -> Dict:
+        """
+        Partial reprocessing of an existing article.
+
+        This method allows regenerating specific parts of an article without
+        re-downloading content. Useful for:
+        - Regenerating AI summary with updated prompts
+        - Adding themed insights to existing articles
+        - Regenerating embeddings after schema changes
+
+        Args:
+            article_id: Database ID of the article
+            article_type: 'public' or 'private'
+            steps: List of steps to run. Available:
+                - 'ai_summary': Regenerate summary, insights, quotes from existing transcript
+                - 'themed_insights': Regenerate themed insights (private articles only)
+                - 'embedding': Regenerate vector embedding
+            user_id: Required for themed_insights (to look up org themes)
+            progress_callback: Optional async callback for progress updates
+                Signature: async def callback(event_type: str, data: dict)
+
+        Returns:
+            Dict with results of each step:
+            {
+                'ai_summary': {'success': True, 'insights_count': 5, ...},
+                'themed_insights': {'success': True, 'themes_count': 2},
+                'embedding': {'success': True}
+            }
+
+        Raises:
+            ValueError: If article not found or invalid parameters
+        """
+        self.logger.info(f"🔄 Reprocessing {article_type} article {article_id}")
+        self.logger.info(f"   Steps: {steps}")
+
+        # Step 1: Fetch article from database
+        table = 'private_articles' if article_type == 'private' else 'articles'
+
+        try:
+            result = self.supabase.table(table).select('*').eq('id', article_id).single().execute()
+            if not result.data:
+                raise ValueError(f"Article {article_id} not found in {table}")
+            article = result.data
+        except Exception as e:
+            raise ValueError(f"Failed to fetch article: {e}")
+
+        self.logger.info(f"   Title: {article.get('title', 'Unknown')}")
+
+        if progress_callback:
+            await progress_callback('article_loaded', {
+                'article_id': article_id,
+                'title': article.get('title'),
+                'content_source': article.get('content_source')
+            })
+
+        # Step 2: Reconstruct metadata from stored fields
+        metadata = self._reconstruct_metadata_from_article(article)
+
+        results = {}
+
+        # Step 3: Execute requested steps
+        if 'ai_summary' in steps:
+            results['ai_summary'] = await self._reprocess_ai_summary(
+                article, metadata, article_type, progress_callback
+            )
+
+        if 'themed_insights' in steps:
+            results['themed_insights'] = await self._reprocess_themed_insights(
+                article, article_id, article_type, metadata, results.get('ai_summary'),
+                user_id, progress_callback
+            )
+
+        if 'embedding' in steps:
+            results['embedding'] = await self._reprocess_embedding(
+                article, article_id, article_type, results.get('ai_summary'), progress_callback
+            )
+
+        # Phase 2: Media-based reprocessing
+        if 'video_frames' in steps:
+            results['video_frames'] = await self._reprocess_video_frames(
+                article, article_id, article_type, progress_callback
+            )
+
+        if 'transcript' in steps:
+            results['transcript'] = await self._reprocess_transcript(
+                article, article_id, article_type, progress_callback
+            )
+
+        self.logger.info(f"✅ Reprocessing complete for article {article_id}")
+        return results
+
+    def _reconstruct_metadata_from_article(self, article: Dict) -> Dict:
+        """
+        Reconstruct metadata dict from database article record.
+
+        This allows reusing the existing AI summary generation methods
+        which expect a metadata dict with specific structure.
+
+        Args:
+            article: Article record from database
+
+        Returns:
+            Reconstructed metadata dict
+        """
+        # Parse transcript data from database
+        transcript_text = article.get('transcript_text', '')
+        transcripts = {}
+
+        if transcript_text and article.get('video_id'):
+            # Reconstruct transcript in the format expected by AI
+            segments = self._parse_transcript_text(transcript_text)
+
+            transcripts[article['video_id']] = {
+                'success': True,
+                'type': 'existing',
+                'transcript': segments,
+                'segments': segments,
+                'words': []  # Word-level timing not stored, use empty
+            }
+
+        # Reconstruct content type
+        content_source = article.get('content_source', 'article')
+        content_type = ContentType(
+            has_embedded_video=(content_source == 'video' or content_source == 'mixed'),
+            has_embedded_audio=(content_source == 'audio' or content_source == 'mixed'),
+            is_text_only=(content_source == 'article'),
+            video_urls=[{
+                'video_id': article.get('video_id'),
+                'platform': article.get('platform'),
+                'url': article.get('url')
+            }] if article.get('video_id') else [],
+            audio_urls=[{
+                'url': article.get('audio_url'),
+                'platform': article.get('platform')
+            }] if article.get('audio_url') else []
+        )
+
+        # Build metadata
+        metadata = {
+            'title': article.get('title'),
+            'url': article.get('url'),
+            'platform': article.get('platform'),
+            'content_type': content_type,
+            'article_text': article.get('original_article_text', '') or article.get('article_text', ''),
+            'transcripts': transcripts,
+            'media_info': {
+                'video_urls': content_type.video_urls,
+                'audio_urls': content_type.audio_urls
+            },
+            'video_frames': article.get('video_frames', [])
+        }
+
+        return metadata
+
+    def _parse_transcript_text(self, transcript_text: str) -> List[Dict]:
+        """
+        Parse formatted transcript text back into segments.
+
+        Handles formats like:
+        - [MM:SS] text
+        - [H:MM:SS] text
+
+        Args:
+            transcript_text: Formatted transcript from database
+
+        Returns:
+            List of segment dicts with 'start' and 'text' keys
+        """
+        import re
+
+        segments = []
+        for line in transcript_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Parse [MM:SS] or [H:MM:SS] format
+            match = re.match(r'^\[(\d+):(\d+)(?::(\d+))?\]\s*(.*)$', line)
+            if match:
+                if match.group(3):  # H:MM:SS format
+                    hours = int(match.group(1))
+                    minutes = int(match.group(2))
+                    seconds = int(match.group(3))
+                    start_time = hours * 3600 + minutes * 60 + seconds
+                    text = match.group(4)
+                else:  # MM:SS format
+                    minutes = int(match.group(1))
+                    seconds = int(match.group(2))
+                    start_time = minutes * 60 + seconds
+                    text = match.group(4)
+
+                if text:
+                    segments.append({
+                        'start': start_time,
+                        'text': text.strip()
+                    })
+
+        return segments
+
+    async def _reprocess_ai_summary(
+        self,
+        article: Dict,
+        metadata: Dict,
+        article_type: str,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict:
+        """
+        Regenerate AI summary from existing transcript/article text.
+
+        Args:
+            article: Original article record from database
+            metadata: Reconstructed metadata
+            article_type: 'public' or 'private'
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dict with success status and summary details
+        """
+        self.logger.info("🤖 Regenerating AI summary...")
+
+        if progress_callback:
+            await progress_callback('ai_summary_start', {})
+
+        # Check prerequisites
+        content_source = article.get('content_source', 'article')
+        has_transcript = bool(article.get('transcript_text'))
+        has_article_text = bool(article.get('original_article_text') or article.get('article_text'))
+
+        if content_source in ('video', 'audio') and not has_transcript:
+            error_msg = f"Cannot regenerate summary: {content_source} content has no transcript. Transcribe first."
+            self.logger.error(f"   ❌ {error_msg}")
+            if progress_callback:
+                await progress_callback('ai_summary_error', {'error': error_msg})
+            return {'success': False, 'error': error_msg}
+
+        if content_source == 'article' and not has_article_text:
+            error_msg = "Cannot regenerate summary: article has no text content."
+            self.logger.error(f"   ❌ {error_msg}")
+            if progress_callback:
+                await progress_callback('ai_summary_error', {'error': error_msg})
+            return {'success': False, 'error': error_msg}
+
+        try:
+            # Enrich video frames with transcript excerpts if they exist
+            if metadata.get('video_frames'):
+                self.logger.info("   📝 Enriching video frames with transcript excerpts...")
+                self._enrich_frames_with_transcript(metadata)
+
+            # Generate new AI summary
+            ai_summary = await self._generate_summary_async(article['url'], metadata)
+
+            # Update database
+            table = 'private_articles' if article_type == 'private' else 'articles'
+            update_data = {
+                'summary_text': ai_summary.get('summary', ''),
+                'key_insights': ai_summary.get('key_insights', []),
+                'quotes': ai_summary.get('quotes', []),
+                'duration_minutes': ai_summary.get('duration_minutes'),
+                'word_count': ai_summary.get('word_count'),
+                'topics': ai_summary.get('topics', [])
+            }
+
+            # Include enriched video_frames if they exist
+            if metadata.get('video_frames'):
+                update_data['video_frames'] = metadata['video_frames']
+
+            self.supabase.table(table).update(update_data).eq('id', article['id']).execute()
+
+            self.logger.info(f"   ✅ AI summary regenerated ({len(ai_summary.get('key_insights', []))} insights)")
+
+            if progress_callback:
+                await progress_callback('ai_summary_complete', {
+                    'insights_count': len(ai_summary.get('key_insights', [])),
+                    'quotes_count': len(ai_summary.get('quotes', []))
+                })
+
+            return {
+                'success': True,
+                'insights_count': len(ai_summary.get('key_insights', [])),
+                'quotes_count': len(ai_summary.get('quotes', [])),
+                'ai_summary': ai_summary  # Pass along for themed insights
+            }
+
+        except Exception as e:
+            self.logger.error(f"   ❌ AI summary failed: {e}")
+            if progress_callback:
+                await progress_callback('ai_summary_error', {'error': str(e)})
+            return {'success': False, 'error': str(e)}
+
+    async def _reprocess_themed_insights(
+        self,
+        article: Dict,
+        article_id: int,
+        article_type: str,
+        metadata: Dict,
+        ai_summary_result: Optional[Dict],
+        user_id: Optional[str],
+        progress_callback: Optional[Callable] = None
+    ) -> Dict:
+        """
+        Regenerate themed insights for a private article.
+
+        Args:
+            article: Original article record from database
+            article_id: Article ID
+            article_type: Must be 'private'
+            metadata: Reconstructed metadata
+            ai_summary_result: Result from AI summary step (if run)
+            user_id: User ID for org lookup
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dict with success status and themes count
+        """
+        self.logger.info("🎯 Regenerating themed insights...")
+
+        if progress_callback:
+            await progress_callback('themed_insights_start', {})
+
+        # Check prerequisites
+        if article_type != 'private':
+            error_msg = "Themed insights only available for private articles"
+            self.logger.warning(f"   ⚠️ {error_msg}")
+            if progress_callback:
+                await progress_callback('themed_insights_error', {'error': error_msg})
+            return {'success': False, 'error': error_msg}
+
+        if not user_id:
+            error_msg = "User ID required for themed insights (to look up organization themes)"
+            self.logger.error(f"   ❌ {error_msg}")
+            if progress_callback:
+                await progress_callback('themed_insights_error', {'error': error_msg})
+            return {'success': False, 'error': error_msg}
+
+        try:
+            # Build ai_summary from existing data or from just-generated summary
+            if ai_summary_result and ai_summary_result.get('ai_summary'):
+                ai_summary = ai_summary_result['ai_summary']
+            else:
+                # Use existing summary from database
+                ai_summary = {
+                    'summary': article.get('summary_text', ''),
+                    'key_insights': article.get('key_insights', [])
+                }
+
+            # Generate themed insights
+            themed_data = await self._generate_themed_insights_async(
+                user_id=user_id,
+                metadata=metadata,
+                ai_summary=ai_summary
+            )
+
+            if themed_data:
+                # Save themed insights (method handles delete + insert)
+                self._save_themed_insights(article_id, themed_data)
+
+                themes_count = len(themed_data.get('insights', []))
+                self.logger.info(f"   ✅ Themed insights regenerated ({themes_count} themes)")
+
+                if progress_callback:
+                    await progress_callback('themed_insights_complete', {
+                        'themes_count': themes_count
+                    })
+
+                return {'success': True, 'themes_count': themes_count}
+            else:
+                self.logger.info("   ℹ️ No themed insights generated (no matching themes)")
+                if progress_callback:
+                    await progress_callback('themed_insights_complete', {'themes_count': 0})
+                return {'success': True, 'themes_count': 0}
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Themed insights failed: {e}")
+            if progress_callback:
+                await progress_callback('themed_insights_error', {'error': str(e)})
+            return {'success': False, 'error': str(e)}
+
+    async def _reprocess_embedding(
+        self,
+        article: Dict,
+        article_id: int,
+        article_type: str,
+        ai_summary_result: Optional[Dict],
+        progress_callback: Optional[Callable] = None
+    ) -> Dict:
+        """
+        Regenerate vector embedding for semantic search.
+
+        Args:
+            article: Original article record from database
+            article_id: Article ID
+            article_type: 'public' or 'private'
+            ai_summary_result: Result from AI summary step (if run, use fresh data)
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dict with success status
+        """
+        self.logger.info("🔢 Regenerating embedding...")
+
+        if progress_callback:
+            await progress_callback('embedding_start', {})
+
+        if not self.openai_client:
+            error_msg = "OpenAI client not initialized - cannot generate embedding"
+            self.logger.error(f"   ❌ {error_msg}")
+            if progress_callback:
+                await progress_callback('embedding_error', {'error': error_msg})
+            return {'success': False, 'error': error_msg}
+
+        try:
+            # Build embedding text from article data
+            # Use fresh AI summary if available, otherwise use stored data
+            if ai_summary_result and ai_summary_result.get('ai_summary'):
+                ai_summary = ai_summary_result['ai_summary']
+            else:
+                ai_summary = {
+                    'summary': article.get('summary_text', ''),
+                    'key_insights': article.get('key_insights', [])
+                }
+
+            # Reconstruct minimal metadata for embedding
+            metadata = {
+                'title': article.get('title', ''),
+                'article_text': article.get('original_article_text', '') or article.get('article_text', '')
+            }
+
+            embedding_text = self._build_embedding_text(metadata, ai_summary)
+            embedding = self._generate_embedding(embedding_text)
+
+            if embedding:
+                # Update database
+                table = 'private_articles' if article_type == 'private' else 'articles'
+                self.supabase.table(table).update({'embedding': embedding}).eq('id', article_id).execute()
+
+                self.logger.info(f"   ✅ Embedding regenerated")
+
+                if progress_callback:
+                    await progress_callback('embedding_complete', {})
+
+                return {'success': True}
+            else:
+                error_msg = "Embedding generation returned None"
+                self.logger.error(f"   ❌ {error_msg}")
+                if progress_callback:
+                    await progress_callback('embedding_error', {'error': error_msg})
+                return {'success': False, 'error': error_msg}
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Embedding failed: {e}")
+            if progress_callback:
+                await progress_callback('embedding_error', {'error': str(e)})
+            return {'success': False, 'error': str(e)}
+
+    # ============================================================================
+    # PHASE 2 REPROCESSING METHODS
+    # ============================================================================
+
+    async def _reprocess_video_frames(
+        self,
+        article: Dict,
+        article_id: int,
+        article_type: str,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict:
+        """
+        Re-extract video frames from stored media.
+
+        This downloads the stored media from Supabase Storage, extracts frames
+        using FFmpeg, and uploads new frames to the video-frames bucket.
+
+        Args:
+            article: Article record from database
+            article_id: Article ID
+            article_type: 'public' or 'private'
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dict with success status and frame count
+        """
+        import tempfile
+        import shutil
+
+        self.logger.info("🎬 Re-extracting video frames from stored media...")
+
+        if progress_callback:
+            await progress_callback('video_frames_start', {})
+
+        # Check if media is available
+        is_available, unavailable_reason = self._is_media_available(article)
+        if not is_available:
+            self.logger.error(f"   ❌ {unavailable_reason}")
+            if progress_callback:
+                await progress_callback('video_frames_error', {'error': unavailable_reason})
+            return {'success': False, 'error': unavailable_reason}
+
+        temp_dir = None
+        try:
+            from core.storage_manager import StorageManager
+
+            storage_path = article['media_storage_path']
+            storage_bucket = article.get('media_storage_bucket', StorageManager.ARTICLE_MEDIA_BUCKET_NAME)
+
+            # Create temp directory
+            temp_dir = tempfile.mkdtemp(prefix="reprocess_frames_")
+            local_path = os.path.join(temp_dir, "media.mp4")
+
+            self.logger.info(f"   📥 Downloading media from {storage_bucket}/{storage_path}...")
+
+            # Download from storage
+            storage = StorageManager()
+            success = storage.download_article_media(
+                storage_path=storage_path,
+                destination_path=local_path,
+                bucket_name=storage_bucket
+            )
+
+            if not success:
+                error_msg = "Failed to download media from storage"
+                self.logger.error(f"   ❌ {error_msg}")
+                if progress_callback:
+                    await progress_callback('video_frames_error', {'error': error_msg})
+                return {'success': False, 'error': error_msg}
+
+            file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
+            self.logger.info(f"   ✅ Downloaded media: {file_size_mb:.1f}MB")
+
+            # Extract and upload frames
+            self.logger.info("   🎞️ Extracting frames...")
+            frames = await self._extract_and_upload_frames(
+                video_path=local_path,
+                article_url=article['url'],
+                article_id=article_id
+            )
+
+            if not frames:
+                error_msg = "No frames extracted from video"
+                self.logger.warning(f"   ⚠️ {error_msg}")
+                if progress_callback:
+                    await progress_callback('video_frames_error', {'error': error_msg})
+                return {'success': False, 'error': error_msg}
+
+            # Update database with new frames
+            table = 'private_articles' if article_type == 'private' else 'articles'
+            self.supabase.table(table).update({
+                'video_frames': frames
+            }).eq('id', article_id).execute()
+
+            self.logger.info(f"   ✅ Extracted and uploaded {len(frames)} frames")
+
+            if progress_callback:
+                await progress_callback('video_frames_complete', {'frame_count': len(frames)})
+
+            return {'success': True, 'frame_count': len(frames)}
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Video frame extraction failed: {e}", exc_info=True)
+            if progress_callback:
+                await progress_callback('video_frames_error', {'error': str(e)})
+            return {'success': False, 'error': str(e)}
+
+        finally:
+            # Clean up temp directory
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
+
+    async def _reprocess_transcript(
+        self,
+        article: Dict,
+        article_id: int,
+        article_type: str,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict:
+        """
+        Regenerate transcript from stored media using Deepgram.
+
+        This downloads the stored media and transcribes it fresh using Deepgram,
+        useful when:
+        - YouTube transcript wasn't available originally
+        - Want higher quality transcript
+        - Original transcription had errors
+
+        Args:
+            article: Article record from database
+            article_id: Article ID
+            article_type: 'public' or 'private'
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dict with success status and word count
+        """
+        import tempfile
+        import shutil
+
+        self.logger.info("🎤 Regenerating transcript from stored media...")
+
+        if progress_callback:
+            await progress_callback('transcript_start', {})
+
+        # Check if file transcriber is available
+        if not self.file_transcriber:
+            error_msg = "File transcriber (Deepgram) not available"
+            self.logger.error(f"   ❌ {error_msg}")
+            if progress_callback:
+                await progress_callback('transcript_error', {'error': error_msg})
+            return {'success': False, 'error': error_msg}
+
+        # Check if media is available
+        is_available, unavailable_reason = self._is_media_available(article)
+        if not is_available:
+            self.logger.error(f"   ❌ {unavailable_reason}")
+            if progress_callback:
+                await progress_callback('transcript_error', {'error': unavailable_reason})
+            return {'success': False, 'error': unavailable_reason}
+
+        temp_dir = None
+        try:
+            from core.storage_manager import StorageManager
+
+            storage_path = article['media_storage_path']
+            storage_bucket = article.get('media_storage_bucket', StorageManager.ARTICLE_MEDIA_BUCKET_NAME)
+
+            # Create temp directory
+            temp_dir = tempfile.mkdtemp(prefix="reprocess_transcript_")
+            local_path = os.path.join(temp_dir, "media.mp4")
+
+            self.logger.info(f"   📥 Downloading media from {storage_bucket}/{storage_path}...")
+
+            # Download from storage
+            storage = StorageManager()
+            success = storage.download_article_media(
+                storage_path=storage_path,
+                destination_path=local_path,
+                bucket_name=storage_bucket
+            )
+
+            if not success:
+                error_msg = "Failed to download media from storage"
+                self.logger.error(f"   ❌ {error_msg}")
+                if progress_callback:
+                    await progress_callback('transcript_error', {'error': error_msg})
+                return {'success': False, 'error': error_msg}
+
+            file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
+            self.logger.info(f"   ✅ Downloaded media: {file_size_mb:.1f}MB")
+
+            # Transcribe with Deepgram
+            self.logger.info("   🎯 Transcribing with Deepgram...")
+            transcript_result = self.file_transcriber.transcribe(local_path)
+
+            if not transcript_result or not transcript_result.get('success'):
+                error_msg = transcript_result.get('error', 'Transcription failed') if transcript_result else 'Transcription failed'
+                self.logger.error(f"   ❌ {error_msg}")
+                if progress_callback:
+                    await progress_callback('transcript_error', {'error': error_msg})
+                return {'success': False, 'error': error_msg}
+
+            # Format transcript text
+            segments = transcript_result.get('segments', [])
+            transcript_lines = []
+            for segment in segments:
+                start_time = segment.get('start', 0)
+                text = segment.get('text', '').strip()
+                if text:
+                    minutes = int(start_time // 60)
+                    seconds = int(start_time % 60)
+                    transcript_lines.append(f"[{minutes}:{seconds:02d}] {text}")
+
+            transcript_text = "\n".join(transcript_lines)
+            word_count = len(transcript_text.split())
+
+            # Update database
+            table = 'private_articles' if article_type == 'private' else 'articles'
+            self.supabase.table(table).update({
+                'transcript_text': transcript_text
+            }).eq('id', article_id).execute()
+
+            self.logger.info(f"   ✅ Transcript regenerated: {word_count} words")
+
+            if progress_callback:
+                await progress_callback('transcript_complete', {'word_count': word_count})
+
+            return {'success': True, 'word_count': word_count}
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Transcript regeneration failed: {e}", exc_info=True)
+            if progress_callback:
+                await progress_callback('transcript_error', {'error': str(e)})
+            return {'success': False, 'error': str(e)}
+
+        finally:
+            # Clean up temp directory
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
+
+    def get_article_reprocess_info(self, article_id: int, article_type: str) -> Dict:
+        """
+        Get information about an article for the reprocessing UI.
+
+        Returns details about what data exists and what reprocessing
+        options are available.
+
+        Args:
+            article_id: Database ID of the article
+            article_type: 'public' or 'private'
+
+        Returns:
+            Dict with article info and available operations
+        """
+        table = 'private_articles' if article_type == 'private' else 'articles'
+
+        try:
+            result = self.supabase.table(table).select('*').eq('id', article_id).single().execute()
+            if not result.data:
+                return {'error': f'Article {article_id} not found'}
+
+            article = result.data
+
+            # Determine what operations are available
+            content_source = article.get('content_source', 'article')
+            has_transcript = bool(article.get('transcript_text'))
+            has_article_text = bool(article.get('original_article_text') or article.get('article_text'))
+            has_video_frames = bool(article.get('video_frames'))
+            video_frame_count = len(article.get('video_frames', []))
+
+            # Check for existing themed insights (private only)
+            themed_insights_count = 0
+            if article_type == 'private':
+                try:
+                    insights_result = self.supabase.table('private_article_themed_insights').select(
+                        'id', count='exact'
+                    ).eq('private_article_id', article_id).execute()
+                    themed_insights_count = insights_result.count or 0
+                except:
+                    pass
+
+            # Determine availability
+            can_regen_summary = (
+                (content_source in ('video', 'audio') and has_transcript) or
+                (content_source == 'article' and has_article_text) or
+                (content_source == 'mixed' and (has_transcript or has_article_text))
+            )
+
+            summary_unavailable_reason = None
+            if not can_regen_summary:
+                if content_source in ('video', 'audio'):
+                    summary_unavailable_reason = "No transcript available - transcribe first"
+                else:
+                    summary_unavailable_reason = "No article text available"
+
+            # Phase 2: Check media availability for video_frames and transcript reprocessing
+            media_available, media_unavailable_reason = self._is_media_available(article)
+            has_stored_media = bool(article.get('media_storage_path'))
+            media_storage_bucket = article.get('media_storage_bucket')
+            media_size_bytes = article.get('media_size_bytes')
+            media_uploaded_at = article.get('media_uploaded_at')
+
+            # Calculate days remaining for TTL media
+            media_days_remaining = None
+            if has_stored_media and media_uploaded_at and media_storage_bucket != 'uploaded-media':
+                try:
+                    uploaded_dt = datetime.fromisoformat(media_uploaded_at.replace('Z', '+00:00'))
+                    expiry_dt = uploaded_dt + timedelta(days=self.media_retention_days)
+                    days_remaining = (expiry_dt - datetime.utcnow().replace(tzinfo=uploaded_dt.tzinfo)).days
+                    media_days_remaining = max(0, days_remaining)
+                except Exception:
+                    pass
+
+            # Can regenerate video frames if media is available and content is video
+            can_regen_video_frames = media_available and content_source in ('video', 'mixed')
+            video_frames_unavailable_reason = None
+            if not can_regen_video_frames:
+                if content_source not in ('video', 'mixed'):
+                    video_frames_unavailable_reason = "Not a video article"
+                else:
+                    video_frames_unavailable_reason = media_unavailable_reason
+
+            # Can regenerate transcript if media is available and content is video/audio
+            can_regen_transcript = media_available and content_source in ('video', 'audio', 'mixed')
+            transcript_unavailable_reason = None
+            if not can_regen_transcript:
+                if content_source not in ('video', 'audio', 'mixed'):
+                    transcript_unavailable_reason = "Not a video/audio article"
+                else:
+                    transcript_unavailable_reason = media_unavailable_reason
+
+            return {
+                'id': article_id,
+                'type': article_type,
+                'title': article.get('title'),
+                'url': article.get('url'),
+                'content_source': content_source,
+                'platform': article.get('platform'),
+                'created_at': article.get('created_at'),
+                'updated_at': article.get('updated_at'),
+
+                # Current state
+                'has_transcript': has_transcript,
+                'has_article_text': has_article_text,
+                'has_video_frames': has_video_frames,
+                'video_frame_count': video_frame_count,
+                'has_summary': bool(article.get('summary_text')),
+                'has_insights': bool(article.get('key_insights')),
+                'insights_count': len(article.get('key_insights', [])),
+                'has_embedding': bool(article.get('embedding')),
+                'themed_insights_count': themed_insights_count,
+
+                # Phase 1 available operations
+                'can_regen_summary': can_regen_summary,
+                'summary_unavailable_reason': summary_unavailable_reason,
+                'can_regen_themed_insights': article_type == 'private',
+                'can_regen_embedding': True,
+
+                # Phase 2: Media storage info
+                'has_stored_media': has_stored_media,
+                'media_storage_bucket': media_storage_bucket,
+                'media_size_mb': round(media_size_bytes / 1024 / 1024, 1) if media_size_bytes else None,
+                'media_uploaded_at': media_uploaded_at,
+                'media_days_remaining': media_days_remaining,
+                'media_is_permanent': media_storage_bucket == 'uploaded-media',
+
+                # Phase 2 available operations
+                'can_regen_video_frames': can_regen_video_frames,
+                'video_frames_unavailable_reason': video_frames_unavailable_reason,
+                'can_regen_transcript': can_regen_transcript,
+                'transcript_unavailable_reason': transcript_unavailable_reason
+            }
+
+        except Exception as e:
+            return {'error': str(e)}
 
 
 def main():

@@ -18,6 +18,7 @@ class StorageManager:
 
     BUCKET_NAME = "video-frames"
     MEDIA_BUCKET_NAME = "uploaded-media"  # For user-uploaded video/audio files
+    ARTICLE_MEDIA_BUCKET_NAME = os.getenv("ARTICLE_MEDIA_BUCKET", "article-media")  # For persisted downloaded media
 
     def __init__(self, bucket_name: Optional[str] = None):
         """Initialize storage manager with Supabase client
@@ -266,4 +267,181 @@ class StorageManager:
             return self.supabase.storage.from_(self.bucket_name).get_public_url(storage_path)
         except Exception as e:
             logger.error(f"❌ Failed to get public URL: {e}")
+            return None
+
+    # ===========================================
+    # Article Media Persistence Methods (Phase 2)
+    # ===========================================
+
+    def upload_article_media(
+        self,
+        file_path: str,
+        article_id: int,
+        article_type: str,
+        content_type: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Upload downloaded media to persistent storage for later reprocessing.
+
+        This stores media (video/audio) downloaded during article processing
+        so it can be used later for video frame re-extraction or transcript
+        regeneration without re-downloading.
+
+        Args:
+            file_path: Local path to the downloaded media file
+            article_id: ID of the article this media belongs to
+            article_type: 'public' or 'private'
+            content_type: MIME type of the file (e.g., 'video/mp4')
+
+        Returns:
+            Tuple of (success, storage_path)
+        """
+        try:
+            # Use the article media bucket
+            bucket_name = self.ARTICLE_MEDIA_BUCKET_NAME
+
+            # Ensure bucket exists with appropriate settings
+            original_bucket = self.bucket_name
+            self.bucket_name = bucket_name
+            if not self.ensure_bucket_exists(
+                allowed_mime_types=[
+                    "video/mp4", "video/webm", "video/quicktime", "video/x-matroska",
+                    "audio/mpeg", "audio/wav", "audio/mp4", "audio/ogg", "audio/flac"
+                ]
+            ):
+                self.bucket_name = original_bucket
+                return False, None
+            self.bucket_name = original_bucket
+
+            # Generate storage path: {article_type}/{article_id}/media.{ext}
+            file_ext = Path(file_path).suffix or '.mp4'
+            storage_path = f"{article_type}/{article_id}/media{file_ext}"
+
+            # Read file content
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+
+            # Upload to Supabase storage
+            logger.info(f"📤 Uploading article media to storage: {bucket_name}/{storage_path}")
+
+            self.supabase.storage.from_(bucket_name).upload(
+                path=storage_path,
+                file=file_content,
+                file_options={"content-type": content_type, "upsert": "true"}
+            )
+
+            logger.info(f"✅ Article media uploaded successfully: {storage_path}")
+
+            return True, storage_path
+
+        except Exception as e:
+            logger.error(f"❌ Failed to upload article media: {e}", exc_info=True)
+            return False, None
+
+    def download_article_media(
+        self,
+        storage_path: str,
+        destination_path: str,
+        bucket_name: Optional[str] = None
+    ) -> bool:
+        """
+        Download media from storage to a local file.
+
+        Used when reprocessing an article to extract new video frames
+        or regenerate transcripts from previously stored media.
+
+        Args:
+            storage_path: Path within the storage bucket
+            destination_path: Local path to save the downloaded file
+            bucket_name: Optional bucket name (defaults to article-media)
+
+        Returns:
+            True if download was successful
+        """
+        try:
+            bucket = bucket_name or self.ARTICLE_MEDIA_BUCKET_NAME
+
+            logger.info(f"📥 Downloading article media from storage: {bucket}/{storage_path}")
+
+            # Download file content
+            response = self.supabase.storage.from_(bucket).download(storage_path)
+
+            # Write to destination
+            with open(destination_path, 'wb') as f:
+                f.write(response)
+
+            logger.info(f"✅ Article media downloaded successfully to: {destination_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Failed to download article media: {e}", exc_info=True)
+            return False
+
+    def delete_article_media(
+        self,
+        storage_path: str,
+        bucket_name: Optional[str] = None
+    ) -> bool:
+        """
+        Delete media from storage.
+
+        Used by the cleanup script to remove expired media.
+
+        Args:
+            storage_path: Path within the storage bucket
+            bucket_name: Optional bucket name (defaults to article-media)
+
+        Returns:
+            True if deletion was successful
+        """
+        try:
+            bucket = bucket_name or self.ARTICLE_MEDIA_BUCKET_NAME
+
+            logger.info(f"🗑️ Deleting article media from storage: {bucket}/{storage_path}")
+
+            self.supabase.storage.from_(bucket).remove([storage_path])
+
+            logger.info(f"✅ Article media deleted successfully: {storage_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Failed to delete article media: {e}", exc_info=True)
+            return False
+
+    def get_article_media_signed_url(
+        self,
+        storage_path: str,
+        expiry_seconds: int = 3600,
+        bucket_name: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Get a signed URL for accessing stored media.
+
+        Since the article-media bucket is private, this generates
+        a time-limited signed URL for access.
+
+        Args:
+            storage_path: Path within the storage bucket
+            expiry_seconds: How long the URL should be valid (default 1 hour)
+            bucket_name: Optional bucket name (defaults to article-media)
+
+        Returns:
+            Signed URL or None if failed
+        """
+        try:
+            bucket = bucket_name or self.ARTICLE_MEDIA_BUCKET_NAME
+
+            result = self.supabase.storage.from_(bucket).create_signed_url(
+                storage_path,
+                expiry_seconds
+            )
+
+            if result and 'signedURL' in result:
+                return result['signedURL']
+
+            logger.warning(f"⚠️ Could not get signed URL for: {storage_path}")
+            return None
+
+        except Exception as e:
+            logger.error(f"❌ Failed to get signed URL: {e}", exc_info=True)
             return None

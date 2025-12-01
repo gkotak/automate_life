@@ -29,12 +29,14 @@ function AdminPageContent() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [isDemoVideo, setIsDemoVideo] = useState(false);
+  const [detectedPrivacy, setDetectedPrivacy] = useState<boolean | null>(null);
   const [steps, setSteps] = useState<ProcessingStep[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [result, setResult] = useState<{
     status: 'success' | 'error' | 'info';
     message: string;
     articleId?: number;
+    articleUrl?: string;
   } | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<{
     title: string;
@@ -138,6 +140,7 @@ function AdminPageContent() {
     setLoading(true);
     setResult(null);
     setDuplicateWarning(null);
+    setDetectedPrivacy(null);
     audioDurationRef.current = null;
     setUploadProgress(0);
 
@@ -222,6 +225,12 @@ function AdminPageContent() {
       }
 
       const eventSource = new EventSource(streamUrl);
+
+      // Listen for privacy detection event (auto-detected by backend)
+      eventSource.addEventListener('privacy_detected', (e) => {
+        const data = JSON.parse(e.data);
+        setDetectedPrivacy(data.is_private);
+      });
 
       eventSource.addEventListener('duplicate_detected', (e) => {
         const data = JSON.parse(e.data);
@@ -429,7 +438,8 @@ function AdminPageContent() {
         setResult({
           status: 'success',
           message: message,
-          articleId: data.article_id
+          articleId: data.article_id,
+          articleUrl: data.url  // Use the URL from backend which is already correct
         });
         setUrl('');
         setLoading(false);
@@ -738,7 +748,32 @@ function AdminPageContent() {
 
           {steps.length > 0 && !duplicateWarning && (
             <div className="mt-8 space-y-3">
-              <h3 className="text-sm font-medium text-gray-700 mb-4">Processing Status</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-gray-700">Processing Status</h3>
+                {detectedPrivacy !== null && (
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    detectedPrivacy
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {detectedPrivacy ? (
+                      <>
+                        <svg className="mr-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                        </svg>
+                        Private
+                      </>
+                    ) : (
+                      <>
+                        <svg className="mr-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
+                        </svg>
+                        Public
+                      </>
+                    )}
+                  </span>
+                )}
+              </div>
               {steps.map((step) => (
                 <div key={step.id} className="flex items-start gap-3">
                   <div className="flex-shrink-0 mt-0.5">
@@ -839,7 +874,7 @@ function AdminPageContent() {
                   </p>
                   {result.articleId && (
                     <a
-                      href={`/article/${result.articleId}`}
+                      href={result.articleUrl || `/article/${result.articleId}`}
                       className="mt-3 inline-flex items-center px-4 py-2 bg-[#077331] text-white text-sm font-medium rounded-lg hover:bg-[#055a24] transition-colors"
                     >
                       View Article
