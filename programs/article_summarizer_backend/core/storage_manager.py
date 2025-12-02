@@ -305,8 +305,8 @@ class StorageManager:
             self.bucket_name = bucket_name
             if not self.ensure_bucket_exists(
                 allowed_mime_types=[
-                    "video/mp4", "video/webm", "video/quicktime", "video/x-matroska",
-                    "audio/mpeg", "audio/wav", "audio/mp4", "audio/ogg", "audio/flac"
+                    "video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/webm",
+                    "audio/mpeg", "audio/wav", "audio/mp4", "audio/aac", "audio/ogg", "audio/flac"
                 ]
             ):
                 self.bucket_name = original_bucket
