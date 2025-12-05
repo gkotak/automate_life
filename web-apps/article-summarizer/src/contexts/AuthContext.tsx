@@ -121,7 +121,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTimeout(() => {
           if (mounted && currentUser) {
             fetchUserProfile(currentUser.id).finally(() => {
-              if (mounted) setLoading(false)
+              if (mounted) {
+                setLoading(false)
+                clearTimeout(safetyTimeout)
+              }
             })
           }
         }, 0)
