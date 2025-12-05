@@ -26,8 +26,18 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // refreshing the auth token
-    await supabase.auth.getUser()
+    // Refresh the auth token with timeout protection
+    // This prevents hung requests if Supabase is slow or unresponsive
+    try {
+        await Promise.race([
+            supabase.auth.getUser(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Auth refresh timeout')), 5000))
+        ])
+    } catch (e) {
+        // Log but don't fail the request - let it through without auth refresh
+        // The client-side auth state will still work from localStorage
+        console.error('[Middleware] Auth refresh failed or timed out')
+    }
 
     return response
 }

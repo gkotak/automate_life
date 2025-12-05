@@ -25,19 +25,16 @@ export function ExtensionBridge() {
           user: session.user
         }
         localStorage.setItem(EXTENSION_AUTH_KEY, JSON.stringify(authData))
-        console.log('[Extension Bridge] ✅ Token stored for extension')
+        console.log('[Extension Bridge] Token stored for extension')
       } else {
         localStorage.removeItem(EXTENSION_AUTH_KEY)
-        console.log('[Extension Bridge] 🗑️ Token removed (signed out)')
+        console.log('[Extension Bridge] Token removed (signed out)')
       }
     }
 
-    // Get current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      storeTokenForExtension(session)
-    })
-
-    // Listen for auth state changes
+    // Just listen for auth state changes - don't make initial getSession() call
+    // The INITIAL_SESSION event from onAuthStateChange will provide the session
+    // This avoids racing with AuthContext's auth initialization
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[Extension Bridge] Auth state changed:', event)
       storeTokenForExtension(session)

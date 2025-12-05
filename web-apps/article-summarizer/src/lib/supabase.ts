@@ -5,8 +5,9 @@ const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
 
 export const supabase = createBrowserClient(supabaseUrl, supabasePublishableKey, {
   auth: {
-    debug: true, // Enable debug logs to see what's happening
-    lock: false, // Disable navigator.locks to prevent deadlocks in dev/SSR
+    // Re-enabled navigator.locks for proper concurrency control
+    // The previous deadlock issues were caused by multiple racing auth checks,
+    // which we've now eliminated by using only onAuthStateChange listener
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
