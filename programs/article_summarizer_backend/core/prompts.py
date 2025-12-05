@@ -100,7 +100,7 @@ CRITICAL TIMESTAMP RULES:
 - Search the transcript for the specific phrase or concept and use that exact timestamp
 - Use null for timestamp_seconds and time_formatted if you cannot find the EXACT content in the provided transcript
 - NEVER guess or estimate timestamps - if you can't find it in the transcript, use null
-- For quotes: search the transcript for the exact quote text and use that precise timestamp
+- For quotes: find the transcript timestamp where the quote appears, then SUBTRACT 3 seconds to ensure playback starts slightly before the quote (e.g., if quote is at [22:38], use 22:35 / "22:35")
 - For insights: identify where the key concept or discussion begins and use that timestamp
 - Only include timestamps for content you can find in the provided transcript
 - If transcript is truncated, only use timestamps from the visible portion
@@ -268,33 +268,40 @@ Please analyze the article text to provide comprehensive insights about the {med
 
         if words:
             # Use word-level data for granular timestamps
+            # Group words into intervals but use ACTUAL first word start time for accuracy
             formatted_text = []
-            current_time = 0
+            interval_start_time = None  # Actual start time of first word in interval
+            interval_boundary = 0  # Used for interval boundary checking
             current_words = []
 
             for word_data in words:
                 word = word_data.get('word', '')
                 word_start = word_data.get('start', 0)
 
-                # Check if we've passed the next interval
-                if word_start >= current_time + interval_seconds and current_words:
-                    # Format and save this interval
-                    minutes = int(current_time // 60)
-                    seconds = int(current_time % 60)
+                # Check if we've passed the next interval boundary
+                if word_start >= interval_boundary + interval_seconds and current_words:
+                    # Format and save this interval using the ACTUAL first word's timestamp
+                    minutes = int(interval_start_time // 60)
+                    seconds = int(interval_start_time % 60)
                     timestamp = f"{minutes}:{seconds:02d}"
                     text = ' '.join(current_words)
                     formatted_text.append(f"[{timestamp}] {text}")
 
                     # Move to next interval
-                    current_time = int(word_start // interval_seconds) * interval_seconds
+                    interval_boundary = int(word_start // interval_seconds) * interval_seconds
+                    interval_start_time = word_start  # Track actual start of new interval
                     current_words = []
+
+                # Track actual start time of first word in this interval
+                if interval_start_time is None:
+                    interval_start_time = word_start
 
                 current_words.append(word)
 
             # Add final interval
-            if current_words:
-                minutes = int(current_time // 60)
-                seconds = int(current_time % 60)
+            if current_words and interval_start_time is not None:
+                minutes = int(interval_start_time // 60)
+                seconds = int(interval_start_time % 60)
                 timestamp = f"{minutes}:{seconds:02d}"
                 text = ' '.join(current_words)
                 formatted_text.append(f"[{timestamp}] {text}")
@@ -378,14 +385,29 @@ class ThemedInsightsPrompt:
         Build the themed insights prompt
 
         Args:
-            themes: List of theme names (e.g., ["Competition", "International Expansion"])
+            themes: List of theme dicts with 'name' and optional 'description' keys,
+                    or list of theme name strings for backwards compatibility
             transcript_text: Full transcript or article text
             article_summary: The general summary already generated for this article
 
         Returns:
             Complete prompt string ready for Claude API
         """
-        themes_list = "\n".join([f"- {theme}" for theme in themes])
+        # Build themes list with descriptions if available
+        themes_lines = []
+        for theme in themes:
+            if isinstance(theme, dict):
+                name = theme.get('name', '')
+                description = theme.get('description', '')
+                if description:
+                    themes_lines.append(f"- {name}: {description}")
+                else:
+                    themes_lines.append(f"- {name}")
+            else:
+                # Backwards compatibility: theme is just a string name
+                themes_lines.append(f"- {theme}")
+
+        themes_list = "\n".join(themes_lines)
 
         return f"""Analyze the following content and extract insights that are specifically relevant to each of the provided organizational themes.
 
@@ -396,6 +418,7 @@ IMPORTANT GUIDELINES:
 - Include timestamps when the insight can be tied to a specific moment in the transcript.
 - The same content can appear as both a general insight AND a themed insight if genuinely relevant.
 - It is completely acceptable to return empty arrays for themes that aren't discussed in the content.
+- Pay close attention to theme descriptions - they provide context on what to look for (e.g., specific companies, focus areas, keywords).
 
 ORGANIZATIONAL THEMES TO ANALYZE:
 {themes_list}

@@ -55,6 +55,7 @@ from core.prompts import (
     AudioContextBuilder,
     TextContextBuilder,
     ThemedInsightsPrompt,
+    MediaContextBuilder,
     create_metadata_for_prompt
 )
 from processors.transcript_processor import TranscriptProcessor
@@ -1940,8 +1941,8 @@ class ArticleProcessor(BaseProcessor):
                 self.logger.info("   ℹ️ No organization found for user - skipping themed insights")
                 return None
 
-            # Fetch organization's themes
-            themes_data = self.supabase.table('themes').select('id, name').eq('organization_id', organization_id).execute()
+            # Fetch organization's themes (including description for AI context)
+            themes_data = self.supabase.table('themes').select('id, name, description').eq('organization_id', organization_id).execute()
             themes = themes_data.data if themes_data.data else []
 
             if not themes:
@@ -1950,27 +1951,27 @@ class ArticleProcessor(BaseProcessor):
 
             self.logger.info(f"   📊 Generating themed insights for {len(themes)} themes...")
 
-            # Build transcript text for the prompt
+            # Build transcript text for the prompt WITH timestamps
+            # Use the same formatting as general insights so Claude can find timestamps
             transcript_text = ""
             transcripts = metadata.get('transcripts', {})
             if transcripts:
                 for video_id, transcript_data in transcripts.items():
                     if transcript_data.get('success'):
-                        # Get full transcript text
-                        if transcript_data.get('words'):
-                            transcript_text += " ".join([w.get('word', '') for w in transcript_data['words']])
-                        elif transcript_data.get('transcript'):
-                            for entry in transcript_data['transcript']:
-                                transcript_text += entry.get('text', '') + " "
+                        # Use MediaContextBuilder's _format_transcript for timestamp-annotated text
+                        formatted = MediaContextBuilder._format_transcript(transcript_data)
+                        if formatted:
+                            transcript_text += formatted + "\n"
 
             # Fallback to article text if no transcript
             if not transcript_text:
                 transcript_text = metadata.get('article_text', '')
 
             # Build and call the themed insights prompt
-            theme_names = [t['name'] for t in themes]
+            # Pass theme objects with name and description for better AI context
+            theme_objects = [{'name': t['name'], 'description': t.get('description')} for t in themes]
             prompt = ThemedInsightsPrompt.build(
-                themes=theme_names,
+                themes=theme_objects,
                 transcript_text=transcript_text,
                 article_summary=ai_summary.get('summary', '')
             )
@@ -3227,27 +3228,21 @@ class ArticleProcessor(BaseProcessor):
             if download_video:
                 # For frame extraction, we don't need high quality - use lower quality formats
                 # This significantly reduces download size and processing time
+                # Prioritize lowest quality first for all platforms - we only need video
+                # for frame extraction/timestamps, not for viewing quality
                 # Different platforms support different format selectors:
                 # - YouTube: supports 'worst', 'best', height filters
-                # - Loom: only supports 'bestvideo+bestaudio' or 'bestvideo' (no 'worst'/'best')
-                # - Vimeo/Wistia: support standard selectors
-
-                if is_youtube:
-                    # YouTube often blocks higher quality, so prioritize 'worst' first
-                    format_options = ['worst', 'best']
-                else:
-                    # For other platforms, try a variety of format strategies
-                    # This order is optimized based on testing:
-                    # - Vimeo: Supports height filters and bestvideo+bestaudio, not worst/best
-                    # - Loom: Only supports bestvideo+bestaudio (no height filters, no worst/best)
-                    # - Wistia: Supports height<=480 and worst/best, not bestvideo+bestaudio
-                    format_options = [
-                        'bestvideo[height<=480]+bestaudio/best[height<=480]',  # Vimeo: 360p, Wistia: 360p
-                        'bestvideo[height<=720]+bestaudio',  # Vimeo: 720p
-                        'bestvideo+bestaudio',  # Vimeo: 1080p, Loom: 800p
-                        'worst',  # Wistia: 400x224 (fallback)
-                        'best',   # Final fallback for all platforms
-                    ]
+                # - Loom: supports 'worst', 'best', 'bestvideo+bestaudio' (no height filters)
+                # - Vimeo: supports height filters and bestvideo+bestaudio
+                # - Wistia: supports height<=480, worst/best
+                format_options = [
+                    'worst',  # Lowest quality - ideal for frame extraction
+                    'worstvideo+worstaudio/worst',  # Explicit worst video+audio
+                    'bestvideo[height<=360]+bestaudio/best[height<=360]',  # 360p fallback
+                    'bestvideo[height<=480]+bestaudio/best[height<=480]',  # 480p fallback
+                    'bestvideo+bestaudio',  # Full quality fallback (Loom often needs this)
+                    'best',  # Final fallback
+                ]
 
                 last_error = None
                 for format_str in format_options:
