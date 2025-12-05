@@ -25,11 +25,13 @@ export default function ThemeManagementPage() {
 
   // Form state
   const [newThemeName, setNewThemeName] = useState('');
+  const [newThemeDescription, setNewThemeDescription] = useState('');
   const [creating, setCreating] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [editingDescription, setEditingDescription] = useState('');
 
   // Protect this page - redirect if not authenticated or not admin
   useEffect(() => {
@@ -96,7 +98,10 @@ export default function ThemeManagementPage() {
       const response = await fetch('/api/themes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newThemeName.trim() }),
+        body: JSON.stringify({
+          name: newThemeName.trim(),
+          description: newThemeDescription.trim() || null,
+        }),
       });
 
       const data = await response.json();
@@ -107,6 +112,7 @@ export default function ThemeManagementPage() {
 
       setThemes((prev) => [...prev, data.theme]);
       setNewThemeName('');
+      setNewThemeDescription('');
       addNotification('success', `Theme "${data.theme.name}" created`);
     } catch (error) {
       console.error('Error creating theme:', error);
@@ -126,7 +132,10 @@ export default function ThemeManagementPage() {
       const response = await fetch(`/api/themes/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editingName.trim() }),
+        body: JSON.stringify({
+          name: editingName.trim(),
+          description: editingDescription.trim() || null,
+        }),
       });
 
       const data = await response.json();
@@ -136,10 +145,11 @@ export default function ThemeManagementPage() {
       }
 
       setThemes((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, name: data.theme.name } : t))
+        prev.map((t) => (t.id === id ? { ...t, name: data.theme.name, description: data.theme.description } : t))
       );
       setEditingId(null);
       setEditingName('');
+      setEditingDescription('');
       addNotification('success', 'Theme updated');
     } catch (error) {
       console.error('Error updating theme:', error);
@@ -173,11 +183,13 @@ export default function ThemeManagementPage() {
   const startEditing = (theme: ThemeWithCount) => {
     setEditingId(theme.id);
     setEditingName(theme.name);
+    setEditingDescription(theme.description || '');
   };
 
   const cancelEditing = () => {
     setEditingId(null);
     setEditingName('');
+    setEditingDescription('');
   };
 
   // Show loading while checking auth
@@ -247,22 +259,36 @@ export default function ThemeManagementPage() {
         {/* Create Theme Form */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Create New Theme</h2>
-          <form onSubmit={createTheme} className="flex gap-4">
-            <input
-              type="text"
-              value={newThemeName}
-              onChange={(e) => setNewThemeName(e.target.value)}
-              placeholder="Enter theme name..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-[#077331] outline-none"
-            />
-            <button
-              type="submit"
-              disabled={creating || !newThemeName.trim()}
-              className="px-6 py-2 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              {creating ? 'Creating...' : 'Create Theme'}
-            </button>
+          <form onSubmit={createTheme} className="space-y-4">
+            <div className="flex gap-4">
+              <input
+                type="text"
+                value={newThemeName}
+                onChange={(e) => setNewThemeName(e.target.value)}
+                placeholder="Enter theme name..."
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-[#077331] outline-none"
+              />
+              <button
+                type="submit"
+                disabled={creating || !newThemeName.trim()}
+                className="px-6 py-2 bg-[#077331] text-white rounded-lg hover:bg-[#055a24] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                {creating ? 'Creating...' : 'Create Theme'}
+              </button>
+            </div>
+            <div>
+              <textarea
+                value={newThemeDescription}
+                onChange={(e) => setNewThemeDescription(e.target.value)}
+                placeholder="Optional: Add context for this theme (e.g., competitor names to track, specific focus areas, keywords to look for)..."
+                rows={2}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-[#077331] outline-none resize-none text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This description helps AI generate more relevant insights for this theme.
+              </p>
+            </div>
           </form>
         </div>
 
@@ -292,40 +318,49 @@ export default function ThemeManagementPage() {
               {themes.map((theme) => (
                 <li key={theme.id} className="px-6 py-4">
                   {editingId === theme.id ? (
-                    <div className="flex items-center gap-4">
-                      <input
-                        type="text"
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-[#077331] outline-none"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') updateTheme(theme.id);
-                          if (e.key === 'Escape') cancelEditing();
-                        }}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="text"
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-[#077331] outline-none"
+                          autoFocus
+                          placeholder="Theme name"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') cancelEditing();
+                          }}
+                        />
+                        <button
+                          onClick={() => updateTheme(theme.id)}
+                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          title="Save"
+                        >
+                          <Check className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
+                          title="Cancel"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      </div>
+                      <textarea
+                        value={editingDescription}
+                        onChange={(e) => setEditingDescription(e.target.value)}
+                        placeholder="Optional: Add context for this theme..."
+                        rows={2}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#077331] focus:border-[#077331] outline-none resize-none text-sm"
                       />
-                      <button
-                        onClick={() => updateTheme(theme.id)}
-                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                        title="Save"
-                      >
-                        <Check className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={cancelEditing}
-                        className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
-                        title="Cancel"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 bg-[#077331]/10 rounded-lg flex items-center justify-center">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-4">
+                        <div className="h-10 w-10 bg-[#077331]/10 rounded-lg flex items-center justify-center flex-shrink-0">
                           <Tag className="h-5 w-5 text-[#077331]" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <Link
                             href={`/themes/${theme.id}`}
                             className="font-medium text-gray-900 hover:text-[#077331] transition-colors"
@@ -335,9 +370,14 @@ export default function ThemeManagementPage() {
                           <p className="text-sm text-gray-500">
                             {theme.article_count} article{theme.article_count !== 1 ? 's' : ''} with insights
                           </p>
+                          {theme.description && (
+                            <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                              {theme.description}
+                            </p>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                         <button
                           onClick={() => startEditing(theme)}
                           className="p-2 text-gray-500 hover:text-[#077331] hover:bg-gray-50 rounded-lg transition-colors"

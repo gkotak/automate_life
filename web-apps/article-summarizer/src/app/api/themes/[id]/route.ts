@@ -74,7 +74,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Invalid theme ID' }, { status: 400 });
     }
 
-    const { name } = await request.json();
+    const { name, description } = await request.json();
 
     if (!name || typeof name !== 'string' || name.trim() === '') {
       return NextResponse.json(
@@ -113,7 +113,10 @@ export async function PUT(
 
     const { data: theme, error: updateError } = await supabase
       .from('themes')
-      .update({ name: name.trim() })
+      .update({
+        name: name.trim(),
+        description: description?.trim() || null,
+      })
       .eq('id', themeId)
       .select()
       .single();

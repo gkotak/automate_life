@@ -79,7 +79,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { name } = await request.json();
+    const { name, description } = await request.json();
 
     if (!name || typeof name !== 'string' || name.trim() === '') {
       return NextResponse.json(
@@ -123,6 +123,7 @@ export async function POST(request: NextRequest) {
       .insert({
         organization_id: userProfile.organization_id,
         name: name.trim(),
+        description: description?.trim() || null,
       })
       .select()
       .single();

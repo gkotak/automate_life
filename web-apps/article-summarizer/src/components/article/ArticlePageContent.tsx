@@ -665,6 +665,7 @@ export default function ArticlePageContent({ isPrivate }: ArticlePageContentProp
                 onTabSwitch={setActiveTab}
                 searchQuery={highlightTerms}
                 clickedTimestamp={clickedTimestamp}
+                isPrivate={isPrivate}
               />
               {/* Image Gallery - show extracted images (skip for video content) */}
               {article.images && article.images.length > 0 && article.content_source !== 'video' && (

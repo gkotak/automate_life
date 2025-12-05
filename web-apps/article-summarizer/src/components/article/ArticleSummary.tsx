@@ -11,9 +11,10 @@ interface ArticleSummaryProps {
   onTabSwitch?: (tab: string) => void
   searchQuery?: string
   clickedTimestamp?: number | null
+  isPrivate?: boolean
 }
 
-export default function ArticleSummary({ article, onTimestampClick, onTabSwitch, searchQuery, clickedTimestamp }: ArticleSummaryProps) {
+export default function ArticleSummary({ article, onTimestampClick, onTabSwitch, searchQuery, clickedTimestamp, isPrivate }: ArticleSummaryProps) {
   const highlightedSummary = useMemo(() => {
     if (!searchQuery || !article.summary_text) return article.summary_text
     return highlightKeywords(article.summary_text, searchQuery)
@@ -44,14 +45,16 @@ export default function ArticleSummary({ article, onTimestampClick, onTabSwitch,
       )}
 
       {/* Key Insights (Combined: insights, main points, takeaways) */}
-      {article.key_insights && article.key_insights.length > 0 && (
+      {(article.key_insights && article.key_insights.length > 0) || isPrivate ? (
         <InsightsList
-          insights={article.key_insights}
+          insights={article.key_insights || []}
           onTimestampClick={onTimestampClick}
           searchQuery={searchQuery}
           clickedTimestamp={clickedTimestamp}
+          articleId={article.id}
+          isPrivate={isPrivate}
         />
-      )}
+      ) : null}
 
       {/* Quotes */}
       {article.quotes && article.quotes.length > 0 && (
