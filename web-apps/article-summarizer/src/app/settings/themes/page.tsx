@@ -328,6 +328,7 @@ export default function ThemeManagementPage() {
                           autoFocus
                           placeholder="Theme name"
                           onKeyDown={(e) => {
+                            if (e.key === 'Enter') updateTheme(theme.id);
                             if (e.key === 'Escape') cancelEditing();
                           }}
                         />

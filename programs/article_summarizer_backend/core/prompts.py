@@ -100,7 +100,7 @@ CRITICAL TIMESTAMP RULES:
 - Search the transcript for the specific phrase or concept and use that exact timestamp
 - Use null for timestamp_seconds and time_formatted if you cannot find the EXACT content in the provided transcript
 - NEVER guess or estimate timestamps - if you can't find it in the transcript, use null
-- For quotes: find the transcript timestamp where the quote appears, then SUBTRACT 3 seconds to ensure playback starts slightly before the quote (e.g., if quote is at [22:38], use 22:35 / "22:35")
+- For quotes: find the transcript timestamp where the quote appears, then SUBTRACT 3 seconds to ensure playback starts slightly before the quote (e.g., if quote is at [22:38], use 22:35 / "22:35"). Never go below 0:00 - if quote is at [0:02], use 0:00 / "0:00"
 - For insights: identify where the key concept or discussion begins and use that timestamp
 - Only include timestamps for content you can find in the provided transcript
 - If transcript is truncated, only use timestamps from the visible portion
